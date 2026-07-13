@@ -1,0 +1,10 @@
+# config.py
+
+AVAILABLE_CASH = 10000
+RISK_PERCENT = 1
+MIN_SCORE = 70
+EXPORT_EXCEL = True
+WATCHLIST_FILE = "watchlists/watchlist.csv"
+LOOKBACK_DAYS = "2y"
+
+MAX_STOCKS = 500

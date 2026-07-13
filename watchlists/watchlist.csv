@@ -1,0 +1,13 @@
+Symbol,Market,Sector,Priority,Enabled
+NVDA,NASDAQ,AI,High,Yes
+MSFT,NASDAQ,Software,High,Yes
+META,NASDAQ,Internet,High,Yes
+AMZN,NASDAQ,E-Commerce,High,Yes
+GOOGL,NASDAQ,Internet,High,Yes
+PANW,NASDAQ,Cybersecurity,High,Yes
+PLTR,NASDAQ,AI,Medium,Yes
+HOOD,NASDAQ,FinTech,Medium,Yes
+AMD,NASDAQ,Semiconductor,High,Yes
+AVGO,NASDAQ,Semiconductor,High,Yes
+TSLA,NASDAQ,EV,High,Yes
+SPY,ETF,ETF,High,Yes

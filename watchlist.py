@@ -1,17 +1,11 @@
-WATCHLIST = [
+import pandas as pd
 
-    "NVDA",
-    "MSFT",
-    "AMZN",
-    "META",
-    "GOOGL",
-    "PANW",
-    "PLTR",
-    "HOOD",
-    "ORCL",
-    "AMD",
-    "AVGO",
-    "TSLA",
-    "SPY"
 
-]
+def load_watchlist():
+
+    df = pd.read_csv("watchlists/watchlist.csv")
+
+    # Keep only enabled stocks
+    df = df[df["Enabled"] == "Yes"]
+
+    return df

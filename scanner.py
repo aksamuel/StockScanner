@@ -1,108 +1,202 @@
-from watchlist import WATCHLIST
+from relative_strength import calculate_relative_strength
+from watchlist import load_watchlist
 from market_data import download_data
 from indicators import calculate_indicators
 from scoring import score_stock
 from trade_plan import generate_trade_plan
 from report import export_report
 
+# =====================================================
+# AI STOCK SCANNER V3.1
+# =====================================================
+
 print("=" * 80)
-print("                         AI STOCK SCANNER")
+print("                    AI STOCK SCANNER V3.1")
 print("=" * 80)
 
-# Store results for Excel export
+# -----------------------------------------------------
+# Load Watchlist
+# -----------------------------------------------------
+watchlist = load_watchlist()
+
+print(f"Loaded {len(watchlist)} stocks")
+print()
+
 results = []
 
-# ==================================================
-# Scan each stock
-# ==================================================
-for symbol in WATCHLIST:
+# =====================================================
+# Scan Each Stock
+# =====================================================
 
-    print(f"\nScanning {symbol}...")
+for _, row in watchlist.iterrows():
 
-    # Download Data
-    df = download_data(symbol)
+    symbol = row["Symbol"]
+    market = row["Market"]
+    sector = row["Sector"]
+    priority = row["Priority"]
 
-    # Skip if insufficient data
-    if df.empty or len(df) < 200:
-        print(f"Skipping {symbol} (Not enough historical data)")
+    print("=" * 80)
+    print(f"Scanning {symbol}")
+    print("=" * 80)
+
+    # -------------------------------------------------
+    # Download Market Data
+    # -------------------------------------------------
+
+    try:
+        df = download_data(symbol)
+
+        if df.empty or len(df) < 200:
+            print("Not enough historical data.")
+            continue
+
+    except Exception as e:
+        print(f"Download Error : {e}")
         continue
 
+    # -------------------------------------------------
     # Calculate Indicators
-    df = calculate_indicators(df)
+    # -------------------------------------------------
 
-    latest = df.iloc[-1]
+    try:
+        df = calculate_indicators(df)
+        latest = df.iloc[-1]
 
+    except Exception as e:
+        print(f"Indicator Error : {e}")
+        continue
+
+    # -------------------------------------------------
+    # Relative Strength
+    # -------------------------------------------------
+
+    try:
+        relative_strength = calculate_relative_strength(symbol)
+        print(type(relative_strength), relative_strength)
+        relative_strength = float(relative_strength)
+        print(type(relative_strength))
+        print(relative_strength)
+
+    except Exception:
+        relative_strength = 0
+
+    # -------------------------------------------------
     # Calculate Score
-    score = score_stock(df)
+    # -------------------------------------------------
 
+    score = score_stock(df, relative_strength)
+
+    # -------------------------------------------------
     # Recommendation
+    # -------------------------------------------------
+
     if score >= 90:
         recommendation = "🟢 STRONG BUY"
+
     elif score >= 80:
         recommendation = "🟢 BUY"
+
     elif score >= 70:
         recommendation = "🟡 ACCUMULATE"
+
     elif score >= 60:
         recommendation = "🟡 HOLD"
+
     elif score >= 40:
         recommendation = "🟠 WATCH"
+
     else:
         recommendation = "🔴 AVOID"
 
+    # -------------------------------------------------
     # Generate Trade Plan
+    # -------------------------------------------------
+
     plan = generate_trade_plan(
         df,
         available_cash=10000,
         risk_percent=1
     )
 
-    # Save results for Excel
+    # -------------------------------------------------
+    # Save Results
+    # -------------------------------------------------
+
     results.append({
+
         "Symbol": symbol,
+        "Market": market,
+        "Sector": sector,
+        "Priority": priority,
+
         "Current Price": round(latest["Close"], 2),
+
         "20 MA": round(latest["MA20"], 2),
         "50 MA": round(latest["MA50"], 2),
         "200 MA": round(latest["MA200"], 2),
+
         "RSI": round(latest["RSI"], 2),
         "MACD": round(latest["MACD"], 2),
+
+        "Relative Strength": round(relative_strength, 2),
+
         "Score": score,
         "Recommendation": recommendation,
+
         "Trend": plan["Trend"],
+
         "Entry": round(plan["Entry"], 2),
         "Stop Loss": round(plan["Stop"], 2),
+
         "Target 1": round(plan["Target1"], 2),
         "Target 2": round(plan["Target2"], 2),
         "Target 3": round(plan["Target3"], 2),
+
         "Risk/Reward": round(plan["RR"], 2),
+
         "Suggested Shares": plan["Shares"],
         "Investment": round(plan["Investment"], 2)
+
     })
 
+    # -------------------------------------------------
     # Display Results
-    print("-" * 80)
-    print(f"Stock                : {symbol}")
-    print("-" * 80)
+    # -------------------------------------------------
+
+    print(f"Market               : {market}")
+    print(f"Sector               : {sector}")
+    print(f"Priority             : {priority}")
+
+    print()
+
     print(f"Current Price        : ${latest['Close']:.2f}")
     print(f"20-Day MA            : ${latest['MA20']:.2f}")
     print(f"50-Day MA            : ${latest['MA50']:.2f}")
     print(f"200-Day MA           : ${latest['MA200']:.2f}")
+
     print(f"RSI                  : {latest['RSI']:.2f}")
     print(f"MACD                 : {latest['MACD']:.2f}")
-
+    print("Type:", type(relative_strength))
+    print("Value:", relative_strength)
     print()
+
     print(f"Profit-to-Time Score : {score}/100")
     print(f"Recommendation       : {recommendation}")
 
     print()
+
     print("Trend Analysis")
-    print("-" * 30)
+    print("-" * 35)
+
     print(f"Price > 200 MA       : {latest['Close'] > latest['MA200']}")
     print(f"20 MA > 50 MA        : {latest['MA20'] > latest['MA50']}")
     print(f"50 MA > 200 MA       : {latest['MA50'] > latest['MA200']}")
 
     print()
+
     print("Trade Plan")
-    print("-" * 30)
+    print("-" * 35)
+
     print(f"Trend                : {plan['Trend']}")
     print(f"Suggested Entry      : ${plan['Entry']:.2f}")
     print(f"Stop Loss            : ${plan['Stop']:.2f}")
@@ -113,11 +207,23 @@ for symbol in WATCHLIST:
     print(f"Suggested Shares     : {plan['Shares']}")
     print(f"Investment           : ${plan['Investment']:.2f}")
 
-# ==================================================
-# Export to Excel
-# ==================================================
-print("\nCreating Excel report...")
-export_report(results)
+    print()
+
+# =====================================================
+# Export Report
+# =====================================================
+
+print("=" * 80)
+
+if len(results) > 0:
+
+    print("Creating Excel Report...")
+
+    export_report(results)
+
+else:
+
+    print("No stocks were processed.")
 
 print("=" * 80)
 print("SCAN COMPLETED")
