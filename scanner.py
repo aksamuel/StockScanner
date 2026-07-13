@@ -5,6 +5,7 @@ from indicators import calculate_indicators
 from scoring import score_stock
 from trade_plan import generate_trade_plan
 from report import export_report
+from ranking import rank_stocks
 
 # =====================================================
 # AI STOCK SCANNER V3.1
@@ -219,8 +220,41 @@ if len(results) > 0:
 
     print("Creating Excel Report...")
 
-    export_report(results)
+    ranked = rank_stocks(results)
+    print()
+    print("=" * 80)
+    print("TOP OPPORTUNITIES")
+    print("=" * 80)
 
+    print(
+        ranked[
+            [
+                "Rank",
+                "Symbol",
+                "Score",
+                "Recommendation",
+                "Entry",
+                "Target 1",
+                "Risk/Reward"
+            ]
+        ].head(10)
+    )
+  # Print scan summary  
+    print()
+    print("=" * 80)
+    print("SCAN SUMMARY")
+    print("=" * 80)
+
+    print(f"Stocks Scanned : {len(ranked)}")
+    print(f"Strong Buy     : {(ranked['Recommendation'] == '🟢 STRONG BUY').sum()}")
+    print(f"Buy            : {(ranked['Recommendation'] == '🟢 BUY').sum()}")
+    print(f"Accumulate     : {(ranked['Recommendation'] == '🟡 ACCUMULATE').sum()}")
+    print(f"Hold           : {(ranked['Recommendation'] == '🟡 HOLD').sum()}")
+    print(f"Watch          : {(ranked['Recommendation'] == '🟠 WATCH').sum()}")
+    print(f"Avoid          : {(ranked['Recommendation'] == '🔴 AVOID').sum()}")
+  #Scan summary finish  
+    export_report(ranked.to_dict("records"))
+    
 else:
 
     print("No stocks were processed.")
