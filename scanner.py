@@ -6,6 +6,7 @@ from scoring import score_stock
 from trade_plan import generate_trade_plan
 from report import export_report
 from ranking import rank_stocks
+from signals import generate_signal
 
 # =====================================================
 # AI STOCK SCANNER V3.1
@@ -72,20 +73,26 @@ for _, row in watchlist.iterrows():
     # -------------------------------------------------
 
     try:
-        relative_strength = calculate_relative_strength(symbol)
-        print(type(relative_strength), relative_strength)
-        relative_strength = float(relative_strength)
-        print(type(relative_strength))
-        print(relative_strength)
-
-    except Exception:
-        relative_strength = 0
+        relative_strength = float(
+            calculate_relative_strength(symbol)
+        )
+    except Exception as e:
+        print(f"Relative Strength Error: {e}")
+        relative_strength = 0.0
 
     # -------------------------------------------------
-    # Calculate Score
+    # Score and signal
+    # -------------------------------------------------
+    
+    score = score_stock(df, relative_strength)
+    signal = generate_signal(df)
+            
+    # -------------------------------------------------
+    # Calculate Score and signal
     # -------------------------------------------------
 
     score = score_stock(df, relative_strength)
+    signal = generate_signal(df)
 
     # -------------------------------------------------
     # Recommendation
@@ -115,10 +122,11 @@ for _, row in watchlist.iterrows():
 
     plan = generate_trade_plan(
         df,
-        available_cash=10000,
+        available_cash=1000,
         risk_percent=1
     )
-
+    
+ 
     # -------------------------------------------------
     # Save Results
     # -------------------------------------------------
@@ -144,6 +152,8 @@ for _, row in watchlist.iterrows():
         "Score": score,
         "Recommendation": recommendation,
 
+        "Signal": signal,
+        
         "Trend": plan["Trend"],
 
         "Entry": round(plan["Entry"], 2),
@@ -177,13 +187,14 @@ for _, row in watchlist.iterrows():
 
     print(f"RSI                  : {latest['RSI']:.2f}")
     print(f"MACD                 : {latest['MACD']:.2f}")
-    print("Type:", type(relative_strength))
-    print("Value:", relative_strength)
+    print(f"Relative Strength    : {relative_strength:.2f}%")
+    
     print()
 
     print(f"Profit-to-Time Score : {score}/100")
     print(f"Recommendation       : {recommendation}")
-
+    print(f"AI Signal            : {signal}")
+    
     print()
 
     print("Trend Analysis")
@@ -232,14 +243,19 @@ if len(results) > 0:
                 "Rank",
                 "Symbol",
                 "Score",
+                "Signal",
                 "Recommendation",
                 "Entry",
                 "Target 1",
                 "Risk/Reward"
             ]
-        ].head(10)
+        ].head(10).to_string(index=False)
     )
-  # Print scan summary  
+
+# =====================================================
+# Print scan summary  
+# =====================================================
+
     print()
     print("=" * 80)
     print("SCAN SUMMARY")
@@ -252,7 +268,10 @@ if len(results) > 0:
     print(f"Hold           : {(ranked['Recommendation'] == '🟡 HOLD').sum()}")
     print(f"Watch          : {(ranked['Recommendation'] == '🟠 WATCH').sum()}")
     print(f"Avoid          : {(ranked['Recommendation'] == '🔴 AVOID').sum()}")
-  #Scan summary finish  
+
+# =====================================================
+# Export Excel Report  
+# =====================================================
     export_report(ranked.to_dict("records"))
     
 else:
