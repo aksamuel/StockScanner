@@ -1,5 +1,3 @@
-from concurrent.futures import ThreadPoolExecutor, as_completed
-
 from charts import generate_stock_chart
 from indicators import calculate_indicators
 from market_data import download_data
@@ -9,21 +7,20 @@ from report import export_report
 from scoring import score_stock
 from signals import generate_signal
 from trade_plan import generate_trade_plan
-from watchlist import load_watchlist
 
 from config import (
     AVAILABLE_CASH,
     RISK_PER_TRADE,
     TOP_RESULTS,
     MAX_STOCKS,
-    MAX_WORKERS,
     MIN_PRICE,
-    MIN_AVERAGE_DOLLAR_VOLUME,
+    MIN_AVERAGE_DOLLAR_VOLUME
 )
 
+from watchlist import load_watchlist
 
 def get_recommendation(score):
-    """Convert a numeric score into a recommendation."""
+    """Convert the numeric score into a recommendation."""
 
     if score >= 90:
         return "🟢 STRONG BUY"
@@ -57,16 +54,17 @@ def process_stock(row):
     """
 
     symbol = str(row["Symbol"]).strip().upper()
-    market = row.get("Market", "Unknown")
-    sector = row.get("Sector", "Unknown")
-    priority = row.get("Priority", "Normal")
+    market = row["Market"]
+    sector = row["Sector"]
+    priority = row["Priority"]
 
+    print("=" * 80)
     print(f"Scanning {symbol}")
+    print("=" * 80)
 
     # Download historical data
     try:
         df = download_data(symbol)
-
     except Exception as error:
         print(f"Download error for {symbol}: {error}")
         return None
@@ -77,21 +75,16 @@ def process_stock(row):
 
     if len(df) < 200:
         print(
-            f"Skipping {symbol}: only {len(df)} "
-            "trading days are available."
+            f"Skipping {symbol}: only {len(df)} trading days "
+            "are available."
         )
         return None
 
-    # Calculate indicators and liquidity information
+    # Calculate technical indicators
     try:
         df = calculate_indicators(df)
-
-        if df is None or df.empty:
-            print(f"Skipping {symbol}: indicator data is empty.")
-            return None
-
         latest = df.iloc[-1]
-
+#-------
         current_price = float(latest["Close"])
 
         average_volume = float(
@@ -105,19 +98,18 @@ def process_stock(row):
         if current_price < MIN_PRICE:
             print(
                 f"Skipping {symbol}: price "
-                f"${current_price:.2f} is below "
-                f"${MIN_PRICE:.2f}."
+                f"${current_price:.2f} is below minimum."
             )
             return None
 
         if average_dollar_volume < MIN_AVERAGE_DOLLAR_VOLUME:
             print(
                 f"Skipping {symbol}: average dollar volume "
-                f"${average_dollar_volume:,.0f} is below "
-                f"${MIN_AVERAGE_DOLLAR_VOLUME:,.0f}."
+                f"${average_dollar_volume:,.0f} is too low."
             )
             return None
-
+    
+#-----------    
     except Exception as error:
         print(f"Indicator error for {symbol}: {error}")
         return None
@@ -127,13 +119,8 @@ def process_stock(row):
         relative_strength = float(
             calculate_relative_strength(symbol)
         )
-
     except Exception as error:
-        print(
-            f"Relative-strength error for "
-            f"{symbol}: {error}"
-        )
-
+        print(f"Relative-strength error for {symbol}: {error}")
         relative_strength = 0.0
 
     # Calculate score and signal
@@ -141,17 +128,14 @@ def process_stock(row):
         score = int(
             score_stock(
                 df,
-                relative_strength,
+                relative_strength
             )
         )
 
         signal = generate_signal(df)
 
     except Exception as error:
-        print(
-            f"Scoring or signal error for "
-            f"{symbol}: {error}"
-        )
+        print(f"Scoring or signal error for {symbol}: {error}")
         return None
 
     recommendation = get_recommendation(score)
@@ -161,156 +145,117 @@ def process_stock(row):
         plan = generate_trade_plan(
             df,
             available_cash=AVAILABLE_CASH,
-            risk_percent=RISK_PER_TRADE,
+            risk_percent=RISK_PER_TRADE
         )
-
     except Exception as error:
         print(f"Trade-plan error for {symbol}: {error}")
         return None
 
-    if plan is None:
-        print(f"Trade-plan error for {symbol}: no plan returned.")
-        return None
+    result = {
+        "Symbol": symbol,
+        "Market": market,
+        "Sector": sector,
+        "Priority": priority,
 
-    required_plan_fields = [
-        "Trend",
-        "Entry",
-        "Stop",
-        "Target1",
-        "Target2",
-        "Target3",
-        "RR",
-        "Shares",
-        "Investment",
-    ]
+        "Current Price": round(
+            float(latest["Close"]),
+            2
+        ),
 
-    missing_plan_fields = [
-        field
-        for field in required_plan_fields
-        if field not in plan
-    ]
+        "20 MA": round(
+            float(latest["MA20"]),
+            2
+        ),
 
-    if missing_plan_fields:
-        print(
-            f"Trade-plan error for {symbol}: "
-            f"missing fields {missing_plan_fields}"
-        )
-        return None
+        "50 MA": round(
+            float(latest["MA50"]),
+            2
+        ),
 
-    try:
-        result = {
-            "Symbol": symbol,
-            "Market": market,
-            "Sector": sector,
-            "Priority": priority,
+        "200 MA": round(
+            float(latest["MA200"]),
+            2
+        ),
 
-            "Current Price": round(
-                float(latest["Close"]),
-                2,
-            ),
+        "RSI": round(
+            float(latest["RSI"]),
+            2
+        ),
 
-            "20 MA": round(
-                float(latest["MA20"]),
-                2,
-            ),
+        "MACD": round(
+            float(latest["MACD"]),
+            2
+        ),
 
-            "50 MA": round(
-                float(latest["MA50"]),
-                2,
-            ),
+        "Relative Strength": round(
+            relative_strength,
+            2
+        ),
 
-            "200 MA": round(
-                float(latest["MA200"]),
-                2,
-            ),
+        "Score": score,
+        "Recommendation": recommendation,
+        "Signal": signal,
+        "Trend": plan["Trend"],
 
-            "RSI": round(
-                float(latest["RSI"]),
-                2,
-            ),
+        "Entry": round(
+            float(plan["Entry"]),
+            2
+        ),
 
-            "MACD": round(
-                float(latest["MACD"]),
-                2,
-            ),
+        "Stop Loss": round(
+            float(plan["Stop"]),
+            2
+        ),
 
-            "Relative Strength": round(
-                relative_strength,
-                2,
-            ),
+        "Target 1": round(
+            float(plan["Target1"]),
+            2
+        ),
 
-            "Score": score,
-            "Recommendation": recommendation,
-            "Signal": signal,
-            "Trend": plan["Trend"],
+        "Target 2": round(
+            float(plan["Target2"]),
+            2
+        ),
 
-            "Entry": round(
-                float(plan["Entry"]),
-                2,
-            ),
+        "Target 3": round(
+            float(plan["Target3"]),
+            2
+        ),
 
-            "Stop Loss": round(
-                float(plan["Stop"]),
-                2,
-            ),
+        "Risk/Reward": round(
+            float(plan["RR"]),
+            2
+        ),
 
-            "Target 1": round(
-                float(plan["Target1"]),
-                2,
-            ),
+        "Suggested Shares": int(
+            plan["Shares"]
+        ),
 
-            "Target 2": round(
-                float(plan["Target2"]),
-                2,
-            ),
+        "Investment": round(
+            float(plan["Investment"]),
+            2
+        ),
+#---------
+        
+        "Average Volume": round(
+            average_volume,
+            0
+        ),
+        
+        "Average Dollar Volume": round(
+            average_dollar_volume,
+            0
+        ),
+#---------
+    }
 
-            "Target 3": round(
-                float(plan["Target3"]),
-                2,
-            ),
-
-            "Risk/Reward": round(
-                float(plan["RR"]),
-                2,
-            ),
-
-            "Suggested Shares": int(
-                plan["Shares"]
-            ),
-
-            "Investment": round(
-                float(plan["Investment"]),
-                2,
-            ),
-
-            "Average Volume": round(
-                average_volume,
-                0,
-            ),
-
-            "Average Dollar Volume": round(
-                average_dollar_volume,
-                0,
-            ),
-        }
-
-    except Exception as error:
-        print(
-            f"Result-building error for "
-            f"{symbol}: {error}"
-        )
-        return None
+    display_stock_result(result)
 
     return result, df.copy(), plan
 
 
 def display_stock_result(result):
-    """Print the analysis for one successfully processed stock."""
-
-    print()
-    print("=" * 80)
-    print(f"RESULT: {result['Symbol']}")
-    print("=" * 80)
+    """Print the analysis for one stock."""
 
     print(f"Market               : {result['Market']}")
     print(f"Sector               : {result['Sector']}")
@@ -335,16 +280,6 @@ def display_stock_result(result):
     print(
         f"200-Day MA           : "
         f"${result['200 MA']:.2f}"
-    )
-
-    print(
-        f"Average Volume       : "
-        f"{result['Average Volume']:,.0f}"
-    )
-
-    print(
-        f"Average Dollar Vol.  : "
-        f"${result['Average Dollar Volume']:,.0f}"
     )
 
     print(f"RSI                  : {result['RSI']:.2f}")
@@ -422,7 +357,6 @@ def display_stock_result(result):
 
     print()
 
-
 def display_top_opportunities(ranked):
     """Print the highest-ranked stocks."""
 
@@ -434,7 +368,7 @@ def display_top_opportunities(ranked):
         "Recommendation",
         "Entry",
         "Target 1",
-        "Risk/Reward",
+        "Risk/Reward"
     ]
 
     available_columns = [
@@ -451,9 +385,7 @@ def display_top_opportunities(ranked):
     print(
         ranked[
             available_columns
-        ].head(
-            TOP_RESULTS
-        ).to_string(
+        ].head(TOP_RESULTS).to_string(
             index=False
         )
     )
@@ -520,33 +452,110 @@ def create_top_charts(ranked, chart_data):
         stored_data = chart_data.get(symbol)
 
         if stored_data is None:
-            print(
-                f"No chart data available for "
-                f"{symbol}"
-            )
-            continue
-
-        try:
-            generate_stock_chart(
-                symbol=symbol,
-                df=stored_data["data"],
-                trade_plan=stored_data["plan"],
-            )
-
-        except Exception as error:
-            print(
-                f"Chart-generation error for "
-                f"{symbol}: {error}"
-            )
+            print(f"No chart data available for {symbol}")
+        else:
+            try:
+                generate_stock_chart(
+                    symbol=symbol,
+                    df=stored_data["data"],
+                    trade_plan=stored_data["plan"]
+                )
+            except Exception as error:
+                print(
+                    f"Chart-generation error for "
+                    f"{symbol}: {error}"
+                )
 
 
 def main():
-    """Run the complete parallel stock-scanner workflow."""
+    """Run the complete stock-scanner workflow."""
 
     print("=" * 80)
-    print("                    AI STOCK SCANNER V4.6")
+    print("                    AI STOCK SCANNER V4.4")
     print("=" * 80)
 
-    # Load watchlist
     try:
-        watchlist =
+        watchlist = load_watchlist()
+        
+        if MAX_STOCKS is not None:
+            watchlist = watchlist.head(MAX_STOCKS)
+    
+    except Exception as error:
+        print(f"Could not load the watchlist: {error}")
+        return
+
+    if watchlist.empty:
+        print("The watchlist contains no enabled stocks.")
+        return
+
+    print(f"Loaded {len(watchlist)} stocks")
+    print()
+
+    results = []
+    chart_data = {}
+    processed_count = 0
+    skipped_count = 0
+
+    for _, row in watchlist.iterrows():
+
+        processed = process_stock(row)
+
+        if processed is None:
+            skipped_count += 1
+            continue
+
+        processed_count += 1
+
+        result, df, plan = processed
+
+        results.append(result)
+        chart_data[result["Symbol"]] = {
+            "data": df,
+            "plan": plan
+        }
+
+    print()
+    print("=" * 80)
+    print("PROCESSING SUMMARY")
+    print("=" * 80)
+    print(f"Successfully processed : {processed_count}")
+    print(f"Skipped stocks         : {skipped_count}")
+
+    if not results:
+        print("No stocks were processed successfully.")
+        return
+
+    ranked = rank_stocks(results)
+
+    display_top_opportunities(ranked)
+    display_scan_summary(ranked)
+
+    create_top_charts(
+        ranked,
+        chart_data
+    )
+
+    print()
+    print("=" * 80)
+    print("CREATING EXCEL REPORT")
+    print("=" * 80)
+
+    try:
+        report_filename = export_report(
+            ranked.to_dict("records")
+        )
+
+        if report_filename:
+            print(f"Report saved to: {report_filename}")
+
+    except Exception as error:
+        print(f"Excel-report error: {error}")
+
+    print()
+    print("=" * 80)
+    print("SCAN COMPLETED")
+    print("=" * 80)
+
+
+if __name__ == "__main__":
+    main()
