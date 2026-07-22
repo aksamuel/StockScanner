@@ -1,0 +1,35 @@
+How to run StockScanner from Command Prompt
+
+From C:\StockScanner:
+
+1. Run the scanner with the built-in launcher:
+
+    cd /d C:\StockScanner
+    run.bat --universe --limit 10 --no-report
+
+2. Run the package directly with the virtual environment Python:
+
+    cd /d C:\StockScanner
+    .venv\Scripts\python.exe -m stockscanner --universe --limit 10 --no-report
+
+3. Run the watchlist scan:
+
+    cd /d C:\StockScanner
+    .venv\Scripts\python.exe -m stockscanner
+
+4. Run the NYSE ticker downloader:
+
+    cd /d C:\StockScanner
+    .venv\Scripts\python.exe -m download_nyse --force-yfinance --limit 20
+
+Note: if global python is not available, always use .venv\Scripts\python.exe from the repo root.
+
+
+
+
+cd /d C:\StockScanner
+run.bat --universe --limit 10 --no-report
+
+cd /d C:\StockScanner
+.venv\Scripts\python.exe -m stockscanner --universe --limit 10 --no-report
+

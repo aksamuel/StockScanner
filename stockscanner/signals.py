@@ -1,5 +1,4 @@
 def generate_signal(df):
-
     latest = df.iloc[-1]
 
     close = latest["Close"]
@@ -10,9 +9,6 @@ def generate_signal(df):
     macd = latest["MACD"]
     macd_signal = latest["MACD_SIGNAL"]
 
-    # ---------------------------------------------------
-    # Strong Uptrend
-    # ---------------------------------------------------
     if (
         close > ma20 > ma50 > ma200
         and macd > macd_signal
@@ -20,9 +16,6 @@ def generate_signal(df):
     ):
         return "🟢 Strong Uptrend"
 
-    # ---------------------------------------------------
-    # Pullback to 20 MA
-    # ---------------------------------------------------
     if (
         close >= ma20 * 0.98
         and close <= ma20 * 1.02
@@ -30,9 +23,6 @@ def generate_signal(df):
     ):
         return "🟢 Pullback to 20 MA"
 
-    # ---------------------------------------------------
-    # Pullback to 50 MA
-    # ---------------------------------------------------
     if (
         close >= ma50 * 0.98
         and close <= ma50 * 1.02
@@ -40,9 +30,6 @@ def generate_signal(df):
     ):
         return "🟢 Pullback to 50 MA"
 
-    # ---------------------------------------------------
-    # Breakout Candidate
-    # ---------------------------------------------------
     high20 = df["High"].tail(20).max()
 
     if (
@@ -51,18 +38,12 @@ def generate_signal(df):
     ):
         return "🔵 Breakout Candidate"
 
-    # ---------------------------------------------------
-    # Oversold Recovery
-    # ---------------------------------------------------
     if (
         rsi < 35
         and macd > macd_signal
     ):
         return "🟠 Oversold Recovery"
 
-    # ---------------------------------------------------
-    # Strong Momentum
-    # ---------------------------------------------------
     if (
         rsi > 65
         and macd > macd_signal

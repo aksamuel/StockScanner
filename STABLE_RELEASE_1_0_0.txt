@@ -1,0 +1,27 @@
+StockScanner stable release 1.0.0
+
+This package has been prepared for a stable release version 1.0.0.
+
+Key details:
+- Package name: stockscanner
+- Version: 1.0.0
+- Entry points:
+  - stockscanner = stockscanner.cli:main
+  - download-nyse = download_nyse:main
+- Dependencies:
+  - pandas
+  - numpy
+  - yfinance
+  - ta
+  - openpyxl
+- Development dependencies:
+  - pytest
+
+Install locally with:
+  .venv\Scripts\python.exe -m pip install -e .
+
+Run the scanner with:
+  .\run.bat
+
+Run the NYSE downloader with:
+  .\download_nyse.bat --force-yfinance --limit 20

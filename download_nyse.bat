@@ -6,5 +6,5 @@ if not exist .venv\Scripts\python.exe (
   pause
   exit /b 1
 )
-.venv\Scripts\python.exe -m stockscanner.cli %*
+.venv\Scripts\python.exe download_nyse.py %*
 pause

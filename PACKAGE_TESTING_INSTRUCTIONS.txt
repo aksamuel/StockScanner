@@ -1,0 +1,49 @@
+How to test the StockScanner package
+
+1. Activate the virtual environment
+
+From C:\StockScanner:
+
+    .venv\Scripts\Activate.ps1
+
+2. Run the unit tests
+
+    python -m pytest -q tests/test_scan.py
+
+If the package is healthy, you should see:
+- 2 passed
+
+3. Check the CLI entrypoint
+
+    python -m stockscanner --help
+
+This should print the CLI usage and option list.
+
+4. Run a quick scan without exporting reports
+
+    python -m stockscanner --universe --limit 10 --no-report
+
+This verifies the package can:
+- load the NYSE universe
+- download data
+- calculate indicators
+- score stocks
+
+5. Test the NYSE downloader
+
+    python -m download_nyse --force-yfinance --limit 20
+
+This confirms the ticker download path works.
+
+6. Alternative Windows launcher
+
+If you prefer the launcher script:
+
+    .\run.bat --universe --limit 10 --no-report
+
+What success looks like
+
+- CLI help displays normally
+- tests pass
+- a scan completes without crashing
+- the downloader saves data/nyse_tickers.csv when run

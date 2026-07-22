@@ -1,0 +1,44 @@
+[project]
+name = "stockscanner"
+version = "1.0.0"
+description = "StockScanner package for watchlist and NYSE universe scanning."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [
+  { name = "StockScanner User" }
+]
+dependencies = [
+  "pandas",
+  "numpy",
+  "yfinance",
+  "ta",
+  "openpyxl"
+]
+keywords = ["stock", "scanner", "finance", "yfinance", "nyse"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: Microsoft :: Windows",
+]
+
+[project.scripts]
+stockscanner = "stockscanner.cli:main"
+download-nyse = "download_nyse:main"
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[build-system]
+requires = ["setuptools>=65.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+py-modules = [
+  "download_nyse",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["stockscanner"]
