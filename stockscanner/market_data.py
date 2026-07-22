@@ -54,3 +54,118 @@ def download_data(symbol, force=False, period="1y", cache_days=CACHE_DAYS):
         pass
 
     return df
+
+
+def _chunked(iterable, size):
+    for i in range(0, len(iterable), size):
+        yield iterable[i : i + size]
+
+
+def download_data_bulk(symbols, force=False, period="1y", cache_days=CACHE_DAYS, chunk_size=100, pause_between_chunks=1.0):
+    """Download historical data for a list of `symbols` in chunks and cache each symbol to disk.
+
+    - `symbols`: iterable of symbol strings
+    - `force`: bypass cache and re-download for each symbol
+    - `period`: yfinance period
+    - `cache_days`: TTL used to decide whether to skip cached files
+    - `chunk_size`: how many tickers to request in a single yfinance.download call
+    - `pause_between_chunks`: seconds to sleep between chunk downloads to reduce rate pressure
+    Returns: dict mapping symbol -> DataFrame (for successfully downloaded or cached symbols)
+    """
+    results = {}
+    symbols = list(dict.fromkeys([str(s).strip().upper() for s in symbols if s]))
+    if not symbols:
+        return results
+
+    to_download = []
+    for s in symbols:
+        path = _cache_path(s)
+        if not force and os.path.exists(path):
+            try:
+                mtime = os.path.getmtime(path)
+                age_days = (time.time() - mtime) / 86400.0
+                if age_days <= cache_days:
+                    df = pd.read_csv(path, index_col=0, parse_dates=True)
+                    if not df.empty:
+                        results[s] = df
+                        continue
+            except Exception:
+                pass
+        to_download.append(s)
+
+    import yfinance as yf
+    import time as _time
+
+    for chunk in _chunked(to_download, chunk_size):
+        try:
+            df_all = yf.download(tickers=chunk, period=period, group_by="ticker", threads=True, progress=False)
+        except Exception:
+            df_all = None
+
+        if df_all is None or df_all.empty:
+            # try per-symbol fallback
+            for s in chunk:
+                try:
+                    df = yf.Ticker(s).history(period=period)
+                    if df is not None and not df.empty:
+                        path = _cache_path(s)
+                        try:
+                            tmp = path + ".tmp"
+                            df.to_csv(tmp)
+                            os.replace(tmp, path)
+                        except Exception:
+                            pass
+                        results[s] = df
+                except Exception:
+                    continue
+        else:
+            # df_all may be a multi-column DataFrame grouped by ticker
+            # yfinance returns either a MultiIndex columns (ticker, field) or a flat DF for single-ticker
+            if isinstance(df_all.columns, pd.MultiIndex):
+                for s in chunk:
+                    try:
+                        if s in df_all.columns.levels[0]:
+                            df = df_all[s].copy()
+                        else:
+                            # some tickers may have '.' suffixes in yfinance output, try case-insensitive match
+                            matches = [c for c in df_all.columns.levels[0] if str(c).upper() == s]
+                            if matches:
+                                df = df_all[matches[0]].copy()
+                            else:
+                                df = None
+                        if df is not None and not df.empty:
+                            path = _cache_path(s)
+                            try:
+                                tmp = path + ".tmp"
+                                df.to_csv(tmp)
+                                os.replace(tmp, path)
+                            except Exception:
+                                pass
+                            results[s] = df
+                    except Exception:
+                        continue
+            else:
+                # flat DataFrame, assume single ticker requested
+                # attempt to map chunk[0] to df_all
+                for s in chunk:
+                    try:
+                        df = df_all.copy()
+                        if df is not None and not df.empty:
+                            path = _cache_path(s)
+                            try:
+                                tmp = path + ".tmp"
+                                df.to_csv(tmp)
+                                os.replace(tmp, path)
+                            except Exception:
+                                pass
+                            results[s] = df
+                    except Exception:
+                        continue
+
+        if pause_between_chunks and len(to_download) > chunk_size:
+            try:
+                _time.sleep(pause_between_chunks)
+            except Exception:
+                pass
+
+    return results
