@@ -61,7 +61,7 @@ def _chunked(iterable, size):
         yield iterable[i : i + size]
 
 
-def download_data_bulk(symbols, force=False, period="1y", cache_days=CACHE_DAYS, chunk_size=100, pause_between_chunks=1.0):
+def download_data_bulk(symbols, force=False, period="1y", cache_days=CACHE_DAYS, chunk_size=100, pause_between_chunks=1.0, progress=False):
     """Download historical data for a list of `symbols` in chunks and cache each symbol to disk.
 
     - `symbols`: iterable of symbol strings
@@ -88,6 +88,11 @@ def download_data_bulk(symbols, force=False, period="1y", cache_days=CACHE_DAYS,
                     df = pd.read_csv(path, index_col=0, parse_dates=True)
                     if not df.empty:
                         results[s] = df
++                        if progress:
++                            try:
++                                print(f"Skipping cached: {s}")
++                            except Exception:
++                                pass
                         continue
             except Exception:
                 pass
@@ -96,12 +101,29 @@ def download_data_bulk(symbols, force=False, period="1y", cache_days=CACHE_DAYS,
     import yfinance as yf
     import time as _time
 
+    total = len(to_download)
+    if progress:
+        try:
+            print(f"Starting bulk download: {total} symbols, chunk_size={chunk_size}")
+        except Exception:
+            pass
+
+    num_chunks = (total + chunk_size - 1) // chunk_size if total else 0
+    chunk_idx = 0
+
     for chunk in _chunked(to_download, chunk_size):
+        chunk_idx += 1
+        if progress:
+            try:
+                print(f"Chunk {chunk_idx}/{num_chunks}: downloading {len(chunk)} symbols...")
+            except Exception:
+                pass
         try:
             df_all = yf.download(tickers=chunk, period=period, group_by="ticker", threads=True, progress=False)
         except Exception:
             df_all = None
 
+        before_count = len(results)
         if df_all is None or df_all.empty:
             # try per-symbol fallback
             for s in chunk:
@@ -116,6 +138,11 @@ def download_data_bulk(symbols, force=False, period="1y", cache_days=CACHE_DAYS,
                         except Exception:
                             pass
                         results[s] = df
++                        if progress:
++                            try:
++                                print(f"Downloaded {s} (fallback)")
++                            except Exception:
++                                pass
                 except Exception:
                     continue
         else:
@@ -142,6 +169,11 @@ def download_data_bulk(symbols, force=False, period="1y", cache_days=CACHE_DAYS,
                             except Exception:
                                 pass
                             results[s] = df
++                            if progress:
++                                try:
++                                    print(f"Downloaded {s}")
++                                except Exception:
++                                    pass
                     except Exception:
                         continue
             else:
@@ -159,8 +191,21 @@ def download_data_bulk(symbols, force=False, period="1y", cache_days=CACHE_DAYS,
                             except Exception:
                                 pass
                             results[s] = df
++                            if progress:
++                                try:
++                                    print(f"Downloaded {s}")
++                                except Exception:
++                                    pass
                     except Exception:
                         continue
+
+        after_count = len(results)
+        chunk_downloaded = after_count - before_count
+        if progress:
+            try:
+                print(f"Chunk {chunk_idx} complete: downloaded {chunk_downloaded}/{len(chunk)} this chunk (total cached so far: {after_count})")
+            except Exception:
+                pass
 
         if pause_between_chunks and len(to_download) > chunk_size:
             try:
