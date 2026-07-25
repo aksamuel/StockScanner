@@ -23,8 +23,13 @@ def _parse_date(value):
     text = str(value).strip()
     if not text:
         return None
+    # Normalize month abbreviation to title-case for strptime compatibility
+    parts = text.split("/")
+    if len(parts) == 3:
+        parts[1] = parts[1].capitalize()
+        text = "/".join(parts)
     try:
-        return datetime.date.fromisoformat(text)
+        return datetime.datetime.strptime(text, "%d/%b/%Y").date()
     except (ValueError, TypeError):
         return None
 
