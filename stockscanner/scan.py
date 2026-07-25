@@ -360,7 +360,7 @@ def scan_universe_parallel(stock_df, export_to_excel=True, max_workers=10, batch
     return results
 
 
-def scan_watchlist(export_to_excel=True, parallel=False, max_workers=10, quiet=False, progress=False):
+def scan_watchlist(export_to_excel=True, parallel=False, max_workers=10, batch_reports=False, quiet=False, progress=False):
     try:
         watchlist = load_watchlist()
     except Exception as error:
@@ -372,6 +372,7 @@ def scan_watchlist(export_to_excel=True, parallel=False, max_workers=10, quiet=F
         export_to_excel=export_to_excel,
         parallel=parallel,
         max_workers=max_workers,
+        batch_reports=batch_reports,
         quiet=quiet,
         progress=progress,
     )
