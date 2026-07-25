@@ -67,7 +67,7 @@ jobs:
         run: python -m stockscanner.cli
 
       - name: Upload reports
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: scan-reports-${{ github.run_id }}
@@ -76,6 +76,7 @@ jobs:
 
       - name: Email report
         if: success()
+        continue-on-error: true
         env:
           GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
