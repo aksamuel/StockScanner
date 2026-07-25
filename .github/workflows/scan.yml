@@ -85,6 +85,6 @@ jobs:
           password: ${{ secrets.EMAIL_PASSWORD }}
           subject: "StockScanner Report - ${{ github.run_id }}"
           to: aaksamuel@zohomail.com
-          from: aaksamuel@zohomail.com
+          "from": "aaksamuel@zohomail.com"
           body: "StockScanner report from ${{ github.event_name }} run on ${{ github.run_id }}. See attached Excel file."
           attachments: reports/**/*.xlsx
