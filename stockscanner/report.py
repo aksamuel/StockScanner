@@ -246,46 +246,19 @@ def create_dashboard_sheet(workbook, dataframe):
     worksheet.column_dimensions["E"].width = 12
 
 
-def export_report(results):
-    dataframe = prepare_results_dataframe(results)
+def export_excel_workbook(filename, dataframe):
     if dataframe.empty:
-        print("No data available for Excel export.")
+        print(f"No data available for Excel export: {filename}")
         return None
-    scan_date = datetime.now().strftime("%Y-%m-%d")
-    date_folder = os.path.join(REPORT_FOLDER, scan_date)
-    os.makedirs(date_folder, exist_ok=True)
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    filename = os.path.join(date_folder, f"StockScanner_V4_3_{timestamp}.xlsx")
-    top_columns = [
-        column
-        for column in [
-            "Rank",
-            "Symbol",
-            "Market",
-            "Sector",
-            "Priority",
-            "Score",
-            "Signal",
-            "Recommendation",
-            "Trend",
-            "Current Price",
-            "Entry",
-            "Stop Loss",
-            "Target 1",
-            "Target 2",
-            "Risk/Reward",
-            "Relative Strength",
-            "Suggested Shares",
-            "Investment",
-        ]
-        if column in dataframe.columns
-    ]
-    top_opportunities = dataframe.head(TOP_RESULTS)[top_columns]
+
     with pd.ExcelWriter(filename, engine="openpyxl") as writer:
+        top_opportunities = dataframe.head(TOP_RESULTS)
         top_opportunities.to_excel(writer, sheet_name="Top Opportunities", index=False)
         dataframe.to_excel(writer, sheet_name="Complete Scan", index=False)
+
     workbook = load_workbook(filename)
     create_dashboard_sheet(workbook, dataframe)
+
     for sheet_name in ["Top Opportunities", "Complete Scan"]:
         worksheet = workbook[sheet_name]
         worksheet.sheet_view.showGridLines = False
@@ -297,10 +270,67 @@ def export_report(results):
         apply_recommendation_colors(worksheet)
         apply_score_colors(worksheet)
         auto_fit_columns(worksheet)
+
     workbook.save(filename)
+    return filename
+
+
+def export_report(results):
+    dataframe = prepare_results_dataframe(results)
+    if dataframe.empty:
+        print("No data available for Excel export.")
+        return None
+    scan_date = datetime.now().strftime("%Y-%m-%d")
+    date_folder = os.path.join(REPORT_FOLDER, scan_date)
+    os.makedirs(date_folder, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    filename = os.path.join(date_folder, f"StockScanner_Combined_{timestamp}.xlsx")
+    export_excel_workbook(filename, dataframe)
     print()
     print("=" * 80)
     print("Professional Excel dashboard created successfully")
     print(filename)
     print("=" * 80)
     return filename
+
+
+def export_batch_reports(results, top_count=10, batch_size=50):
+    dataframe = prepare_results_dataframe(results)
+    if dataframe.empty:
+        print("No data available for batch Excel export.")
+        return []
+    scan_date = datetime.now().strftime("%Y-%m-%d")
+    date_folder = os.path.join(REPORT_FOLDER, scan_date)
+    os.makedirs(date_folder, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    exported_files = []
+
+    top_df = dataframe.head(top_count)
+    if not top_df.empty:
+        top_filename = os.path.join(date_folder, f"StockScanner_Top{top_count}_{timestamp}.xlsx")
+        export_excel_workbook(top_filename, top_df)
+        exported_files.append(top_filename)
+
+    remainder = dataframe.iloc[top_count:]
+    for batch_index, start in enumerate(range(0, len(remainder), batch_size), start=1):
+        batch_df = remainder.iloc[start : start + batch_size]
+        if batch_df.empty:
+            continue
+        batch_start = top_count + start + 1
+        batch_end = top_count + start + len(batch_df)
+        batch_filename = os.path.join(date_folder, f"StockScanner_Batch_{batch_start}-{batch_end}_{timestamp}.xlsx")
+        export_excel_workbook(batch_filename, batch_df)
+        exported_files.append(batch_filename)
+
+    combined_filename = os.path.join(date_folder, f"StockScanner_Combined_{timestamp}.xlsx")
+    export_excel_workbook(combined_filename, dataframe)
+    exported_files.append(combined_filename)
+
+    print()
+    print("=" * 80)
+    print("Batch Excel reports created successfully")
+    for filename in exported_files:
+        print(filename)
+    print("=" * 80)
+
+    return exported_files

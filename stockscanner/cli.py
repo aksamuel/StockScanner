@@ -39,6 +39,21 @@ def parse_args():
         default=10,
         help="Number of parallel worker threads to use when --parallel is enabled."
     )
+    parser.add_argument(
+        "--batch-reports",
+        action="store_true",
+        help="Produce top-10 and batch Excel reports (top 10 + batches of 50) and combined report.",
+    )
+    parser.add_argument(
+        "--progress",
+        action="store_true",
+        help="Show progress updates during long scans."
+    )
+    parser.add_argument(
+        "--quiet",
+        action="store_true",
+        help="Suppress per-ticker console output for faster scans.",
+    )
     return parser.parse_args()
 
 
@@ -51,12 +66,18 @@ def main():
             force_download=args.force_download,
             parallel=args.parallel,
             max_workers=args.workers,
+            batch_reports=args.batch_reports,
+            quiet=args.quiet,
+            progress=args.progress,
         )
     else:
         scan_watchlist(
             export_to_excel=not args.no_report,
             parallel=args.parallel,
             max_workers=args.workers,
+            batch_reports=args.batch_reports,
+            quiet=args.quiet,
+            progress=args.progress,
         )
 
 

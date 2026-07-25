@@ -29,7 +29,9 @@ Note: if global python is not available, always use .venv\Scripts\python.exe fro
 
 cd /d C:\StockScanner
 run.bat --universe --limit 10 --no-report
+run.bat --universe --limit 10 --progress --no-report
 
 cd /d C:\StockScanner
 .venv\Scripts\python.exe -m stockscanner --universe --limit 10 --no-report
+.venv\Scripts\python.exe -m stockscanner.cli --universe --limit 10 --progress --no-report
 

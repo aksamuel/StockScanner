@@ -88,11 +88,11 @@ def download_data_bulk(symbols, force=False, period="1y", cache_days=CACHE_DAYS,
                     df = pd.read_csv(path, index_col=0, parse_dates=True)
                     if not df.empty:
                         results[s] = df
-+                        if progress:
-+                            try:
-+                                print(f"Skipping cached: {s}")
-+                            except Exception:
-+                                pass
+                        if progress:
+                            try:
+                                print(f"Skipping cached: {s}")
+                            except Exception:
+                                pass
                         continue
             except Exception:
                 pass
@@ -138,11 +138,11 @@ def download_data_bulk(symbols, force=False, period="1y", cache_days=CACHE_DAYS,
                         except Exception:
                             pass
                         results[s] = df
-+                        if progress:
-+                            try:
-+                                print(f"Downloaded {s} (fallback)")
-+                            except Exception:
-+                                pass
+                        if progress:
+                            try:
+                                print(f"Downloaded {s} (fallback)")
+                            except Exception:
+                                pass
                 except Exception:
                     continue
         else:
@@ -169,11 +169,11 @@ def download_data_bulk(symbols, force=False, period="1y", cache_days=CACHE_DAYS,
                             except Exception:
                                 pass
                             results[s] = df
-+                            if progress:
-+                                try:
-+                                    print(f"Downloaded {s}")
-+                                except Exception:
-+                                    pass
+                            if progress:
+                                try:
+                                    print(f"Downloaded {s}")
+                                except Exception:
+                                    pass
                     except Exception:
                         continue
             else:
@@ -191,11 +191,11 @@ def download_data_bulk(symbols, force=False, period="1y", cache_days=CACHE_DAYS,
                             except Exception:
                                 pass
                             results[s] = df
-+                            if progress:
-+                                try:
-+                                    print(f"Downloaded {s}")
-+                                except Exception:
-+                                    pass
+                            if progress:
+                                try:
+                                    print(f"Downloaded {s}")
+                                except Exception:
+                                    pass
                     except Exception:
                         continue
 

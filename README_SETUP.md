@@ -63,6 +63,13 @@ cd C:\StockScanner
 .venv\Scripts\python.exe -m stockscanner.cli --universe --limit 20 --no-report
 ```
 
+### Show progress during a long scan
+
+```cmd
+cd C:\StockScanner
+.venv\Scripts\python.exe -m stockscanner.cli --universe --limit 20 --progress
+```
+
 ### Force download the latest NYSE ticker universe file
 
 ```cmd
