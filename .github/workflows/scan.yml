@@ -79,8 +79,8 @@ jobs:
         uses: dawidd6/action-send-mail@v5
         with:
           server_address: smtp.gmail.com
-          server_port: 465
-          secure: true
+          server_port: 587
+          secure: false
           username: ${{ secrets.GMAIL_ADDRESS }}
           password: ${{ secrets.GMAIL_APP_PASSWORD }}
           subject: "StockScanner Report - ${{ github.run_id }}"
