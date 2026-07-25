@@ -73,3 +73,18 @@ jobs:
           name: scan-reports-${{ github.run_id }}
           path: reports/
           retention-days: 30
+
+      - name: Email report
+        if: success()
+        uses: dawidd6/action-send-mail@v5
+        with:
+          server_address: smtp.zoho.com
+          server_port: 465
+          secure: true
+          username: ${{ secrets.EMAIL_ADDRESS }}
+          password: ${{ secrets.EMAIL_PASSWORD }}
+          subject: "StockScanner Report - ${{ github.run_id }}"
+          to: aaksamuel@zohomail.com
+          from: ${{ secrets.EMAIL_ADDRESS }}
+          body: "StockScanner report from ${{ github.event_name }} run on ${{ github.run_id }}. See attached Excel file."
+          attachments: reports/**/*.xlsx
