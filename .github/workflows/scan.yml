@@ -87,8 +87,15 @@ jobs:
           from email.mime.base import MIMEBase
           from email import encoders
 
+          gmail_address = os.environ.get('GMAIL_ADDRESS', '').strip()
+          gmail_password = os.environ.get('GMAIL_APP_PASSWORD', '').strip()
+
+          if not gmail_address or not gmail_password:
+              print('Gmail credentials not configured; skipping email report.')
+              raise SystemExit(0)
+
           msg = MIMEMultipart()
-          msg['From'] = os.environ['GMAIL_ADDRESS']
+          msg['From'] = gmail_address
           msg['To'] = 'aaksamuel@gmail.com'
           msg['Subject'] = 'StockScanner Report'
           msg.attach(MIMEText('StockScanner scan completed. See attached Excel report.'))
@@ -103,7 +110,7 @@ jobs:
 
           with smtplib.SMTP('smtp.gmail.com', 587) as server:
               server.starttls()
-              server.login(os.environ['GMAIL_ADDRESS'], os.environ['GMAIL_APP_PASSWORD'])
+              server.login(gmail_address, gmail_password)
               server.send_message(msg)
           print('Email sent successfully')
           "
