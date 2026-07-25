@@ -23,9 +23,9 @@ on:
         type: number
         default: 20
 
-  # Daily at 9:30 PM UTC (~4:30 PM ET, shortly after US market close)
+  # Daily at 1:00 PM UTC (9:00 AM ET, before US market open)
   schedule:
-    - cron: "30 21 * * 1-5"
+    - cron: "0 13 * * 1-5"
 
 jobs:
   scan:
