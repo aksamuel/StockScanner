@@ -8,7 +8,7 @@ CHART_FOLDER = "charts"
 
 MARKET_INDEX = "SPY"
 
-EXCEPTION_LIST = "watchlists/exceptions.xlsx"
+EXCEPTION_LIST = "watchlists/exceptions.csv"
 
 MIN_PRICE = 5.0
 MIN_AVERAGE_DOLLAR_VOLUME = 5_000_000

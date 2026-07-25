@@ -13,17 +13,12 @@ def load_watchlist():
 
 
 def _parse_date(value):
-    """Parse a date value from the Excel file. Returns a date or None."""
+    """Parse a date string in dd/MMM/yyyy format. Returns a date or None."""
     if pd.isna(value):
         return None
-    if isinstance(value, datetime.datetime):
-        return value.date()
-    if isinstance(value, datetime.date):
-        return value
     text = str(value).strip()
     if not text:
         return None
-    # Normalize month abbreviation to title-case for strptime compatibility
     parts = text.split("/")
     if len(parts) == 3:
         parts[1] = parts[1].capitalize()
@@ -46,7 +41,7 @@ def _is_active_exception(date_from, date_to, today):
 
 
 def load_exceptions():
-    """Load excluded ticker symbols from the exceptions Excel file.
+    """Load excluded ticker symbols from the exceptions CSV file.
 
     Returns a set of uppercase ticker symbols to exclude from results.
     Skips rows where Symbol is empty or starts with 'EXAMPLE'.
@@ -57,7 +52,7 @@ def load_exceptions():
         return set()
 
     try:
-        df = pd.read_excel(EXCEPTION_LIST, sheet_name="Exceptions", engine="openpyxl")
+        df = pd.read_csv(EXCEPTION_LIST)
     except Exception:
         return set()
 
