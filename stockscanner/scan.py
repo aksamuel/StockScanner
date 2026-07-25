@@ -4,6 +4,7 @@ from stockscanner.config import (
     MIN_PRICE,
     MIN_AVERAGE_DOLLAR_VOLUME,
     AVERAGE_VOLUME_DAYS,
+    TOP_RESULTS,
 )
 from stockscanner.universe import load_nyse_tickers
 from stockscanner.watchlist import load_watchlist
@@ -93,11 +94,18 @@ def process_stock(row):
         print(f"Trade Plan Error: {error}")
         return None
 
+    market_cap = row.get("Market Cap", 0)
+    try:
+        market_cap = float(market_cap) if market_cap else 0
+    except (ValueError, TypeError):
+        market_cap = 0
+
     result = {
         "Symbol": symbol,
         "Market": market,
         "Sector": sector,
         "Priority": priority,
+        "Market Cap": market_cap,
         "Current Price": round(current_price, 2),
         "Average Volume": round(average_volume, 0),
         "Average Dollar Volume": round(average_dollar_volume, 0),
@@ -179,7 +187,7 @@ def scan_universe(stock_df, export_to_excel=True, parallel=False, max_workers=10
         ]
 
         available_columns = [column for column in display_columns if column in ranked.columns]
-        print(ranked[available_columns].head(10).to_string(index=False))
+        print(ranked[available_columns].head(TOP_RESULTS).to_string(index=False))
 
         print()
         print("=" * 80)
@@ -258,7 +266,7 @@ def scan_universe_parallel(stock_df, export_to_excel=True, max_workers=10):
         ]
 
         available_columns = [column for column in display_columns if column in ranked.columns]
-        print(ranked[available_columns].head(10).to_string(index=False))
+        print(ranked[available_columns].head(TOP_RESULTS).to_string(index=False))
 
         print()
         print("=" * 80)
