@@ -1,11 +1,23 @@
 import pandas as pd
 
+from stockscanner.watchlist import load_exceptions
+
 
 def rank_stocks(results):
     df = pd.DataFrame(results)
 
     if df.empty:
         return df
+
+    # Filter out exception-listed stocks
+    exceptions = load_exceptions()
+    if exceptions and "Symbol" in df.columns:
+        mask = df["Symbol"].str.upper().isin(exceptions)
+        excluded_count = mask.sum()
+        if excluded_count > 0:
+            print(f"Excluded {excluded_count} stock(s) from exception list: "
+                  f"{', '.join(sorted(df.loc[mask, 'Symbol'].tolist()))}")
+            df = df[~mask]
 
     df["Market Cap"] = pd.to_numeric(df.get("Market Cap", 0), errors="coerce").fillna(0)
 
