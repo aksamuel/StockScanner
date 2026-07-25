@@ -73,3 +73,18 @@ jobs:
           name: scan-reports-${{ github.run_id }}
           path: reports/
           retention-days: 30
+
+      - name: Email report
+        if: success()
+        uses: dawidd6/action-send-mail@v5
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          secure: true
+          username: ${{ secrets.GMAIL_ADDRESS }}
+          password: ${{ secrets.GMAIL_APP_PASSWORD }}
+          subject: "StockScanner Report - ${{ github.run_id }}"
+          to: aaksamuel@gmail.com
+          "from": "aaksamuel@gmail.com"
+          body: "StockScanner scan completed. See attached Excel report."
+          attachments: reports/**/*.xlsx
