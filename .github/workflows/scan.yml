@@ -73,37 +73,3 @@ jobs:
           name: scan-reports-${{ github.run_id }}
           path: reports/
           retention-days: 30
-
-      - name: Email report
-        if: success()
-        env:
-          GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
-          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
-        run: |
-          python -c "
-          import smtplib, os, glob
-          from email.mime.multipart import MIMEMultipart
-          from email.mime.text import MIMEText
-          from email.mime.base import MIMEBase
-          from email import encoders
-
-          msg = MIMEMultipart()
-          msg['From'] = os.environ['GMAIL_ADDRESS']
-          msg['To'] = 'aaksamuel@gmail.com'
-          msg['Subject'] = 'StockScanner Report'
-          msg.attach(MIMEText('StockScanner scan completed. See attached Excel report.'))
-
-          for f in glob.glob('reports/**/*.xlsx', recursive=True):
-              with open(f, 'rb') as fp:
-                  part = MIMEBase('application', 'octet-stream')
-                  part.set_payload(fp.read())
-                  encoders.encode_base64(part)
-                  part.add_header('Content-Disposition', f'attachment; filename={os.path.basename(f)}')
-                  msg.attach(part)
-
-          with smtplib.SMTP('smtp.gmail.com', 587) as server:
-              server.starttls()
-              server.login(os.environ['GMAIL_ADDRESS'], os.environ['GMAIL_APP_PASSWORD'])
-              server.send_message(msg)
-          print('Email sent successfully')
-          "
