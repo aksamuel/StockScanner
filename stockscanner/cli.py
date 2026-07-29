@@ -54,6 +54,11 @@ def parse_args():
         action="store_true",
         help="Suppress per-ticker console output for faster scans.",
     )
+    parser.add_argument(
+        "--html",
+        action="store_true",
+        help="Generate an interactive HTML dashboard alongside the Excel report.",
+    )
     return parser.parse_args()
 
 
@@ -69,6 +74,7 @@ def main():
             batch_reports=args.batch_reports,
             quiet=args.quiet,
             progress=args.progress,
+            html_report=args.html,
         )
     else:
         scan_watchlist(
@@ -78,6 +84,7 @@ def main():
             batch_reports=args.batch_reports,
             quiet=args.quiet,
             progress=args.progress,
+            html_report=args.html,
         )
 
 
