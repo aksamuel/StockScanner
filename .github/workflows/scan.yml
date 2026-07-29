@@ -1,10 +1,11 @@
 # Stock Scanner CI Workflow
 # Runs the stock scanner on a schedule (daily at market close) or on-demand.
+# Generates an HTML dashboard and deploys it to GitHub Pages.
 
 name: Stock Scanner
 
 on:
-  # Manual trigger with configurable inputs
+  # Manual trigger with configurable inputs (button in GitHub mobile app)
   workflow_dispatch:
     inputs:
       mode:
@@ -13,11 +14,11 @@ on:
         options:
           - watchlist
           - universe
-        default: watchlist
+        default: universe
       limit:
-        description: "Max number of tickers to scan (universe mode)"
+        description: "Max number of tickers to scan (universe mode, 0 = all)"
         type: number
-        default: 1000
+        default: 0
       workers:
         description: "Number of parallel workers"
         type: number
@@ -26,6 +27,17 @@ on:
   # Daily at 1:00 PM UTC (9:00 AM ET, before US market open)
   schedule:
     - cron: "0 13 * * 1-5"
+
+# Allow deployment to GitHub Pages
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Only allow one deployment at a time
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
 
 jobs:
   scan:
@@ -54,22 +66,63 @@ jobs:
           pip install -e .
 
       - name: Run scanner (universe mode)
-        if: inputs.mode == 'universe'
+        if: inputs.mode == 'universe' || github.event_name == 'schedule'
         run: |
+          LIMIT_FLAG=""
+          if [ "${{ inputs.limit }}" != "0" ] && [ -n "${{ inputs.limit }}" ]; then
+            LIMIT_FLAG="--limit ${{ inputs.limit }}"
+          fi
           python -m stockscanner.cli \
             --universe \
-            --limit ${{ inputs.limit }} \
+            --force-download \
             --parallel \
-            --workers ${{ inputs.workers }}
+            --workers ${{ inputs.workers || 20 }} \
+            --html \
+            --quiet \
+            $LIMIT_FLAG
 
       - name: Run scanner (watchlist mode)
-        if: inputs.mode != 'universe'
-        run: python -m stockscanner.cli
+        if: inputs.mode == 'watchlist' && github.event_name != 'schedule'
+        run: |
+          python -m stockscanner.cli \
+            --parallel \
+            --workers ${{ inputs.workers || 20 }} \
+            --html \
+            --quiet
 
-      - name: Upload reports
+      - name: Prepare Pages deployment
+        run: |
+          mkdir -p _site
+          # Find the latest HTML dashboard and copy it as index.html
+          LATEST_HTML=$(find reports/ -name "*.html" -type f | sort -r | head -1)
+          if [ -n "$LATEST_HTML" ]; then
+            cp "$LATEST_HTML" _site/index.html
+            echo "Deployed: $LATEST_HTML"
+          else
+            echo "<h1>No scan results available</h1>" > _site/index.html
+          fi
+
+      - name: Upload reports artifact
         uses: actions/upload-artifact@v5
         if: always()
         with:
           name: scan-reports-${{ github.run_id }}
           path: reports/
           retention-days: 30
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site/
+
+  deploy:
+    needs: scan
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
