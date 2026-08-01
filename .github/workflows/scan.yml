@@ -16,11 +16,11 @@ on:
         default: watchlist
       limit:
         description: "Max number of tickers to scan (universe mode)"
-        type: number
+        type: integer
         default: 1000
       workers:
         description: "Number of parallel workers"
-        type: number
+        type: integer
         default: 20
 
   # Daily at 1:00 PM UTC (9:00 AM ET, before US market open)
