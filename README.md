@@ -74,8 +74,13 @@ cd /d C:\StockScanner
 - `--parallel` / `--workers N` : enable parallel scanning with N worker threads (default 10)
 - `--progress` : show progress updates during long scans
 - `--limit N` : scan only the first N tickers (handy for testing)
-- `--no-report` : skip Excel export
+- `--no-report` : skip Excel and HTML report export
 - `--force-download` : refresh ticker list / market data downloads
+
+The scanner now also generates HTML report pages alongside the Excel workbooks. Each run creates:
+- `reports/YYYY-MM-DD/index.html` for the date folder
+- `reports/index.html` for the root report index
+- HTML versions of combined, top, and batch reports matching the Excel output
 
 ### NYSE universe scan
 

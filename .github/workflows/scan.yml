@@ -34,6 +34,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       - name: Set up Python 3.11
         uses: actions/setup-python@v6
@@ -73,3 +75,13 @@ jobs:
           name: scan-reports-${{ github.run_id }}
           path: reports/
           retention-days: 30
+
+      - name: Deploy reports to GitHub Pages
+        if: ${{ always() }}
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./reports
+          publish_branch: gh-pages
+          publish_commit_message: "Deploy StockScanner reports to GitHub Pages"
+          allow_empty_commit: true
