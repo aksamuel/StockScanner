@@ -472,17 +472,25 @@ def _write_date_index(date_folder, report_entries):
 def _write_root_index():
     if not os.path.isdir(REPORT_FOLDER):
         return None
-    entries = []
-    for child in sorted(os.listdir(REPORT_FOLDER), reverse=True):
-        path = os.path.join(REPORT_FOLDER, child)
-        if os.path.isdir(path):
-            index_path = os.path.join(path, "index.html")
-            if os.path.exists(index_path):
-                entries.append((child, f"{child}/index.html"))
-    rows = ["<tr><th>Scan Date</th><th>Report Index</th></tr>"]
-    for date, href in entries:
-        rows.append(f"<tr><td>{date}</td><td><a href='{href}'>Open</a></td></tr>")
-    report_links_html = "<div class='report-links'><h2>Report Dates</h2><table>" + "".join(rows) + "</table></div>"
+    report_files = []
+    for root, _, files in os.walk(REPORT_FOLDER):
+        for filename in sorted(files):
+            if not filename.lower().endswith(".html"):
+                continue
+            filepath = os.path.join(root, filename)
+            if os.path.normpath(filepath) == os.path.normpath(os.path.join(REPORT_FOLDER, "index.html")):
+                continue
+            rel_path = os.path.relpath(filepath, REPORT_FOLDER).replace(os.path.sep, "/")
+            report_date = os.path.basename(os.path.dirname(filepath))
+            report_files.append((report_date, filename, rel_path))
+
+    report_files.sort(key=lambda item: (item[0], item[1]), reverse=True)
+    rows = ["<tr><th>Date</th><th>Report</th><th>Link</th></tr>"]
+    for report_date, filename, rel_path in report_files:
+        rows.append(
+            f"<tr><td>{report_date}</td><td>{filename}</td><td><a href='{rel_path}'>Open</a></td></tr>"
+        )
+    report_links_html = "<div class='report-links'><h2>All Available Reports</h2><table>" + "".join(rows) + "</table></div>"
     generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     title = "StockScanner Reports Index"
     html_content = _create_html_document(title, generated_at, "", "", nav_html=None, report_links_html=report_links_html)
