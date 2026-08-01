@@ -78,10 +78,14 @@ jobs:
 
       - name: Deploy reports to GitHub Pages
         if: ${{ always() }}
-        uses: peaceiris/actions-gh-pages@v4
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./reports
-          publish_branch: gh-pages
-          publish_commit_message: "Deploy StockScanner reports to GitHub Pages"
-          allow_empty_commit: true
+        # Use GitHub's official, verified Pages actions to avoid blocked third-party actions
+        - name: Configure Pages
+          uses: actions/configure-pages@v3
+
+        - name: Upload reports artifact for Pages
+          uses: actions/upload-pages-artifact@v1
+          with:
+            path: ./reports
+
+        - name: Deploy to GitHub Pages
+          uses: actions/deploy-pages@v1
