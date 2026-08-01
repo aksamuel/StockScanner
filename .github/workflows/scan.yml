@@ -56,16 +56,16 @@ jobs:
           pip install -e .
 
       - name: Run scanner (universe mode)
-        if: inputs.mode == 'universe'
+        if: github.event.inputs.mode == 'universe'
         run: |
           python -m stockscanner.cli \
             --universe \
-            --limit ${{ inputs.limit }} \
+            --limit ${{ github.event.inputs.limit }} \
             --parallel \
-            --workers ${{ inputs.workers }}
+            --workers ${{ github.event.inputs.workers }}
 
       - name: Run scanner (watchlist mode)
-        if: inputs.mode != 'universe'
+        if: github.event.inputs.mode != 'universe'
         run: python -m stockscanner.cli
 
       - name: Upload reports
