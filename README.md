@@ -82,6 +82,29 @@ The scanner now also generates HTML report pages alongside the Excel workbooks. 
 - `reports/index.html` for the root report index
 - HTML versions of combined, top, and batch reports matching the Excel output
 
+## GitHub Pages reports
+
+Published reports are served from the repository root on GitHub Pages:
+
+- Site root: `https://aksamuel.github.io/StockScanner/`
+- Reports index: `https://aksamuel.github.io/StockScanner/reports/index.html`
+- Dated report index: `https://aksamuel.github.io/StockScanner/reports/YYYY-MM-DD/index.html`
+
+The repository root `index.html` redirects to `reports/index.html` so the site never lands on a dead-end 404. The Pages deployment workflow publishes the repository root and commits generated `reports/**` artifacts back to the published branch.
+
+### Local preview
+
+From the repository root:
+
+```bash
+python -m http.server 8000
+```
+
+Then open:
+
+- `http://localhost:8000/`
+- `http://localhost:8000/reports/index.html`
+
 ### NYSE universe scan
 
 ```cmd
