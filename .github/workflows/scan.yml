@@ -33,7 +33,7 @@ permissions:
   id-token: write
 
 jobs:
-  scan:
+  build:
     runs-on: ubuntu-latest
 
     steps:
@@ -91,6 +91,14 @@ jobs:
         with:
           path: ./reports
 
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+
+    steps:
       - name: Deploy to GitHub Pages
-        if: ${{ always() }}
-        uses: actions/deploy-pages@v1
+        id: deploy
+        uses: actions/deploy-pages@v4
