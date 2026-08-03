@@ -27,6 +27,11 @@ on:
   schedule:
     - cron: "0 13 * * 1-5"
 
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
 jobs:
   scan:
     runs-on: ubuntu-latest
