@@ -110,12 +110,17 @@ jobs:
             --html \
             --quiet
 
-      - name: Ensure Pages landing files exist
+      - name: Deploy Dashboard as landing page
         if: ${{ always() }}
         run: |
           touch .nojekyll
           touch reports/.nojekyll
-          if [ ! -f index.html ]; then
+          # Use the latest Dashboard HTML as the site's index page
+          LATEST_DASHBOARD=$(find reports/ -name "StockScanner_Dashboard_*.html" -type f | sort -r | head -1)
+          if [ -n "$LATEST_DASHBOARD" ]; then
+            cp "$LATEST_DASHBOARD" index.html
+            echo "Deployed dashboard: $LATEST_DASHBOARD -> index.html"
+          else
             cat <<'EOF' > index.html
           <!DOCTYPE html>
           <html lang="en">
