@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>StockScanner Dashboard - 04 August 2026, 06:15 PM</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #0f1923;
+    color: #e0e0e0;
+    line-height: 1.6;
+}
+.container { max-width: 1400px; margin: 0 auto; padding: 20px; }
+header {
+    background: linear-gradient(135deg, #1a2a3a 0%, #0f1923 100%);
+    border-bottom: 2px solid #1f4e78;
+    padding: 24px 0;
+    margin-bottom: 24px;
+}
+header h1 { color: #4fc3f7; font-size: 1.8rem; text-align: center; }
+header .subtitle { color: #90a4ae; text-align: center; margin-top: 4px; font-size: 0.9rem; }
+.cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 16px;
+    margin-bottom: 32px;
+}
+.card {
+    background: #1a2a3a;
+    border: 1px solid #263d50;
+    border-radius: 8px;
+    padding: 16px;
+    text-align: center;
+}
+.card .value { font-size: 1.8rem; font-weight: 700; color: #4fc3f7; }
+.card .label { font-size: 0.8rem; color: #90a4ae; margin-top: 4px; text-transform: uppercase; }
+.section { margin-bottom: 32px; }
+.section h2 {
+    color: #4fc3f7;
+    font-size: 1.2rem;
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #263d50;
+}
+.chart-container {
+    background: #1a2a3a;
+    border: 1px solid #263d50;
+    border-radius: 8px;
+    padding: 20px;
+    max-width: 600px;
+    margin: 0 auto 32px;
+}
+.table-wrapper {
+    overflow-x: auto;
+    border-radius: 8px;
+    border: 1px solid #263d50;
+}
+table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+}
+th {
+    background: #1f4e78;
+    color: #fff;
+    padding: 10px 12px;
+    text-align: left;
+    white-space: nowrap;
+    cursor: pointer;
+    user-select: none;
+    position: sticky;
+    top: 0;
+}
+th:hover { background: #2a6090; }
+th::after { content: ' ⇅'; opacity: 0.4; font-size: 0.7rem; }
+td {
+    padding: 8px 12px;
+    border-bottom: 1px solid #1a2a3a;
+    white-space: nowrap;
+}
+tr:nth-child(even) { background: #162330; }
+tr:hover { background: #1e3348; }
+.rec-strong-buy { background: #1b5e20 !important; color: #c8e6c9; font-weight: 600; }
+.rec-buy { background: #2e7d32 !important; color: #c8e6c9; }
+.rec-hold { background: #f9a825 !important; color: #1a1a1a; }
+.rec-watch { background: #e65100 !important; color: #fff3e0; }
+.rec-avoid { background: #b71c1c !important; color: #ffcdd2; }
+.score-excellent { background: #1b5e20 !important; color: #c8e6c9; font-weight: 700; }
+.score-good { background: #2e7d32 !important; color: #c8e6c9; }
+.score-fair { background: #f9a825 !important; color: #1a1a1a; }
+.score-poor { background: #b71c1c !important; color: #ffcdd2; }
+.tabs {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 16px;
+}
+.tab {
+    padding: 8px 20px;
+    background: #1a2a3a;
+    border: 1px solid #263d50;
+    border-bottom: none;
+    border-radius: 6px 6px 0 0;
+    cursor: pointer;
+    color: #90a4ae;
+    font-size: 0.85rem;
+}
+.tab.active { background: #1f4e78; color: #fff; }
+.tab-content { display: none; }
+.tab-content.active { display: block; }
+.filter-bar {
+    margin-bottom: 12px;
+    display: flex;
+    gap: 12px;
+    align-items: center;
+}
+.filter-bar input {
+    background: #1a2a3a;
+    border: 1px solid #263d50;
+    border-radius: 4px;
+    padding: 6px 12px;
+    color: #e0e0e0;
+    font-size: 0.85rem;
+    width: 250px;
+}
+.filter-bar input::placeholder { color: #607d8b; }
+footer {
+    text-align: center;
+    color: #607d8b;
+    font-size: 0.75rem;
+    margin-top: 40px;
+    padding: 16px;
+    border-top: 1px solid #263d50;
+}
+</style>
+</head>
+<body>
+<header>
+    <div class="container">
+        <h1>AI Stock Scanner Dashboard</h1>
+        <div class="subtitle">Scan completed: 04 August 2026, 06:15 PM</div>
+    </div>
+</header>
+
+<div class="container">
+    <div class="cards">
+        <div class="card"><div class="value">5</div><div class="label">Stocks Scanned</div></div>
+        <div class="card"><div class="value" style="color:#4caf50">2</div><div class="label">Strong Buy</div></div>
+        <div class="card"><div class="value" style="color:#66bb6a">1</div><div class="label">Buy</div></div>
+        <div class="card"><div class="value" style="color:#fdd835">1</div><div class="label">Accumulate</div></div>
+        <div class="card"><div class="value" style="color:#ffa726">1</div><div class="label">Watch</div></div>
+        <div class="card"><div class="value" style="color:#ef5350">0</div><div class="label">Avoid</div></div>
+        <div class="card"><div class="value">78.0</div><div class="label">Avg Score</div></div>
+        <div class="card"><div class="value">90</div><div class="label">Best Score</div></div>
+    </div>
+
+    <div class="section">
+        <h2>Recommendation Breakdown</h2>
+        <div class="chart-container">
+            <canvas id="recChart" height="200"></canvas>
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>Scan Results</h2>
+        <div class="tabs">
+            <div class="tab active" onclick="switchTab('top', this)">Top 20</div>
+            <div class="tab" onclick="switchTab('all', this)">All Results (5)</div>
+        </div>
+
+        <div class="filter-bar">
+            <input type="text" id="filterInput" placeholder="Filter by symbol or sector..." onkeyup="filterTable()">
+        </div>
+
+        <div id="tab-top" class="tab-content active">
+            <div class="table-wrapper">
+                <table id="topTable">
+                    <thead><tr><th>Rank</th><th>Symbol</th><th>Market</th><th>Sector</th><th>Priority</th><th>Market Cap</th><th>Current Price</th><th>Average Volume</th><th>Average Dollar Volume</th><th>Liquidity Status</th><th>20 MA</th><th>50 MA</th><th>200 MA</th><th>RSI</th><th>MACD</th><th>Relative Strength</th><th>Score</th><th>Recommendation</th><th>Signal</th><th>Trend</th><th>Entry</th><th>Stop Loss</th><th>Target 1</th><th>Target 2</th><th>Target 3</th><th>Risk/Reward</th><th>Suggested Shares</th><th>Investment</th></tr></thead>
+                    <tbody><tr><td class="">1</td><td class="">BRK-B</td><td class="">NYQ</td><td class="">Berkshire Hathaway Inc.</td><td class="">Normal</td><td class="">1113372229632.0</td><td class="">$516.20</td><td class="">3,991,350</td><td class="">2,060,343,010</td><td class="">PASS</td><td class="">$498.48</td><td class="">$492.75</td><td class="">$490.58</td><td class="">69.34</td><td class="">5.56</td><td class="">-10.68</td><td class="score-excellent">90</td><td class="rec-strong-buy">🟢 STRONG BUY</td><td class="">🟢 Strong Uptrend</td><td class="">Strong Uptrend</td><td class="">$498.48</td><td class="">$492.75</td><td class="">$528.39</td><td class="">$548.33</td><td class="">$573.25</td><td class="">8.69</td><td class="">1</td><td class="">$498.48</td></tr><tr><td class="">2</td><td class="">BRK-A</td><td class="">NYQ</td><td class="">Berkshire Hathaway Inc.</td><td class="">Normal</td><td class="">1112774279168.0</td><td class="">$773,886.88</td><td class="">156</td><td class="">120,416,798</td><td class="">PASS</td><td class="">$747,670.59</td><td class="">$738,785.92</td><td class="">$735,907.78</td><td class="">69.94</td><td class="">8,255.12</td><td class="">-11.03</td><td class="score-excellent">90</td><td class="rec-strong-buy">🟢 STRONG BUY</td><td class="">🟢 Strong Uptrend</td><td class="">Strong Uptrend</td><td class="">$747,670.59</td><td class="">$738,785.92</td><td class="">$792,530.83</td><td class="">$822,437.65</td><td class="">$859,821.18</td><td class="">8.42</td><td class="">0</td><td class="">$0.00</td></tr><tr><td class="">3</td><td class="">JPM</td><td class="">NYQ</td><td class="">JPMorgan Chase &amp; Co.</td><td class="">Normal</td><td class="">956181118976.0</td><td class="">$359.77</td><td class="">9,123,643</td><td class="">3,282,412,888</td><td class="">PASS</td><td class="">$345.99</td><td class="">$329.04</td><td class="">$309.86</td><td class="">66.27</td><td class="">7.22</td><td class="">1.35</td><td class="score-good">83</td><td class="rec-buy">🟢 BUY</td><td class="">⚪ Neutral</td><td class="">Strong Uptrend</td><td class="">$345.99</td><td class="">$329.04</td><td class="">$366.75</td><td class="">$380.59</td><td class="">$397.89</td><td class="">2.04</td><td class="">0</td><td class="">$0.00</td></tr><tr><td class="">4</td><td class="">TSM</td><td class="">NYQ</td><td class="">Taiwan Semiconductor Manufacturing Company Limited</td><td class="">Normal</td><td class="">2173547446272.0</td><td class="">$419.08</td><td class="">14,793,824</td><td class="">6,199,795,773</td><td class="">PASS</td><td class="">$412.18</td><td class="">$425.40</td><td class="">$357.14</td><td class="">51.73</td><td class="">-6.69</td><td class="">16.18</td><td class="score-good">72</td><td class="rec-hold">🟡 ACCUMULATE</td><td class="">🟢 Pullback to 50 MA</td><td class="">Breakout</td><td class="">$452.17</td><td class="">$412.18</td><td class="">$479.30</td><td class="">$497.38</td><td class="">$519.99</td><td class="">1.13</td><td class="">0</td><td class="">$0.00</td></tr><tr><td class="">5</td><td class="">LLY</td><td class="">NYQ</td><td class="">Eli Lilly and Company</td><td class="">Normal</td><td class="">996984684544.0</td><td class="">$1,118.02</td><td class="">2,338,351</td><td class="">2,614,322,839</td><td class="">PASS</td><td class="">$1,174.97</td><td class="">$1,150.90</td><td class="">$1,025.75</td><td class="">40.60</td><td class="">-0.86</td><td class="">-11.81</td><td class="score-fair">55</td><td class="rec-watch">🟠 WATCH</td><td class="">⚪ Neutral</td><td class="">Breakout</td><td class="">$1,254.31</td><td class="">$1,174.97</td><td class="">$1,329.57</td><td class="">$1,379.74</td><td class="">$1,442.46</td><td class="">1.58</td><td class="">0</td><td class="">$0.00</td></tr></tbody>
+                </table>
+            </div>
+        </div>
+        <div id="tab-all" class="tab-content">
+            <div class="table-wrapper">
+                <table id="allTable">
+                    <thead><tr><th>Rank</th><th>Symbol</th><th>Market</th><th>Sector</th><th>Priority</th><th>Market Cap</th><th>Current Price</th><th>Average Volume</th><th>Average Dollar Volume</th><th>Liquidity Status</th><th>20 MA</th><th>50 MA</th><th>200 MA</th><th>RSI</th><th>MACD</th><th>Relative Strength</th><th>Score</th><th>Recommendation</th><th>Signal</th><th>Trend</th><th>Entry</th><th>Stop Loss</th><th>Target 1</th><th>Target 2</th><th>Target 3</th><th>Risk/Reward</th><th>Suggested Shares</th><th>Investment</th></tr></thead>
+                    <tbody><tr><td class="">1</td><td class="">BRK-B</td><td class="">NYQ</td><td class="">Berkshire Hathaway Inc.</td><td class="">Normal</td><td class="">1113372229632.0</td><td class="">$516.20</td><td class="">3,991,350</td><td class="">2,060,343,010</td><td class="">PASS</td><td class="">$498.48</td><td class="">$492.75</td><td class="">$490.58</td><td class="">69.34</td><td class="">5.56</td><td class="">-10.68</td><td class="score-excellent">90</td><td class="rec-strong-buy">🟢 STRONG BUY</td><td class="">🟢 Strong Uptrend</td><td class="">Strong Uptrend</td><td class="">$498.48</td><td class="">$492.75</td><td class="">$528.39</td><td class="">$548.33</td><td class="">$573.25</td><td class="">8.69</td><td class="">1</td><td class="">$498.48</td></tr><tr><td class="">2</td><td class="">BRK-A</td><td class="">NYQ</td><td class="">Berkshire Hathaway Inc.</td><td class="">Normal</td><td class="">1112774279168.0</td><td class="">$773,886.88</td><td class="">156</td><td class="">120,416,798</td><td class="">PASS</td><td class="">$747,670.59</td><td class="">$738,785.92</td><td class="">$735,907.78</td><td class="">69.94</td><td class="">8,255.12</td><td class="">-11.03</td><td class="score-excellent">90</td><td class="rec-strong-buy">🟢 STRONG BUY</td><td class="">🟢 Strong Uptrend</td><td class="">Strong Uptrend</td><td class="">$747,670.59</td><td class="">$738,785.92</td><td class="">$792,530.83</td><td class="">$822,437.65</td><td class="">$859,821.18</td><td class="">8.42</td><td class="">0</td><td class="">$0.00</td></tr><tr><td class="">3</td><td class="">JPM</td><td class="">NYQ</td><td class="">JPMorgan Chase &amp; Co.</td><td class="">Normal</td><td class="">956181118976.0</td><td class="">$359.77</td><td class="">9,123,643</td><td class="">3,282,412,888</td><td class="">PASS</td><td class="">$345.99</td><td class="">$329.04</td><td class="">$309.86</td><td class="">66.27</td><td class="">7.22</td><td class="">1.35</td><td class="score-good">83</td><td class="rec-buy">🟢 BUY</td><td class="">⚪ Neutral</td><td class="">Strong Uptrend</td><td class="">$345.99</td><td class="">$329.04</td><td class="">$366.75</td><td class="">$380.59</td><td class="">$397.89</td><td class="">2.04</td><td class="">0</td><td class="">$0.00</td></tr><tr><td class="">4</td><td class="">TSM</td><td class="">NYQ</td><td class="">Taiwan Semiconductor Manufacturing Company Limited</td><td class="">Normal</td><td class="">2173547446272.0</td><td class="">$419.08</td><td class="">14,793,824</td><td class="">6,199,795,773</td><td class="">PASS</td><td class="">$412.18</td><td class="">$425.40</td><td class="">$357.14</td><td class="">51.73</td><td class="">-6.69</td><td class="">16.18</td><td class="score-good">72</td><td class="rec-hold">🟡 ACCUMULATE</td><td class="">🟢 Pullback to 50 MA</td><td class="">Breakout</td><td class="">$452.17</td><td class="">$412.18</td><td class="">$479.30</td><td class="">$497.38</td><td class="">$519.99</td><td class="">1.13</td><td class="">0</td><td class="">$0.00</td></tr><tr><td class="">5</td><td class="">LLY</td><td class="">NYQ</td><td class="">Eli Lilly and Company</td><td class="">Normal</td><td class="">996984684544.0</td><td class="">$1,118.02</td><td class="">2,338,351</td><td class="">2,614,322,839</td><td class="">PASS</td><td class="">$1,174.97</td><td class="">$1,150.90</td><td class="">$1,025.75</td><td class="">40.60</td><td class="">-0.86</td><td class="">-11.81</td><td class="score-fair">55</td><td class="rec-watch">🟠 WATCH</td><td class="">⚪ Neutral</td><td class="">Breakout</td><td class="">$1,254.31</td><td class="">$1,174.97</td><td class="">$1,329.57</td><td class="">$1,379.74</td><td class="">$1,442.46</td><td class="">1.58</td><td class="">0</td><td class="">$0.00</td></tr></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<footer>
+    Generated by StockScanner &mdash; 04 August 2026, 06:15 PM
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<script>
+// Chart
+document.addEventListener('DOMContentLoaded', function() {
+    const ctx = document.getElementById('recChart');
+    if (ctx && typeof Chart !== 'undefined') {
+        new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: ['Strong Buy', 'Buy', 'Accumulate', 'Hold', 'Watch', 'Avoid'],
+                datasets: [{
+                    label: 'Stocks',
+                    data: [2, 1, 1, 0, 1, 0],
+                    backgroundColor: ['#1b5e20','#4caf50','#fdd835','#ff9800','#e65100','#b71c1c'],
+                    borderWidth: 0,
+                    borderRadius: 4,
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: { legend: { display: false } },
+                scales: {
+                    y: { beginAtZero: true, ticks: { color: '#90a4ae' }, grid: { color: '#263d50' } },
+                    x: { ticks: { color: '#90a4ae' }, grid: { display: false } }
+                }
+            }
+        });
+    }
+});
+
+// Tabs
+function switchTab(name, clickedTab) {
+    document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+    document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
+    document.getElementById('tab-' + name).classList.add('active');
+    clickedTab.classList.add('active');
+}
+
+// Filter
+function filterTable() {
+    const filter = document.getElementById('filterInput').value.toUpperCase();
+    const activeTab = document.querySelector('.tab-content.active');
+    const rows = activeTab.querySelectorAll('tbody tr');
+    rows.forEach(row => {
+        const text = row.textContent.toUpperCase();
+        row.style.display = text.includes(filter) ? '' : 'none';
+    });
+}
+
+// Sortable columns
+document.querySelectorAll('th').forEach(th => {
+    th.addEventListener('click', function() {
+        const table = this.closest('table');
+        const tbody = table.querySelector('tbody');
+        const rows = Array.from(tbody.querySelectorAll('tr'));
+        const idx = Array.from(this.parentNode.children).indexOf(this);
+        const asc = this.dataset.sort !== 'asc';
+        this.parentNode.querySelectorAll('th').forEach(h => delete h.dataset.sort);
+        this.dataset.sort = asc ? 'asc' : 'desc';
+        rows.sort((a, b) => {
+            let av = a.children[idx].textContent.replace(/[$,%]/g, '').trim();
+            let bv = b.children[idx].textContent.replace(/[$,%]/g, '').trim();
+            const an = parseFloat(av.replace(/,/g, ''));
+            const bn = parseFloat(bv.replace(/,/g, ''));
+            if (!isNaN(an) && !isNaN(bn)) return asc ? an - bn : bn - an;
+            return asc ? av.localeCompare(bv) : bv.localeCompare(av);
+        });
+        rows.forEach(row => tbody.appendChild(row));
+    });
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang='en'>
+<head>
+    <meta charset='utf-8'>
+    <meta name='viewport' content='width=device-width, initial-scale=1'>
+    <title>StockScanner Combined Report</title>
+    <style>
+body {
+    font-family: Arial, sans-serif;
+    margin: 0;
+    padding: 0;
+    background: #f5f7fb;
+    color: #0f243e;
+}
+.container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 24px;
+}
+header {
+    margin-bottom: 24px;
+}
+header h1 {
+    margin: 0 0 8px;
+    font-size: 2rem;
+}
+header p {
+    margin: 0;
+    color: #475569;
+}
+nav {
+    margin: 16px 0;
+}
+nav a {
+    margin-right: 16px;
+    color: #1f4e78;
+    text-decoration: none;
+    font-weight: 600;
+}
+nav a:hover {
+    text-decoration: underline;
+}
+.summary,
+.report-links {
+    margin-bottom: 24px;
+}
+.summary table,
+.report-links table {
+    width: 100%;
+    border-collapse: collapse;
+}
+.summary th,
+.summary td,
+.report-links th,
+.report-links td {
+    border: 1px solid #d9e1f2;
+    padding: 10px;
+    text-align: left;
+}
+.summary th,
+.report-links th {
+    background: #1f4e78;
+    color: #ffffff;
+}
+.stockscanner-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 32px;
+}
+.stockscanner-table th,
+.stockscanner-table td {
+    border: 1px solid #d9e1f2;
+    padding: 10px;
+}
+.stockscanner-table th {
+    background: #1f4e78;
+    color: #ffffff;
+    position: sticky;
+    top: 0;
+}
+.stockscanner-table tr:nth-child(even) {
+    background: #f8fbff;
+}
+.stockscanner-table td {
+    white-space: nowrap;
+}
+.stockscanner-table td.numeric {
+    text-align: right;
+}
+footer {
+    margin-top: 32px;
+    padding-top: 16px;
+    border-top: 1px solid #d9e1f2;
+    color: #475569;
+}
+</style>
+</head>
+<body>
+    <div class='container'>
+        <header>
+            <h1>StockScanner Combined Report</h1>
+            <p>Generated on 2026-08-04 18:15:03</p>
+        </header>
+        
+        
+        <div class='summary'><h2>Summary</h2><table><tr><th>Metric</th><th>Value</th></tr><tr><td>Stocks scanned</td><td>5</td></tr><tr><td>Average score</td><td>78.0</td></tr><tr><td>Highest score</td><td>90</td></tr><tr><td>Strong Buy</td><td>2</td></tr><tr><td>Buy</td><td>1</td></tr><tr><td>Accumulate</td><td>1</td></tr><tr><td>Hold</td><td>0</td></tr><tr><td>Watch</td><td>1</td></tr><tr><td>Avoid</td><td>0</td></tr></table></div>
+        <table class="dataframe stockscanner-table">
+  <thead>
+    <tr style="text-align: left;">
+      <th>Rank</th>
+      <th>Symbol</th>
+      <th>Market</th>
+      <th>Sector</th>
+      <th>Priority</th>
+      <th>Market Cap</th>
+      <th>Current Price</th>
+      <th>Average Volume</th>
+      <th>Average Dollar Volume</th>
+      <th>Liquidity Status</th>
+      <th>20 MA</th>
+      <th>50 MA</th>
+      <th>200 MA</th>
+      <th>RSI</th>
+      <th>MACD</th>
+      <th>Relative Strength</th>
+      <th>Score</th>
+      <th>Recommendation</th>
+      <th>Signal</th>
+      <th>Trend</th>
+      <th>Entry</th>
+      <th>Stop Loss</th>
+      <th>Target 1</th>
+      <th>Target 2</th>
+      <th>Target 3</th>
+      <th>Risk/Reward</th>
+      <th>Suggested Shares</th>
+      <th>Investment</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>1</td>
+      <td>BRK-B</td>
+      <td>NYQ</td>
+      <td>Berkshire Hathaway Inc.</td>
+      <td>Normal</td>
+      <td>1.113372e+12</td>
+      <td>516.20</td>
+      <td>3991350.0</td>
+      <td>2060343010.0</td>
+      <td>PASS</td>
+      <td>498.48</td>
+      <td>492.75</td>
+      <td>490.58</td>
+      <td>69.34</td>
+      <td>5.56</td>
+      <td>-10.68</td>
+      <td>90</td>
+      <td>🟢 STRONG BUY</td>
+      <td>🟢 Strong Uptrend</td>
+      <td>Strong Uptrend</td>
+      <td>498.48</td>
+      <td>492.75</td>
+      <td>528.39</td>
+      <td>548.33</td>
+      <td>573.25</td>
+      <td>8.69</td>
+      <td>1</td>
+      <td>498.48</td>
+    </tr>
+    <tr>
+      <td>2</td>
+      <td>BRK-A</td>
+      <td>NYQ</td>
+      <td>Berkshire Hathaway Inc.</td>
+      <td>Normal</td>
+      <td>1.112774e+12</td>
+      <td>773886.88</td>
+      <td>156.0</td>
+      <td>120416798.0</td>
+      <td>PASS</td>
+      <td>747670.59</td>
+      <td>738785.92</td>
+      <td>735907.78</td>
+      <td>69.94</td>
+      <td>8255.12</td>
+      <td>-11.03</td>
+      <td>90</td>
+      <td>🟢 STRONG BUY</td>
+      <td>🟢 Strong Uptrend</td>
+      <td>Strong Uptrend</td>
+      <td>747670.59</td>
+      <td>738785.92</td>
+      <td>792530.83</td>
+      <td>822437.65</td>
+      <td>859821.18</td>
+      <td>8.42</td>
+      <td>0</td>
+      <td>0.00</td>
+    </tr>
+    <tr>
+      <td>3</td>
+      <td>JPM</td>
+      <td>NYQ</td>
+      <td>JPMorgan Chase & Co.</td>
+      <td>Normal</td>
+      <td>9.561811e+11</td>
+      <td>359.77</td>
+      <td>9123643.0</td>
+      <td>3282412888.0</td>
+      <td>PASS</td>
+      <td>345.99</td>
+      <td>329.04</td>
+      <td>309.86</td>
+      <td>66.27</td>
+      <td>7.22</td>
+      <td>1.35</td>
+      <td>83</td>
+      <td>🟢 BUY</td>
+      <td>⚪ Neutral</td>
+      <td>Strong Uptrend</td>
+      <td>345.99</td>
+      <td>329.04</td>
+      <td>366.75</td>
+      <td>380.59</td>
+      <td>397.89</td>
+      <td>2.04</td>
+      <td>0</td>
+      <td>0.00</td>
+    </tr>
+    <tr>
+      <td>4</td>
+      <td>TSM</td>
+      <td>NYQ</td>
+      <td>Taiwan Semiconductor Manufacturing Company Limited</td>
+      <td>Normal</td>
+      <td>2.173547e+12</td>
+      <td>419.08</td>
+      <td>14793824.0</td>
+      <td>6199795773.0</td>
+      <td>PASS</td>
+      <td>412.18</td>
+      <td>425.40</td>
+      <td>357.14</td>
+      <td>51.73</td>
+      <td>-6.69</td>
+      <td>16.18</td>
+      <td>72</td>
+      <td>🟡 ACCUMULATE</td>
+      <td>🟢 Pullback to 50 MA</td>
+      <td>Breakout</td>
+      <td>452.17</td>
+      <td>412.18</td>
+      <td>479.30</td>
+      <td>497.38</td>
+      <td>519.99</td>
+      <td>1.13</td>
+      <td>0</td>
+      <td>0.00</td>
+    </tr>
+    <tr>
+      <td>5</td>
+      <td>LLY</td>
+      <td>NYQ</td>
+      <td>Eli Lilly and Company</td>
+      <td>Normal</td>
+      <td>9.969847e+11</td>
+      <td>1118.02</td>
+      <td>2338351.0</td>
+      <td>2614322839.0</td>
+      <td>PASS</td>
+      <td>1174.97</td>
+      <td>1150.90</td>
+      <td>1025.75</td>
+      <td>40.60</td>
+      <td>-0.86</td>
+      <td>-11.81</td>
+      <td>55</td>
+      <td>🟠 WATCH</td>
+      <td>⚪ Neutral</td>
+      <td>Breakout</td>
+      <td>1254.31</td>
+      <td>1174.97</td>
+      <td>1329.57</td>
+      <td>1379.74</td>
+      <td>1442.46</td>
+      <td>1.58</td>
+      <td>0</td>
+      <td>0.00</td>
+    </tr>
+  </tbody>
+</table>
+        <footer>
+            <p>StockScanner report generated by StockScanner Python package.</p>
+        </footer>
+    </div>
+</body>
+</html>
