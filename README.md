@@ -80,6 +80,53 @@ This will:
 .venv\Scripts\python.exe -m stockscanner.cli --universe --limit 20 --parallel --workers 20 --html --progress
 ```
 
+## CLI flags reference
+
+| Flag | Description |
+|------|-------------|
+| `--universe` | Scan the full NYSE universe instead of the watchlist |
+| `--force-download` | Refresh the NYSE ticker list before scanning |
+| `--html` | Generate an interactive HTML dashboard report |
+| `--batch-reports` | Produce Top-10 + 50-item batch Excel files + combined report |
+| `--parallel` | Enable parallel scanning |
+| `--workers N` | Number of parallel threads (default 10) |
+| `--progress` | Show progress updates during long scans |
+| `--limit N` | Scan only the first N tickers (for testing) |
+| `--no-report` | Skip Excel and HTML report export |
+| `--quiet` | Suppress per-ticker console output |
+
+The scanner generates HTML report pages alongside the Excel workbooks. Each run creates:
+- `reports/YYYY-MM-DD/index.html` for the date folder
+- `reports/index.html` for the root report index
+- HTML versions of combined, top, and batch reports matching the Excel output
+
+## GitHub Pages reports
+
+Published reports are served from the repository root on GitHub Pages:
+
+- Site root: `https://aksamuel.github.io/StockScanner/`
+- Reports index: `https://aksamuel.github.io/StockScanner/reports/index.html`
+- Dated report index: `https://aksamuel.github.io/StockScanner/reports/YYYY-MM-DD/index.html`
+
+The repository root `index.html` redirects to `reports/index.html` so the site never lands on a dead-end 404. The Pages deployment workflow publishes the repository root and commits generated `reports/**` artifacts back to the published branch.
+
+### Local preview
+
+From the repository root:
+
+```bash
+python -m http.server 8000
+```
+
+Then open:
+
+- `http://localhost:8000/`
+- `http://localhost:8000/reports/index.html`
+
+```cmd
+.venv\Scripts\python.exe -m stockscanner.cli --universe --limit 20 --parallel --workers 20 --html --progress
+```
+
 ### Excel report only (no HTML)
 
 ```cmd

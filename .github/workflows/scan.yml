@@ -17,35 +17,35 @@ on:
         default: universe
       limit:
         description: "Max number of tickers to scan (universe mode, 0 = all)"
-        type: number
-        default: 0
+        type: string
+        default: "0"
       workers:
         description: "Number of parallel workers"
-        type: number
-        default: 20
+        type: string
+        default: "20"
 
   # Daily at 1:00 PM UTC (9:00 AM ET, before US market open)
   schedule:
     - cron: "0 13 * * 1-5"
 
-# Allow deployment to GitHub Pages
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 
-# Only allow one deployment at a time
 concurrency:
   group: "pages"
   cancel-in-progress: false
 
 jobs:
-  scan:
+  build:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       - name: Set up Python 3.11
         uses: actions/setup-python@v6
@@ -66,7 +66,7 @@ jobs:
           pip install -e .
 
       - name: Run scanner (universe mode)
-        if: inputs.mode == 'universe' || github.event_name == 'schedule'
+        if: github.event.inputs.mode == 'universe' || github.event_name == 'schedule'
         run: |
           LIMIT_FLAG=""
           if [ "${{ inputs.limit }}" != "0" ] && [ -n "${{ inputs.limit }}" ]; then
@@ -82,7 +82,7 @@ jobs:
             $LIMIT_FLAG
 
       - name: Run scanner (watchlist mode)
-        if: inputs.mode == 'watchlist' && github.event_name != 'schedule'
+        if: github.event.inputs.mode == 'watchlist' && github.event_name != 'schedule'
         run: |
           python -m stockscanner.cli \
             --parallel \
@@ -90,16 +90,39 @@ jobs:
             --html \
             --quiet
 
-      - name: Prepare Pages deployment
+      - name: Ensure Pages landing files exist
+        if: ${{ always() }}
         run: |
-          mkdir -p _site
-          # Find the latest HTML dashboard and copy it as index.html
-          LATEST_HTML=$(find reports/ -name "*.html" -type f | sort -r | head -1)
-          if [ -n "$LATEST_HTML" ]; then
-            cp "$LATEST_HTML" _site/index.html
-            echo "Deployed: $LATEST_HTML"
+          touch .nojekyll
+          touch reports/.nojekyll
+          if [ ! -f index.html ]; then
+            cat <<'EOF' > index.html
+          <!DOCTYPE html>
+          <html lang="en">
+          <head>
+              <meta charset="utf-8">
+              <meta http-equiv="refresh" content="0; url=reports/index.html">
+              <meta name="viewport" content="width=device-width, initial-scale=1">
+              <title>StockScanner Reports</title>
+          </head>
+          <body>
+              <p>Redirecting to <a href="reports/index.html">reports/index.html</a>...</p>
+          </body>
+          </html>
+          EOF
+          fi
+
+      - name: Commit generated report pages
+        if: ${{ always() }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html .nojekyll reports/
+          if git diff --cached --quiet; then
+            echo "No report changes to commit."
           else
-            echo "<h1>No scan results available</h1>" > _site/index.html
+            git commit -m "Update published stock scanner reports"
+            git push
           fi
 
       - name: Upload reports artifact
@@ -110,19 +133,24 @@ jobs:
           path: reports/
           retention-days: 30
 
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
+      - name: Configure Pages
+        if: ${{ always() }}
+        uses: actions/configure-pages@v3
+
+      - name: Upload reports artifact for Pages
+        if: ${{ always() }}
+        uses: actions/upload-pages-artifact@v5
         with:
-          path: _site/
+          path: .
 
   deploy:
-    needs: scan
+    needs: build
     runs-on: ubuntu-latest
     environment:
       name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      url: ${{ steps.deploy.outputs.page_url }}
 
     steps:
       - name: Deploy to GitHub Pages
-        id: deployment
+        id: deploy
         uses: actions/deploy-pages@v4
