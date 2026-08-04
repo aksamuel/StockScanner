@@ -14,6 +14,7 @@ from stockscanner.indicators import calculate_indicators
 from stockscanner.scoring import score_stock
 from stockscanner.trade_plan import generate_trade_plan
 from stockscanner.report import export_report, export_batch_reports
+from stockscanner.html_report import export_html_report
 from stockscanner.ranking import rank_stocks
 from stockscanner.signals import generate_signal
 from stockscanner.relative_strength import calculate_relative_strength
@@ -156,7 +157,7 @@ def process_stock(row, quiet=False):
     return result
 
 
-def scan_universe(stock_df, export_to_excel=True, parallel=False, max_workers=10, batch_reports=False, quiet=False, progress=False):
+def scan_universe(stock_df, export_to_excel=True, parallel=False, max_workers=10, batch_reports=False, quiet=False, progress=False, html_report=False):
     if parallel:
         return scan_universe_parallel(
             stock_df,
@@ -165,6 +166,7 @@ def scan_universe(stock_df, export_to_excel=True, parallel=False, max_workers=10
             batch_reports=batch_reports,
             quiet=quiet,
             progress=progress,
+            html_report=html_report,
         )
 
     if not quiet:
@@ -209,6 +211,8 @@ def scan_universe(stock_df, export_to_excel=True, parallel=False, max_workers=10
                 export_batch_reports(ranked.to_dict("records"), top_count=10, batch_size=50)
             else:
                 export_report(ranked.to_dict("records"))
+        if html_report:
+            export_html_report(ranked.to_dict("records"), quiet=quiet)
         if not quiet:
             print()
             print("=" * 80)
@@ -261,7 +265,7 @@ def scan_universe(stock_df, export_to_excel=True, parallel=False, max_workers=10
     return results
 
 
-def scan_universe_parallel(stock_df, export_to_excel=True, max_workers=10, batch_reports=False, quiet=False, progress=False):
+def scan_universe_parallel(stock_df, export_to_excel=True, max_workers=10, batch_reports=False, quiet=False, progress=False, html_report=False):
     if not quiet:
         print("=" * 80)
         print("              AI STOCK SCANNER V3.2 - LIQUIDITY FILTERS")
@@ -278,6 +282,7 @@ def scan_universe_parallel(stock_df, export_to_excel=True, max_workers=10, batch
     results = []
     futures = []
     completed = 0
+    total_stocks = len(stock_df)
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         for _, row in stock_df.iterrows():
@@ -308,6 +313,8 @@ def scan_universe_parallel(stock_df, export_to_excel=True, max_workers=10, batch
                 export_batch_reports(ranked.to_dict("records"), top_count=10, batch_size=50)
             else:
                 export_report(ranked.to_dict("records"))
+        if html_report:
+            export_html_report(ranked.to_dict("records"), quiet=quiet)
         if not quiet:
             print()
             print("=" * 80)
@@ -360,7 +367,7 @@ def scan_universe_parallel(stock_df, export_to_excel=True, max_workers=10, batch
     return results
 
 
-def scan_watchlist(export_to_excel=True, parallel=False, max_workers=10, batch_reports=False, quiet=False, progress=False):
+def scan_watchlist(export_to_excel=True, parallel=False, max_workers=10, batch_reports=False, quiet=False, progress=False, html_report=False):
     try:
         watchlist = load_watchlist()
     except Exception as error:
@@ -375,10 +382,11 @@ def scan_watchlist(export_to_excel=True, parallel=False, max_workers=10, batch_r
         batch_reports=batch_reports,
         quiet=quiet,
         progress=progress,
+        html_report=html_report,
     )
 
 
-def scan_nyse(export_to_excel=True, limit=None, force_download=False, parallel=False, max_workers=10, batch_reports=False, quiet=False, progress=False):
+def scan_nyse(export_to_excel=True, limit=None, force_download=False, parallel=False, max_workers=10, batch_reports=False, quiet=False, progress=False, html_report=False):
     try:
         tickers = load_nyse_tickers(
             force_download=force_download,
@@ -405,6 +413,7 @@ def scan_nyse(export_to_excel=True, limit=None, force_download=False, parallel=F
         batch_reports=batch_reports,
         quiet=quiet,
         progress=progress,
+        html_report=html_report,
     )
 
 

@@ -1,10 +1,11 @@
 # Stock Scanner CI Workflow
-# Runs the stock scanner on a schedule (daily at market close) or on-demand.
+# Runs the stock scanner on a schedule (weekdays before US market open) or on-demand.
+# Generates an HTML dashboard and deploys it to GitHub Pages.
 
 name: Stock Scanner
 
 on:
-  # Manual trigger with configurable inputs
+  # Manual trigger with configurable inputs (button in GitHub mobile app)
   workflow_dispatch:
     inputs:
       mode:
@@ -13,11 +14,11 @@ on:
         options:
           - watchlist
           - universe
-        default: watchlist
+        default: universe
       limit:
-        description: "Max number of tickers to scan (universe mode)"
+        description: "Max number of tickers to scan (universe mode, 0 = all)"
         type: string
-        default: "1000"
+        default: "0"
       workers:
         description: "Number of parallel workers"
         type: string
@@ -31,6 +32,10 @@ permissions:
   contents: write
   pages: write
   id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
 
 jobs:
   build:
@@ -61,17 +66,29 @@ jobs:
           pip install -e .
 
       - name: Run scanner (universe mode)
-        if: github.event.inputs.mode == 'universe'
+        if: github.event.inputs.mode == 'universe' || github.event_name == 'schedule'
         run: |
+          LIMIT_FLAG=""
+          if [ "${{ inputs.limit }}" != "0" ] && [ -n "${{ inputs.limit }}" ]; then
+            LIMIT_FLAG="--limit ${{ inputs.limit }}"
+          fi
           python -m stockscanner.cli \
             --universe \
-            --limit ${{ github.event.inputs.limit }} \
+            --force-download \
             --parallel \
-            --workers ${{ github.event.inputs.workers }}
+            --workers ${{ inputs.workers || 20 }} \
+            --html \
+            --quiet \
+            $LIMIT_FLAG
 
       - name: Run scanner (watchlist mode)
-        if: github.event.inputs.mode != 'universe'
-        run: python -m stockscanner.cli
+        if: github.event.inputs.mode == 'watchlist' && github.event_name != 'schedule'
+        run: |
+          python -m stockscanner.cli \
+            --parallel \
+            --workers ${{ inputs.workers || 20 }} \
+            --html \
+            --quiet
 
       - name: Ensure Pages landing files exist
         if: ${{ always() }}
@@ -108,7 +125,7 @@ jobs:
             git push
           fi
 
-      - name: Upload reports
+      - name: Upload reports artifact
         uses: actions/upload-artifact@v5
         if: always()
         with:

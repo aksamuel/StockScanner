@@ -3,11 +3,12 @@
 StockScanner is a Python-based stock scanning package for watchlists and the NYSE universe.
 It supports:
 
-- watchlist scanning via `watchlists/watchlist.csv`
+- Watchlist scanning via `watchlists/watchlist.csv`
 - NYSE universe scanning with sorted market-cap prioritization
 - Excel report export into dated `reports/YYYY-MM-DD/` folders
-- parallel scanning with configurable worker threads
-- separate NYSE ticker downloader
+- **Interactive HTML dashboard** (static, opens in any browser)
+- Parallel scanning with configurable worker threads
+- Separate NYSE ticker downloader
 
 ## Setup
 
@@ -48,36 +49,53 @@ cd /d C:\StockScanner
 .venv\Scripts\python.exe -m stockscanner.cli
 ```
 
-## Commands (quick reference)
+## Commands
 
-- Basic NYSE scan (creates a combined Excel report):
-
-```cmd
-.venv\Scripts\python.exe -m stockscanner.cli --universe
-```
-
-- Full NYSE scan with Top-10 + 50-item batch Excel reports (parallel):
+### Full NYSE universe scan with HTML dashboard (recommended)
 
 ```cmd
-.venv\Scripts\python.exe -m stockscanner.cli --universe --batch-reports --parallel --workers 20
+.venv\Scripts\python.exe -m stockscanner.cli --universe --force-download --parallel --workers 20 --html
 ```
 
-- Scan your watchlist (uses `watchlists/watchlist.csv`):
+This will:
+1. Download the latest NYSE ticker list
+2. Scan the full universe in parallel (20 threads)
+3. Generate an Excel report **and** an interactive HTML dashboard
+
+### Watchlist scan with HTML dashboard
 
 ```cmd
-.venv\Scripts\python.exe -m stockscanner.cli
+.venv\Scripts\python.exe -m stockscanner.cli --parallel --workers 20 --html
 ```
 
-- Useful flags:
+### NYSE universe with batch Excel reports + HTML
 
-- `--batch-reports` : produce Top-10, subsequent 50-item batch files, and a combined report
-- `--parallel` / `--workers N` : enable parallel scanning with N worker threads (default 10)
-- `--progress` : show progress updates during long scans
-- `--limit N` : scan only the first N tickers (handy for testing)
-- `--no-report` : skip Excel and HTML report export
-- `--force-download` : refresh ticker list / market data downloads
+```cmd
+.venv\Scripts\python.exe -m stockscanner.cli --universe --force-download --batch-reports --parallel --workers 20 --html
+```
 
-The scanner now also generates HTML report pages alongside the Excel workbooks. Each run creates:
+### Quick test run (limited tickers)
+
+```cmd
+.venv\Scripts\python.exe -m stockscanner.cli --universe --limit 20 --parallel --workers 20 --html --progress
+```
+
+## CLI flags reference
+
+| Flag | Description |
+|------|-------------|
+| `--universe` | Scan the full NYSE universe instead of the watchlist |
+| `--force-download` | Refresh the NYSE ticker list before scanning |
+| `--html` | Generate an interactive HTML dashboard report |
+| `--batch-reports` | Produce Top-10 + 50-item batch Excel files + combined report |
+| `--parallel` | Enable parallel scanning |
+| `--workers N` | Number of parallel threads (default 10) |
+| `--progress` | Show progress updates during long scans |
+| `--limit N` | Scan only the first N tickers (for testing) |
+| `--no-report` | Skip Excel and HTML report export |
+| `--quiet` | Suppress per-ticker console output |
+
+The scanner generates HTML report pages alongside the Excel workbooks. Each run creates:
 - `reports/YYYY-MM-DD/index.html` for the date folder
 - `reports/index.html` for the root report index
 - HTML versions of combined, top, and batch reports matching the Excel output
@@ -105,10 +123,20 @@ Then open:
 - `http://localhost:8000/`
 - `http://localhost:8000/reports/index.html`
 
-### NYSE universe scan
+```cmd
+.venv\Scripts\python.exe -m stockscanner.cli --universe --limit 20 --parallel --workers 20 --html --progress
+```
+
+### Excel report only (no HTML)
 
 ```cmd
-run.bat --universe --limit 1000 --parallel --workers 20
+.venv\Scripts\python.exe -m stockscanner.cli --universe --parallel --workers 20
+```
+
+### Skip all report export
+
+```cmd
+.venv\Scripts\python.exe -m stockscanner.cli --universe --limit 10 --no-report
 ```
 
 ### Download only NYSE tickers
@@ -123,11 +151,34 @@ Or use the fallback yfinance downloader:
 download_nyse.bat --force-yfinance --limit 1000
 ```
 
-### Skip Excel export
+## CLI flags reference
 
-```cmd
-run.bat --universe --limit 1000 --parallel --workers 20 --no-report
-```
+| Flag | Description |
+|------|-------------|
+| `--universe` | Scan the full NYSE universe instead of the watchlist |
+| `--force-download` | Refresh the NYSE ticker list before scanning |
+| `--html` | Generate an interactive HTML dashboard report |
+| `--batch-reports` | Produce Top-10 + 50-item batch Excel files + combined report |
+| `--parallel` | Enable parallel scanning |
+| `--workers N` | Number of parallel threads (default 10) |
+| `--progress` | Show progress updates during long scans |
+| `--limit N` | Scan only the first N tickers (for testing) |
+| `--no-report` | Skip Excel export entirely |
+| `--quiet` | Suppress per-ticker console output |
+
+## HTML Dashboard
+
+The `--html` flag generates a self-contained HTML file in `reports/YYYY-MM-DD/` that you can:
+
+- **Open locally** in any browser (no server required)
+- **Deploy to GitHub Pages** for private team access
+- **Share** via email, Teams, or Slack
+
+Features:
+- Dark-themed responsive dashboard with summary cards
+- Interactive bar chart (recommendation breakdown)
+- Sortable and filterable results tables (Top 20 + All)
+- Color-coded scores and recommendations
 
 ## Folder layout
 
@@ -135,8 +186,9 @@ run.bat --universe --limit 1000 --parallel --workers 20 --no-report
 - `download_nyse.py` — NYSE ticker downloader
 - `download_nyse.bat` — downloader launcher
 - `run.bat`, `run.cmd`, `run.ps1` — Windows launchers
-- `reports/YYYY-MM-DD/` — generated Excel output
+- `reports/YYYY-MM-DD/` — generated Excel and HTML output
 - `data/nyse_tickers.csv` — cached NYSE ticker universe
+- `data/history/` — cached historical market data
 
 ## Data cache
 
@@ -150,14 +202,12 @@ from stockscanner.market_data import download_data
 download_data("AAPL", force=True)
 ```
 
-Note: the `download_data()` function accepts `force=True` and a `period` parameter.
-
 ## Performance tips
 
 - Use `--quiet` to suppress per-ticker console output and reduce I/O overhead when running large scans.
 - Increase `--workers N` when using `--parallel` to allow more concurrent network requests (yfinance is I/O-bound).
 - Use `--limit N` for quick tests before running a full universe scan.
-- The code also supports `--batch-reports` to create Top-10 and batched 50-item Excel reports while scanning.
+- Combine flags for maximum speed: `--universe --parallel --workers 20 --quiet --html`
 
 ## Testing
 

@@ -275,7 +275,7 @@ def export_excel_workbook(filename, dataframe):
     return filename
 
 
-HTML_STYLE = """
+HTML_STYLE = """<style>
 body {
     font-family: Arial, sans-serif;
     margin: 0;
@@ -364,7 +364,7 @@ footer {
     border-top: 1px solid #d9e1f2;
     color: #475569;
 }
-"""
+</style>"""
 
 
 def _prepare_html_dataframe(dataframe):
