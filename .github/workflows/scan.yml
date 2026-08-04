@@ -1,5 +1,5 @@
 # Stock Scanner CI Workflow
-# Runs the stock scanner on a schedule (daily at market close) or on-demand.
+# Runs the stock scanner on a schedule (weekdays before US market open) or on-demand.
 # Generates an HTML dashboard and deploys it to GitHub Pages.
 
 name: Stock Scanner

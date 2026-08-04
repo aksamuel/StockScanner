@@ -212,7 +212,7 @@ def scan_universe(stock_df, export_to_excel=True, parallel=False, max_workers=10
             else:
                 export_report(ranked.to_dict("records"))
         if html_report:
-            export_html_report(ranked.to_dict("records"))
+            export_html_report(ranked.to_dict("records"), quiet=quiet)
         if not quiet:
             print()
             print("=" * 80)
@@ -313,7 +313,7 @@ def scan_universe_parallel(stock_df, export_to_excel=True, max_workers=10, batch
             else:
                 export_report(ranked.to_dict("records"))
         if html_report:
-            export_html_report(ranked.to_dict("records"))
+            export_html_report(ranked.to_dict("records"), quiet=quiet)
         if not quiet:
             print()
             print("=" * 80)

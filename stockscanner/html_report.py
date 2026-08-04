@@ -51,7 +51,7 @@ def _format_currency(value):
     try:
         return f"${float(value):,.2f}"
     except (ValueError, TypeError):
-        return str(value)
+        return _escape_html(value)
 
 
 def _format_number(value, decimals=2):
@@ -59,7 +59,7 @@ def _format_number(value, decimals=2):
     try:
         return f"{float(value):,.{decimals}f}"
     except (ValueError, TypeError):
-        return str(value)
+        return _escape_html(value)
 
 
 def _format_integer(value):
@@ -67,7 +67,7 @@ def _format_integer(value):
     try:
         return f"{int(float(value)):,}"
     except (ValueError, TypeError):
-        return str(value)
+        return _escape_html(value)
 
 
 CURRENCY_COLUMNS = {
@@ -331,8 +331,8 @@ footer {{
     <div class="section">
         <h2>Scan Results</h2>
         <div class="tabs">
-            <div class="tab active" onclick="switchTab('top')">Top {TOP_RESULTS}</div>
-            <div class="tab" onclick="switchTab('all')">All Results ({summary['total_stocks']})</div>
+            <div class="tab active" onclick="switchTab('top', this)">Top {TOP_RESULTS}</div>
+            <div class="tab" onclick="switchTab('all', this)">All Results ({summary['total_stocks']})</div>
         </div>
 
         <div class="filter-bar">
@@ -393,11 +393,11 @@ document.addEventListener('DOMContentLoaded', function() {{
 }});
 
 // Tabs
-function switchTab(name) {{
+function switchTab(name, clickedTab) {{
     document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
     document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
     document.getElementById('tab-' + name).classList.add('active');
-    event.target.classList.add('active');
+    clickedTab.classList.add('active');
 }}
 
 // Filter
@@ -438,22 +438,27 @@ document.querySelectorAll('th').forEach(th => {{
     return html
 
 
-def export_html_report(results):
+def export_html_report(results, quiet=False):
     """Export scan results as a self-contained HTML dashboard.
+
+    The dashboard is a single HTML file with inline CSS and JS. Chart.js is
+    loaded from a CDN for the recommendation chart; the rest works offline.
 
     Returns the path to the generated HTML file, or None if no data.
     """
     dataframe = prepare_results_dataframe(results)
     if dataframe.empty:
-        print("No data available for HTML export.")
+        if not quiet:
+            print("No data available for HTML export.")
         return None
 
-    scan_date = datetime.now().strftime("%Y-%m-%d")
+    now = datetime.now()
+    scan_date = now.strftime("%Y-%m-%d")
     date_folder = os.path.join(REPORT_FOLDER, scan_date)
     os.makedirs(date_folder, exist_ok=True)
 
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    scan_time = datetime.now().strftime("%d %B %Y, %I:%M %p")
+    timestamp = now.strftime("%Y-%m-%d_%H-%M-%S")
+    scan_time = now.strftime("%d %B %Y, %I:%M %p")
     filename = os.path.join(date_folder, f"StockScanner_Dashboard_{timestamp}.html")
 
     html_content = _generate_html(dataframe, scan_time)
@@ -461,9 +466,10 @@ def export_html_report(results):
     with open(filename, "w", encoding="utf-8") as f:
         f.write(html_content)
 
-    print()
-    print("=" * 80)
-    print("HTML Dashboard created successfully")
-    print(filename)
-    print("=" * 80)
+    if not quiet:
+        print()
+        print("=" * 80)
+        print("HTML Dashboard created successfully")
+        print(filename)
+        print("=" * 80)
     return filename
