@@ -110,6 +110,27 @@ Published reports are served from the repository root on GitHub Pages:
 
 The repository root `index.html` redirects to `reports/index.html` so the site never lands on a dead-end 404. The Pages deployment workflow publishes the repository root and commits generated `reports/**` artifacts back to the published branch.
 
+## Scheduled scan (GitHub Actions)
+
+The scanner runs automatically at **9:35 AM New York time** on NYSE trading days (Mon-Fri) via GitHub Actions. It performs a full universe scan with default position sizing and deploys the HTML dashboard to GitHub Pages.
+
+You can also trigger a scan manually from the **GitHub mobile app** or the **Actions tab**:
+
+1. Go to **Actions** > **Stock Scanner** > **Run workflow**
+2. Configure inputs: mode, limit, workers, portfolio, position size, risk
+3. Tap **Run workflow**
+
+The workflow supports these configurable inputs:
+
+| Input | Default | Description |
+|-------|---------|-------------|
+| Mode | universe | `universe` or `watchlist` |
+| Limit | 0 (all) | Max tickers to scan |
+| Workers | 20 | Parallel threads |
+| Portfolio | 50000 | Total portfolio value ($) |
+| Position size | 5 | Max % of portfolio per position |
+| Risk | 1 | Risk % per trade |
+
 ### Local preview
 
 From the repository root:
@@ -165,6 +186,30 @@ download_nyse.bat --force-yfinance --limit 1000
 | `--limit N` | Scan only the first N tickers (for testing) |
 | `--no-report` | Skip Excel export entirely |
 | `--quiet` | Suppress per-ticker console output |
+| `--portfolio N` | Total portfolio value in dollars (default: 50000) |
+| `--position-size N` | Max % of portfolio per position (default: 5) |
+| `--risk N` | Risk % per trade (default: 1) |
+
+## Position Sizing
+
+The scanner uses percentage-based position sizing to calculate suggested shares and investment per stock:
+
+```
+available_cash = portfolio * (position_size / 100)
+```
+
+**Examples:**
+
+| Style | Command | Per-Position Cash |
+|-------|---------|-------------------|
+| Default | `--portfolio 50000 --position-size 5` | $2,500 |
+| Conservative | `--portfolio 100000 --position-size 2` | $2,000 |
+| Moderate | `--portfolio 100000 --position-size 5` | $5,000 |
+| Aggressive | `--portfolio 50000 --position-size 10 --risk 2` | $5,000 (2% risk) |
+
+```cmd
+.venv\Scripts\python.exe -m stockscanner.cli --universe --parallel --workers 20 --html --portfolio 100000 --position-size 5 --risk 1
+```
 
 ## HTML Dashboard
 

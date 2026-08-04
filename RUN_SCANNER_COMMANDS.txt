@@ -29,6 +29,22 @@ cd /d C:\StockScanner
 .venv\Scripts\python.exe -m stockscanner.cli --universe --limit 20 --parallel --workers 20 --html --progress
 
 
+== Custom position sizing ==
+
+cd /d C:\StockScanner
+.venv\Scripts\python.exe -m stockscanner.cli --universe --parallel --workers 20 --html --portfolio 100000 --position-size 5 --risk 1
+
+  --portfolio 100000    Total portfolio value ($100,000)
+  --position-size 5     Max 5% of portfolio per position ($5,000)
+  --risk 1              Risk 1% per trade ($50)
+
+
+== Conservative position sizing ==
+
+cd /d C:\StockScanner
+.venv\Scripts\python.exe -m stockscanner.cli --universe --parallel --workers 20 --html --portfolio 50000 --position-size 2 --risk 1
+
+
 == Excel report only (no HTML) ==
 
 cd /d C:\StockScanner

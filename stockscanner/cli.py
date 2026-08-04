@@ -59,11 +59,30 @@ def parse_args():
         action="store_true",
         help="Generate an interactive HTML dashboard alongside the Excel report.",
     )
+    parser.add_argument(
+        "--portfolio",
+        type=float,
+        default=50000,
+        help="Total portfolio value in dollars (default: 50000).",
+    )
+    parser.add_argument(
+        "--position-size",
+        type=float,
+        default=5,
+        help="Max percentage of portfolio per position (default: 5%%).",
+    )
+    parser.add_argument(
+        "--risk",
+        type=float,
+        default=1,
+        help="Risk percentage per trade (default: 1%%).",
+    )
     return parser.parse_args()
 
 
 def main():
     args = parse_args()
+    available_cash = args.portfolio * (args.position_size / 100)
     if args.universe:
         scan_nyse(
             export_to_excel=not args.no_report,
@@ -75,6 +94,8 @@ def main():
             quiet=args.quiet,
             progress=args.progress,
             html_report=args.html,
+            available_cash=available_cash,
+            risk_percent=args.risk,
         )
     else:
         scan_watchlist(
@@ -85,6 +106,8 @@ def main():
             quiet=args.quiet,
             progress=args.progress,
             html_report=args.html,
+            available_cash=available_cash,
+            risk_percent=args.risk,
         )
 
 

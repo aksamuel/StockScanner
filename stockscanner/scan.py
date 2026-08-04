@@ -43,7 +43,7 @@ def get_recommendation(score):
     return _prefer_emoji("🔴 AVOID", "AVOID")
 
 
-def process_stock(row, quiet=False):
+def process_stock(row, quiet=False, available_cash=1000, risk_percent=1):
     symbol = str(row.get("Symbol", "")).strip().upper()
     market = row.get("Market", "Unknown")
     sector = row.get("Sector", "Unknown")
@@ -108,7 +108,7 @@ def process_stock(row, quiet=False):
     recommendation = get_recommendation(score)
 
     try:
-        plan = generate_trade_plan(df, available_cash=1000, risk_percent=1)
+        plan = generate_trade_plan(df, available_cash=available_cash, risk_percent=risk_percent)
     except Exception as error:
         if not quiet:
             print(f"Trade Plan Error: {error}")
@@ -157,7 +157,7 @@ def process_stock(row, quiet=False):
     return result
 
 
-def scan_universe(stock_df, export_to_excel=True, parallel=False, max_workers=10, batch_reports=False, quiet=False, progress=False, html_report=False):
+def scan_universe(stock_df, export_to_excel=True, parallel=False, max_workers=10, batch_reports=False, quiet=False, progress=False, html_report=False, available_cash=1000, risk_percent=1):
     if parallel:
         return scan_universe_parallel(
             stock_df,
@@ -167,6 +167,8 @@ def scan_universe(stock_df, export_to_excel=True, parallel=False, max_workers=10
             quiet=quiet,
             progress=progress,
             html_report=html_report,
+            available_cash=available_cash,
+            risk_percent=risk_percent,
         )
 
     if not quiet:
@@ -191,7 +193,7 @@ def scan_universe(stock_df, export_to_excel=True, parallel=False, max_workers=10
     total_stocks = len(stock_df)
     processed = 0
     for _, row in stock_df.iterrows():
-        result = process_stock(row, quiet=quiet)
+        result = process_stock(row, quiet=quiet, available_cash=available_cash, risk_percent=risk_percent)
         processed += 1
         if progress:
             if total_stocks <= 20 or processed % max(1, total_stocks // 20) == 0 or processed == total_stocks:
@@ -265,7 +267,7 @@ def scan_universe(stock_df, export_to_excel=True, parallel=False, max_workers=10
     return results
 
 
-def scan_universe_parallel(stock_df, export_to_excel=True, max_workers=10, batch_reports=False, quiet=False, progress=False, html_report=False):
+def scan_universe_parallel(stock_df, export_to_excel=True, max_workers=10, batch_reports=False, quiet=False, progress=False, html_report=False, available_cash=1000, risk_percent=1):
     if not quiet:
         print("=" * 80)
         print("              AI STOCK SCANNER V3.2 - LIQUIDITY FILTERS")
@@ -286,7 +288,7 @@ def scan_universe_parallel(stock_df, export_to_excel=True, max_workers=10, batch
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         for _, row in stock_df.iterrows():
-            futures.append(executor.submit(process_stock, row, quiet))
+            futures.append(executor.submit(process_stock, row, quiet, available_cash, risk_percent))
 
         for future in as_completed(futures):
             completed += 1
@@ -367,7 +369,7 @@ def scan_universe_parallel(stock_df, export_to_excel=True, max_workers=10, batch
     return results
 
 
-def scan_watchlist(export_to_excel=True, parallel=False, max_workers=10, batch_reports=False, quiet=False, progress=False, html_report=False):
+def scan_watchlist(export_to_excel=True, parallel=False, max_workers=10, batch_reports=False, quiet=False, progress=False, html_report=False, available_cash=1000, risk_percent=1):
     try:
         watchlist = load_watchlist()
     except Exception as error:
@@ -383,10 +385,12 @@ def scan_watchlist(export_to_excel=True, parallel=False, max_workers=10, batch_r
         quiet=quiet,
         progress=progress,
         html_report=html_report,
+        available_cash=available_cash,
+        risk_percent=risk_percent,
     )
 
 
-def scan_nyse(export_to_excel=True, limit=None, force_download=False, parallel=False, max_workers=10, batch_reports=False, quiet=False, progress=False, html_report=False):
+def scan_nyse(export_to_excel=True, limit=None, force_download=False, parallel=False, max_workers=10, batch_reports=False, quiet=False, progress=False, html_report=False, available_cash=1000, risk_percent=1):
     try:
         tickers = load_nyse_tickers(
             force_download=force_download,
@@ -414,6 +418,8 @@ def scan_nyse(export_to_excel=True, limit=None, force_download=False, parallel=F
         quiet=quiet,
         progress=progress,
         html_report=html_report,
+        available_cash=available_cash,
+        risk_percent=risk_percent,
     )
 
 
