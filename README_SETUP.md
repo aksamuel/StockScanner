@@ -77,6 +77,13 @@ cd /d C:\StockScanner
 .venv\Scripts\python.exe -m stockscanner.cli --universe --force-download --batch-reports --parallel --workers 20 --html
 ```
 
+### Custom position sizing
+
+```cmd
+cd /d C:\StockScanner
+.venv\Scripts\python.exe -m stockscanner.cli --universe --parallel --workers 20 --html --portfolio 100000 --position-size 5 --risk 1
+```
+
 ### Force download the latest NYSE ticker universe
 
 ```cmd

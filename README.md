@@ -165,6 +165,30 @@ download_nyse.bat --force-yfinance --limit 1000
 | `--limit N` | Scan only the first N tickers (for testing) |
 | `--no-report` | Skip Excel export entirely |
 | `--quiet` | Suppress per-ticker console output |
+| `--portfolio N` | Total portfolio value in dollars (default: 50000) |
+| `--position-size N` | Max % of portfolio per position (default: 5) |
+| `--risk N` | Risk % per trade (default: 1) |
+
+## Position Sizing
+
+The scanner uses percentage-based position sizing to calculate suggested shares and investment per stock:
+
+```
+available_cash = portfolio * (position_size / 100)
+```
+
+**Examples:**
+
+| Style | Command | Per-Position Cash |
+|-------|---------|-------------------|
+| Default | `--portfolio 50000 --position-size 5` | $2,500 |
+| Conservative | `--portfolio 100000 --position-size 2` | $2,000 |
+| Moderate | `--portfolio 100000 --position-size 5` | $5,000 |
+| Aggressive | `--portfolio 50000 --position-size 10 --risk 2` | $5,000 (2% risk) |
+
+```cmd
+.venv\Scripts\python.exe -m stockscanner.cli --universe --parallel --workers 20 --html --portfolio 100000 --position-size 5 --risk 1
+```
 
 ## HTML Dashboard
 
