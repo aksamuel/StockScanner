@@ -282,6 +282,7 @@ def scan_universe_parallel(stock_df, export_to_excel=True, max_workers=10, batch
     results = []
     futures = []
     completed = 0
+    total_stocks = len(stock_df)
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         for _, row in stock_df.iterrows():
