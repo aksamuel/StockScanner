@@ -1,4 +1,6 @@
-# StockScanner
+# StockScanner v2.0.0
+
+[![Stock Scanner](https://github.com/aksamuel/StockScanner/actions/workflows/scan.yml/badge.svg)](https://github.com/aksamuel/StockScanner/actions/workflows/scan.yml)
 
 StockScanner is a Python-based stock scanning package for watchlists and the NYSE universe.
 It supports:
@@ -7,6 +9,7 @@ It supports:
 - NYSE universe scanning with sorted market-cap prioritization
 - Excel report export into dated `reports/YYYY-MM-DD/` folders
 - **Interactive HTML dashboard** (static, opens in any browser)
+- **Percentage-based position sizing** (portfolio %, risk %)
 - Parallel scanning with configurable worker threads
 - Separate NYSE ticker downloader
 
@@ -112,7 +115,7 @@ The repository root `index.html` redirects to `reports/index.html` so the site n
 
 ## Scheduled scan (GitHub Actions)
 
-The scanner runs automatically at **9:35 AM New York time** on NYSE trading days (Mon-Fri) via GitHub Actions. It performs a full universe scan with default position sizing and deploys the HTML dashboard to GitHub Pages.
+The scanner runs automatically at **9:00 AM New York time** on NYSE trading days (Mon-Fri) via GitHub Actions. It performs a full universe scan with default position sizing and deploys the HTML dashboard to GitHub Pages.
 
 You can also trigger a scan manually from the **GitHub mobile app** or the **Actions tab**:
 
