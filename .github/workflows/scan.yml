@@ -1,5 +1,6 @@
 # Stock Scanner CI Workflow
-# Runs the stock scanner on a schedule (weekdays before US market open) or on-demand.
+# Runs the stock scanner at 9:35 AM New York time on NYSE trading days (Mon-Fri)
+# or on-demand via the GitHub mobile app / Actions tab.
 # Generates an HTML dashboard and deploys it to GitHub Pages.
 
 name: Stock Scanner
@@ -23,10 +24,23 @@ on:
         description: "Number of parallel workers"
         type: string
         default: "20"
+      portfolio:
+        description: "Total portfolio value in dollars"
+        type: string
+        default: "50000"
+      position_size:
+        description: "Max % of portfolio per position"
+        type: string
+        default: "5"
+      risk:
+        description: "Risk % per trade"
+        type: string
+        default: "1"
 
-  # Daily at 1:00 PM UTC (9:00 AM ET, before US market open)
+  # 9:35 AM New York time on NYSE trading days (Mon-Fri)
+  # 13:35 UTC = 9:35 AM EDT (summer), 8:35 AM EST (winter)
   schedule:
-    - cron: "0 13 * * 1-5"
+    - cron: "35 13 * * 1-5"
 
 permissions:
   contents: write
@@ -77,6 +91,9 @@ jobs:
             --force-download \
             --parallel \
             --workers ${{ inputs.workers || 20 }} \
+            --portfolio ${{ inputs.portfolio || 50000 }} \
+            --position-size ${{ inputs.position_size || 5 }} \
+            --risk ${{ inputs.risk || 1 }} \
             --html \
             --quiet \
             $LIMIT_FLAG
@@ -87,6 +104,9 @@ jobs:
           python -m stockscanner.cli \
             --parallel \
             --workers ${{ inputs.workers || 20 }} \
+            --portfolio ${{ inputs.portfolio || 50000 }} \
+            --position-size ${{ inputs.position_size || 5 }} \
+            --risk ${{ inputs.risk || 1 }} \
             --html \
             --quiet
 
