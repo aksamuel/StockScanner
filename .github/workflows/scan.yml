@@ -37,10 +37,10 @@ on:
         type: string
         default: "1"
 
-  # 9:35 AM New York time on NYSE trading days (Mon-Fri)
-  # 13:35 UTC = 9:35 AM EDT (summer), 8:35 AM EST (winter)
+  # 9:00 AM New York time on NYSE trading days (Mon-Fri)
+  # 13:00 UTC = 9:00 AM EDT (summer), 8:00 AM EST (winter)
   schedule:
-    - cron: "35 13 * * 1-5"
+    - cron: "0 13 * * 1-5"
 
 permissions:
   contents: write
