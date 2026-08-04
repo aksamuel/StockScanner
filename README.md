@@ -110,6 +110,27 @@ Published reports are served from the repository root on GitHub Pages:
 
 The repository root `index.html` redirects to `reports/index.html` so the site never lands on a dead-end 404. The Pages deployment workflow publishes the repository root and commits generated `reports/**` artifacts back to the published branch.
 
+## Scheduled scan (GitHub Actions)
+
+The scanner runs automatically at **9:35 AM New York time** on NYSE trading days (Mon-Fri) via GitHub Actions. It performs a full universe scan with default position sizing and deploys the HTML dashboard to GitHub Pages.
+
+You can also trigger a scan manually from the **GitHub mobile app** or the **Actions tab**:
+
+1. Go to **Actions** > **Stock Scanner** > **Run workflow**
+2. Configure inputs: mode, limit, workers, portfolio, position size, risk
+3. Tap **Run workflow**
+
+The workflow supports these configurable inputs:
+
+| Input | Default | Description |
+|-------|---------|-------------|
+| Mode | universe | `universe` or `watchlist` |
+| Limit | 0 (all) | Max tickers to scan |
+| Workers | 20 | Parallel threads |
+| Portfolio | 50000 | Total portfolio value ($) |
+| Position size | 5 | Max % of portfolio per position |
+| Risk | 1 | Risk % per trade |
+
 ### Local preview
 
 From the repository root:
