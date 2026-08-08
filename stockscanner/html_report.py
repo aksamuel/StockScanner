@@ -127,7 +127,12 @@ def _generate_html(dataframe, scan_time):
     # Build table rows for top opportunities
     top_rows_html = []
     for _, row in top_df.iterrows():
-        cells = []
+        symbol = _escape_html(row.get("Symbol", ""))
+        cells = [
+            '<td class="select-column">'
+            f'<input class="exception-select" type="checkbox" value="{symbol}" '
+            f'aria-label="Select {symbol}"></td>'
+        ]
         for col in top_df.columns:
             value = row[col]
             formatted = _format_cell(col, value)
@@ -142,7 +147,12 @@ def _generate_html(dataframe, scan_time):
     # Build table rows for complete results
     all_rows_html = []
     for _, row in dataframe.iterrows():
-        cells = []
+        symbol = _escape_html(row.get("Symbol", ""))
+        cells = [
+            '<td class="select-column">'
+            f'<input class="exception-select" type="checkbox" value="{symbol}" '
+            f'aria-label="Select {symbol}"></td>'
+        ]
         for col in dataframe.columns:
             value = row[col]
             formatted = _format_cell(col, value)
@@ -154,8 +164,10 @@ def _generate_html(dataframe, scan_time):
             cells.append(f'<td class="{css_class}">{formatted}</td>')
         all_rows_html.append(f"<tr>{''.join(cells)}</tr>")
 
-    top_headers = "".join(f"<th>{_escape_html(c)}</th>" for c in top_df.columns)
-    all_headers = "".join(f"<th>{_escape_html(c)}</th>" for c in dataframe.columns)
+    top_headers = '<th class="select-column no-sort"><input class="select-all" type="checkbox" aria-label="Select all top results"></th>'
+    top_headers += "".join(f"<th>{_escape_html(c)}</th>" for c in top_df.columns)
+    all_headers = '<th class="select-column no-sort"><input class="select-all" type="checkbox" aria-label="Select all scan results"></th>'
+    all_headers += "".join(f"<th>{_escape_html(c)}</th>" for c in dataframe.columns)
 
     # Chart data
     chart_labels = ["Strong Buy", "Buy", "Accumulate", "Hold", "Watch", "Avoid"]
@@ -250,6 +262,7 @@ th {{
 }}
 th:hover {{ background: #2a6090; }}
 th::after {{ content: ' ⇅'; opacity: 0.4; font-size: 0.7rem; }}
+th.no-sort::after {{ content: none; }}
 td {{
     padding: 8px 12px;
     border-bottom: 1px solid #1a2a3a;
@@ -300,6 +313,19 @@ tr:hover {{ background: #1e3348; }}
     width: 250px;
 }}
 .filter-bar input::placeholder {{ color: #607d8b; }}
+.filter-bar {{ justify-content: space-between; flex-wrap: wrap; }}
+#addExceptions {{
+    padding: 7px 14px;
+    color: #fff;
+    background: #1b5e20;
+    border: 1px solid #66bb6a;
+    border-radius: 5px;
+    cursor: pointer;
+}}
+#addExceptions:hover:not(:disabled) {{ background: #2e7d32; }}
+#addExceptions:disabled {{ cursor: not-allowed; opacity: 0.45; }}
+.select-column {{ width: 48px; text-align: center; }}
+.select-column input {{ width: 18px; height: 18px; cursor: pointer; accent-color: #4caf50; }}
 footer {{
     text-align: center;
     color: #607d8b;
@@ -347,6 +373,7 @@ footer {{
 
         <div class="filter-bar">
             <input type="text" id="filterInput" placeholder="Filter by symbol or sector..." onkeyup="filterTable()">
+            <button id="addExceptions" type="button" disabled>Add Selected to Exceptions (0)</button>
         </div>
 
         <div id="tab-top" class="tab-content active">
@@ -422,8 +449,81 @@ function filterTable() {{
     }});
 }}
 
+// Add selected scan results to the permanent exception list
+const exceptionSelections = [...document.querySelectorAll('.exception-select')];
+const addExceptions = document.getElementById('addExceptions');
+
+function selectedSymbols() {{
+    return [...new Set(
+        exceptionSelections
+            .filter(checkbox => checkbox.checked)
+            .map(checkbox => checkbox.value)
+    )];
+}}
+
+function updateExceptionSelection() {{
+    const symbols = selectedSymbols();
+    addExceptions.disabled = symbols.length === 0;
+    addExceptions.textContent = `Add Selected to Exceptions (${{symbols.length}})`;
+    document.querySelectorAll('.tab-content').forEach(tab => {{
+        const checkboxes = [...tab.querySelectorAll('.exception-select')];
+        const selected = checkboxes.filter(checkbox => checkbox.checked).length;
+        const selectAll = tab.querySelector('.select-all');
+        selectAll.checked = selected === checkboxes.length && selected > 0;
+        selectAll.indeterminate = selected > 0 && selected < checkboxes.length;
+    }});
+}}
+
+exceptionSelections.forEach(checkbox => checkbox.addEventListener('change', () => {{
+    exceptionSelections
+        .filter(other => other.value === checkbox.value)
+        .forEach(other => other.checked = checkbox.checked);
+    updateExceptionSelection();
+}}));
+
+document.querySelectorAll('.select-all').forEach(selectAll => {{
+    selectAll.addEventListener('change', event => {{
+        event.stopPropagation();
+        const tab = selectAll.closest('.tab-content');
+        tab.querySelectorAll('.exception-select').forEach(checkbox => {{
+            checkbox.checked = selectAll.checked;
+            exceptionSelections
+                .filter(other => other.value === checkbox.value)
+                .forEach(other => other.checked = selectAll.checked);
+        }});
+        updateExceptionSelection();
+    }});
+}});
+
+addExceptions.addEventListener('click', () => {{
+    const symbols = selectedSymbols();
+    if (symbols.length > 50) {{
+        alert('Select no more than 50 tickers per request.');
+        return;
+    }}
+    if (!symbols.length || !confirm(`Add ${{symbols.length}} selected ticker(s) to the permanent exception list?`)) return;
+
+    const countLabel = symbols.length === 1 ? '1 ticker' : `${{symbols.length}} tickers`;
+    const body = [
+        'Please add these tickers to the permanent StockScanner exception list:',
+        '',
+        ...symbols.map(symbol => `- **${{symbol}}**`),
+        '',
+        `<!-- stockscanner-add-exceptions: ${{symbols.join(',')}} -->`,
+    ].join('\\n');
+    const query = new URLSearchParams({{
+        title: `[Add Exceptions] ${{countLabel}}`,
+        body,
+    }});
+    window.open(
+        `https://github.com/aksamuel/StockScanner/issues/new?${{query}}`,
+        '_blank',
+        'noopener',
+    );
+}});
+
 // Sortable columns
-document.querySelectorAll('th').forEach(th => {{
+document.querySelectorAll('th:not(.no-sort)').forEach(th => {{
     th.addEventListener('click', function() {{
         const table = this.closest('table');
         const tbody = table.querySelector('tbody');
