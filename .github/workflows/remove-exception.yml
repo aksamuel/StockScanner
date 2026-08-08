@@ -17,7 +17,7 @@ concurrency:
 jobs:
   reject-unauthorized:
     if: >-
-      startsWith(github.event.issue.title, '[Remove Exception] ') &&
+      startsWith(github.event.issue.title, '[Remove Exceptions] ') &&
       !contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.issue.author_association)
     runs-on: ubuntu-latest
     steps:
@@ -31,7 +31,7 @@ jobs:
 
   remove:
     if: >-
-      startsWith(github.event.issue.title, '[Remove Exception] ') &&
+      startsWith(github.event.issue.title, '[Remove Exceptions] ') &&
       contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.issue.author_association)
     runs-on: ubuntu-latest
     environment:
@@ -45,17 +45,27 @@ jobs:
           REQUEST_TITLE: ${{ github.event.issue.title }}
           REQUEST_BODY: ${{ github.event.issue.body }}
         run: |
-          if [[ "$REQUEST_TITLE" =~ ^\[Remove\ Exception\]\ ([A-Za-z0-9.-]+)$ ]]; then
-            SYMBOL="${BASH_REMATCH[1]^^}"
+          if [[ "$REQUEST_TITLE" =~ ^\[Remove\ Exceptions\]\ ([0-9]+)\ tickers?$ ]]; then
+            REQUEST_COUNT="${BASH_REMATCH[1]}"
           else
             echo "Invalid removal-request title." >&2
             exit 1
           fi
-          if ! grep -Fq "<!-- stockscanner-remove-exception: $SYMBOL -->" <<< "$REQUEST_BODY"; then
-            echo "The request marker does not match the title." >&2
+
+          mapfile -t MARKERS < <(grep -oE '<!-- stockscanner-remove-exceptions: [A-Z0-9.,-]+ -->' <<< "$REQUEST_BODY")
+          if [[ "${#MARKERS[@]}" -ne 1 ]]; then
+            echo "The request must contain exactly one valid removal marker." >&2
             exit 1
           fi
-          echo "symbol=$SYMBOL" >> "$GITHUB_OUTPUT"
+          SYMBOLS="${MARKERS[0]#<!-- stockscanner-remove-exceptions: }"
+          SYMBOLS="${SYMBOLS% -->}"
+          IFS=',' read -ra SYMBOL_LIST <<< "$SYMBOLS"
+          UNIQUE_COUNT="$(printf '%s\n' "${SYMBOL_LIST[@]}" | sort -u | wc -l)"
+          if [[ "${#SYMBOL_LIST[@]}" -ne "$REQUEST_COUNT" || "$UNIQUE_COUNT" -ne "$REQUEST_COUNT" ]]; then
+            echo "The ticker count does not match the request title." >&2
+            exit 1
+          fi
+          echo "symbols=$SYMBOLS" >> "$GITHUB_OUTPUT"
 
       - name: Checkout repository
         uses: actions/checkout@v5
@@ -64,7 +74,7 @@ jobs:
 
       - name: Remove ticker and regenerate dashboard
         run: |
-          python -m stockscanner.remove_exception "${{ steps.request.outputs.symbol }}"
+          python -m stockscanner.remove_exception "${{ steps.request.outputs.symbols }}"
           python -m stockscanner.exceptions_dashboard
 
       - name: Commit exception-list update
@@ -72,7 +82,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add watchlists/exceptions.csv exceptions.html
-          git commit -m "Remove ${{ steps.request.outputs.symbol }} from exception list"
+          git commit -m "Remove selected tickers from exception list"
           git push
 
       - name: Configure Pages
@@ -91,7 +101,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           ISSUE_URL: ${{ github.event.issue.html_url }}
-          SYMBOL: ${{ steps.request.outputs.symbol }}
+          SYMBOLS: ${{ steps.request.outputs.symbols }}
         run: |
-          gh issue comment "$ISSUE_URL" --body "Removed **$SYMBOL** from the exception list and republished the dashboard."
+          gh issue comment "$ISSUE_URL" --body "Removed **$SYMBOLS** from the exception list and republished the dashboard."
           gh issue close "$ISSUE_URL" --reason "completed"

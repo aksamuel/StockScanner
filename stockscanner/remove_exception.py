@@ -8,11 +8,13 @@ import tempfile
 from .config import EXCEPTION_LIST
 
 
-def remove_exception(symbol, csv_path=EXCEPTION_LIST):
-    """Remove all rows matching a ticker and return the number removed."""
-    normalized_symbol = symbol.strip().upper()
-    if not normalized_symbol:
-        raise ValueError("Ticker symbol is required")
+def remove_exceptions(symbols, csv_path=EXCEPTION_LIST):
+    """Atomically remove matching tickers and return the number of rows removed."""
+    normalized_symbols = list(
+        dict.fromkeys(symbol.strip().upper() for symbol in symbols if symbol.strip())
+    )
+    if not normalized_symbols:
+        raise ValueError("At least one ticker symbol is required")
 
     with open(csv_path, newline="", encoding="utf-8-sig") as csv_file:
         reader = csv.DictReader(csv_file)
@@ -21,14 +23,24 @@ def remove_exception(symbol, csv_path=EXCEPTION_LIST):
             raise ValueError(f"Exception list has no Symbol column: {csv_path}")
         rows = list(reader)
 
+    requested = set(normalized_symbols)
+    available = {
+        (row.get("Symbol") or "").strip().upper()
+        for row in rows
+        if (row.get("Symbol") or "").strip()
+    }
+    missing = requested - available
+    if missing:
+        raise ValueError(
+            f"Ticker(s) not in the exception list: {', '.join(sorted(missing))}"
+        )
+
     kept_rows = [
         row
         for row in rows
-        if (row.get("Symbol") or "").strip().upper() != normalized_symbol
+        if (row.get("Symbol") or "").strip().upper() not in requested
     ]
     removed_count = len(rows) - len(kept_rows)
-    if removed_count == 0:
-        return 0
 
     directory = os.path.dirname(os.path.abspath(csv_path))
     file_descriptor, temporary_path = tempfile.mkstemp(
@@ -48,16 +60,28 @@ def remove_exception(symbol, csv_path=EXCEPTION_LIST):
     return removed_count
 
 
+def remove_exception(symbol, csv_path=EXCEPTION_LIST):
+    """Remove all rows matching one ticker and return the number removed."""
+    try:
+        return remove_exceptions([symbol], csv_path)
+    except ValueError as error:
+        if str(error).startswith("Ticker(s) not in the exception list:"):
+            return 0
+        raise
+
+
 def main():
-    parser = argparse.ArgumentParser(description="Remove a ticker from exceptions.csv")
-    parser.add_argument("symbol", help="Ticker symbol to remove")
+    parser = argparse.ArgumentParser(description="Remove tickers from exceptions.csv")
+    parser.add_argument("symbols", help="Comma-separated ticker symbols to remove")
     parser.add_argument("--csv", default=EXCEPTION_LIST, help="Exception CSV path")
     args = parser.parse_args()
 
-    removed_count = remove_exception(args.symbol, args.csv)
-    if removed_count == 0:
-        parser.error(f"Ticker is not in the exception list: {args.symbol}")
-    print(f"Removed {args.symbol.strip().upper()} from {args.csv}")
+    symbols = args.symbols.split(",")
+    try:
+        removed_count = remove_exceptions(symbols, args.csv)
+    except ValueError as error:
+        parser.error(str(error))
+    print(f"Removed {removed_count} exception row(s) from {args.csv}")
 
 
 if __name__ == "__main__":

@@ -228,7 +228,7 @@ Features:
 - Sortable and filterable results tables (Top 20 + All)
 - Color-coded scores and recommendations
 - A filterable exception-list page at `exceptions.html`, regenerated from `watchlists/exceptions.csv`
-- Authorized collaborators can use each exception row's Delete button to submit a GitHub removal request; the `Remove Exception` Action validates the request, updates the CSV, and republishes the page
+- Authorized collaborators can select multiple exception rows and submit one GitHub removal request; the `Remove Exception` Action validates the request, updates the CSV atomically, and republishes the page
 
 ## Folder layout
 

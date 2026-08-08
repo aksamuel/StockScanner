@@ -4,7 +4,6 @@ import csv
 import html
 import os
 from datetime import datetime
-from urllib.parse import urlencode
 
 from .config import EXCEPTION_LIST
 
@@ -22,36 +21,22 @@ def _load_rows(csv_path):
     return columns, rows
 
 
-def _removal_url(symbol):
-    query = urlencode(
-        {
-            "title": f"[Remove Exception] {symbol}",
-            "body": (
-                f"Please remove **{symbol}** from the StockScanner exception list.\n\n"
-                f"<!-- stockscanner-remove-exception: {symbol} -->"
-            ),
-        }
-    )
-    return f"https://github.com/aksamuel/StockScanner/issues/new?{query}"
-
-
 def _generate_html(columns, rows, generated_at):
-    headers = "".join(f"<th>{html.escape(column)}</th>" for column in columns)
-    headers += "<th>Action</th>"
+    headers = '<th class="select-column"><input id="selectAll" type="checkbox" aria-label="Select all exceptions"></th>'
+    headers += "".join(f"<th>{html.escape(column)}</th>" for column in columns)
     body_rows = []
     for row in rows:
         cells = "".join(
             f"<td>{html.escape(row.get(column, ''))}</td>" for column in columns
         )
         symbol = row.get("Symbol", "").strip().upper()
-        action = (
-            f'<td><a class="delete" href="{html.escape(_removal_url(symbol))}" '
-            f'target="_blank" rel="noopener" '
-            f'onclick="return confirm(\'Submit this ticker removal request?\')">'
-            "Delete</a></td>"
+        selection = (
+            '<td class="select-column">'
+            f'<input class="ticker-select" type="checkbox" value="{html.escape(symbol)}" '
+            f'aria-label="Select {html.escape(symbol)}">'
+            "</td>"
         )
-        cells += action
-        body_rows.append(f"<tr>{cells}</tr>")
+        body_rows.append(f"<tr>{selection}{cells}</tr>")
 
     table_body = "\n".join(body_rows)
     return f"""<!DOCTYPE html>
@@ -97,9 +82,8 @@ h1 {{ margin: 0; color: #4fc3f7; font-size: 1.8rem; }}
     border-radius: 8px;
 }}
 .summary strong {{ color: #4fc3f7; font-size: 1.4rem; }}
-input {{
+#filter {{
     width: min(100%, 360px);
-    margin-bottom: 14px;
     padding: 10px 12px;
     color: #e0e0e0;
     background: #162534;
@@ -111,16 +95,25 @@ table {{ width: 100%; border-collapse: collapse; background: #1a2a3a; }}
 th, td {{ padding: 11px 14px; border-bottom: 1px solid #263d50; text-align: left; }}
 th {{ color: #4fc3f7; background: #162534; cursor: pointer; white-space: nowrap; }}
 tr:hover td {{ background: #203548; }}
-.delete {{
-    display: inline-block;
-    padding: 5px 10px;
-    color: #ffcdd2;
+.controls {{
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    justify-content: space-between;
+    margin-bottom: 14px;
+}}
+#deleteSelected {{
+    padding: 9px 14px;
+    color: #fff;
     background: #7f1d1d;
     border: 1px solid #ef5350;
     border-radius: 5px;
-    text-decoration: none;
+    cursor: pointer;
 }}
-.delete:hover {{ background: #b71c1c; }}
+#deleteSelected:hover:not(:disabled) {{ background: #b71c1c; }}
+#deleteSelected:disabled {{ cursor: not-allowed; opacity: 0.45; }}
+.select-column {{ width: 48px; text-align: center; }}
+.select-column input {{ width: 18px; height: 18px; cursor: pointer; accent-color: #ef5350; }}
 .empty {{ padding: 24px; color: #90a4ae; text-align: center; }}
 footer {{ margin-top: 30px; color: #607d8b; font-size: 0.8rem; text-align: center; }}
 </style>
@@ -135,7 +128,10 @@ footer {{ margin-top: 30px; color: #607d8b; font-size: 0.8rem; text-align: cente
 </header>
 <main class="container">
     <div class="summary"><strong>{len(rows)}</strong><br>Listed exceptions</div>
-    <div><input id="filter" type="search" placeholder="Filter exceptions..." aria-label="Filter exceptions"></div>
+    <div class="controls">
+        <input id="filter" type="search" placeholder="Filter exceptions..." aria-label="Filter exceptions">
+        <button id="deleteSelected" type="button" disabled>Delete Selected (0)</button>
+    </div>
     <div class="table-wrap">
         <table id="exceptions">
             <thead><tr>{headers}</tr></thead>
@@ -149,6 +145,49 @@ footer {{ margin-top: 30px; color: #607d8b; font-size: 0.8rem; text-align: cente
 const filter = document.getElementById("filter");
 const rows = [...document.querySelectorAll("#exceptions tbody tr")];
 const empty = document.getElementById("empty");
+const selectAll = document.getElementById("selectAll");
+const selections = [...document.querySelectorAll(".ticker-select")];
+const deleteSelected = document.getElementById("deleteSelected");
+
+function updateSelection() {{
+    const count = selections.filter(checkbox => checkbox.checked).length;
+    deleteSelected.disabled = count === 0;
+    deleteSelected.textContent = `Delete Selected (${{count}})`;
+    selectAll.checked = count === selections.length && count > 0;
+    selectAll.indeterminate = count > 0 && count < selections.length;
+}}
+
+selectAll.addEventListener("change", () => {{
+    selections.forEach(checkbox => checkbox.checked = selectAll.checked);
+    updateSelection();
+}});
+selections.forEach(checkbox => checkbox.addEventListener("change", updateSelection));
+
+deleteSelected.addEventListener("click", () => {{
+    const symbols = selections
+        .filter(checkbox => checkbox.checked)
+        .map(checkbox => checkbox.value);
+    if (!symbols.length || !confirm(`Submit a request to delete ${{symbols.length}} selected ticker(s)?`)) return;
+
+    const countLabel = symbols.length === 1 ? "1 ticker" : `${{symbols.length}} tickers`;
+    const body = [
+        `Please remove these tickers from the StockScanner exception list:`,
+        "",
+        ...symbols.map(symbol => `- **${{symbol}}**`),
+        "",
+        `<!-- stockscanner-remove-exceptions: ${{symbols.join(",")}} -->`,
+    ].join("\\n");
+    const query = new URLSearchParams({{
+        title: `[Remove Exceptions] ${{countLabel}}`,
+        body,
+    }});
+    window.open(
+        `https://github.com/aksamuel/StockScanner/issues/new?${{query}}`,
+        "_blank",
+        "noopener",
+    );
+}});
+
 filter.addEventListener("input", () => {{
     const query = filter.value.trim().toLowerCase();
     let visible = 0;

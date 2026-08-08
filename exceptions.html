@@ -41,9 +41,8 @@ h1 { margin: 0; color: #4fc3f7; font-size: 1.8rem; }
     border-radius: 8px;
 }
 .summary strong { color: #4fc3f7; font-size: 1.4rem; }
-input {
+#filter {
     width: min(100%, 360px);
-    margin-bottom: 14px;
     padding: 10px 12px;
     color: #e0e0e0;
     background: #162534;
@@ -55,16 +54,25 @@ table { width: 100%; border-collapse: collapse; background: #1a2a3a; }
 th, td { padding: 11px 14px; border-bottom: 1px solid #263d50; text-align: left; }
 th { color: #4fc3f7; background: #162534; cursor: pointer; white-space: nowrap; }
 tr:hover td { background: #203548; }
-.delete {
-    display: inline-block;
-    padding: 5px 10px;
-    color: #ffcdd2;
+.controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    justify-content: space-between;
+    margin-bottom: 14px;
+}
+#deleteSelected {
+    padding: 9px 14px;
+    color: #fff;
     background: #7f1d1d;
     border: 1px solid #ef5350;
     border-radius: 5px;
-    text-decoration: none;
+    cursor: pointer;
 }
-.delete:hover { background: #b71c1c; }
+#deleteSelected:hover:not(:disabled) { background: #b71c1c; }
+#deleteSelected:disabled { cursor: not-allowed; opacity: 0.45; }
+.select-column { width: 48px; text-align: center; }
+.select-column input { width: 18px; height: 18px; cursor: pointer; accent-color: #ef5350; }
 .empty { padding: 24px; color: #90a4ae; text-align: center; }
 footer { margin-top: 30px; color: #607d8b; font-size: 0.8rem; text-align: center; }
 </style>
@@ -73,36 +81,39 @@ footer { margin-top: 30px; color: #607d8b; font-size: 0.8rem; text-align: center
 <header>
     <div class="container">
         <h1>Stock Exception List</h1>
-        <div class="subtitle">Updated: 08 August 2026, 01:21 PM</div>
+        <div class="subtitle">Updated: 08 August 2026, 04:26 PM</div>
         <div class="nav"><a href="index.html">Back to Scanner Dashboard</a></div>
     </div>
 </header>
 <main class="container">
     <div class="summary"><strong>20</strong><br>Listed exceptions</div>
-    <div><input id="filter" type="search" placeholder="Filter exceptions..." aria-label="Filter exceptions"></div>
+    <div class="controls">
+        <input id="filter" type="search" placeholder="Filter exceptions..." aria-label="Filter exceptions">
+        <button id="deleteSelected" type="button" disabled>Delete Selected (0)</button>
+    </div>
     <div class="table-wrap">
         <table id="exceptions">
-            <thead><tr><th>Symbol</th><th>Date From</th><th>Date To</th><th>Reason</th><th>Action</th></tr></thead>
-            <tbody><tr><td>HSHP</td><td>23-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td><td><a class="delete" href="https://github.com/aksamuel/StockScanner/issues/new?title=%5BRemove+Exception%5D+HSHP&amp;body=Please+remove+%2A%2AHSHP%2A%2A+from+the+StockScanner+exception+list.%0A%0A%3C%21--+stockscanner-remove-exception%3A+HSHP+--%3E" target="_blank" rel="noopener" onclick="return confirm('Submit this ticker removal request?')">Delete</a></td></tr>
-<tr><td>TRGP</td><td>24-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td><td><a class="delete" href="https://github.com/aksamuel/StockScanner/issues/new?title=%5BRemove+Exception%5D+TRGP&amp;body=Please+remove+%2A%2ATRGP%2A%2A+from+the+StockScanner+exception+list.%0A%0A%3C%21--+stockscanner-remove-exception%3A+TRGP+--%3E" target="_blank" rel="noopener" onclick="return confirm('Submit this ticker removal request?')">Delete</a></td></tr>
-<tr><td>SOBO</td><td>23-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td><td><a class="delete" href="https://github.com/aksamuel/StockScanner/issues/new?title=%5BRemove+Exception%5D+SOBO&amp;body=Please+remove+%2A%2ASOBO%2A%2A+from+the+StockScanner+exception+list.%0A%0A%3C%21--+stockscanner-remove-exception%3A+SOBO+--%3E" target="_blank" rel="noopener" onclick="return confirm('Submit this ticker removal request?')">Delete</a></td></tr>
-<tr><td>FTI</td><td>23-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td><td><a class="delete" href="https://github.com/aksamuel/StockScanner/issues/new?title=%5BRemove+Exception%5D+FTI&amp;body=Please+remove+%2A%2AFTI%2A%2A+from+the+StockScanner+exception+list.%0A%0A%3C%21--+stockscanner-remove-exception%3A+FTI+--%3E" target="_blank" rel="noopener" onclick="return confirm('Submit this ticker removal request?')">Delete</a></td></tr>
-<tr><td>EC</td><td>24-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td><td><a class="delete" href="https://github.com/aksamuel/StockScanner/issues/new?title=%5BRemove+Exception%5D+EC&amp;body=Please+remove+%2A%2AEC%2A%2A+from+the+StockScanner+exception+list.%0A%0A%3C%21--+stockscanner-remove-exception%3A+EC+--%3E" target="_blank" rel="noopener" onclick="return confirm('Submit this ticker removal request?')">Delete</a></td></tr>
-<tr><td>KNTK</td><td>24-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td><td><a class="delete" href="https://github.com/aksamuel/StockScanner/issues/new?title=%5BRemove+Exception%5D+KNTK&amp;body=Please+remove+%2A%2AKNTK%2A%2A+from+the+StockScanner+exception+list.%0A%0A%3C%21--+stockscanner-remove-exception%3A+KNTK+--%3E" target="_blank" rel="noopener" onclick="return confirm('Submit this ticker removal request?')">Delete</a></td></tr>
-<tr><td>GNK</td><td>23-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td><td><a class="delete" href="https://github.com/aksamuel/StockScanner/issues/new?title=%5BRemove+Exception%5D+GNK&amp;body=Please+remove+%2A%2AGNK%2A%2A+from+the+StockScanner+exception+list.%0A%0A%3C%21--+stockscanner-remove-exception%3A+GNK+--%3E" target="_blank" rel="noopener" onclick="return confirm('Submit this ticker removal request?')">Delete</a></td></tr>
-<tr><td>ADM</td><td>23-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td><td><a class="delete" href="https://github.com/aksamuel/StockScanner/issues/new?title=%5BRemove+Exception%5D+ADM&amp;body=Please+remove+%2A%2AADM%2A%2A+from+the+StockScanner+exception+list.%0A%0A%3C%21--+stockscanner-remove-exception%3A+ADM+--%3E" target="_blank" rel="noopener" onclick="return confirm('Submit this ticker removal request?')">Delete</a></td></tr>
-<tr><td>PBA</td><td>24-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td><td><a class="delete" href="https://github.com/aksamuel/StockScanner/issues/new?title=%5BRemove+Exception%5D+PBA&amp;body=Please+remove+%2A%2APBA%2A%2A+from+the+StockScanner+exception+list.%0A%0A%3C%21--+stockscanner-remove-exception%3A+PBA+--%3E" target="_blank" rel="noopener" onclick="return confirm('Submit this ticker removal request?')">Delete</a></td></tr>
-<tr><td>WAB</td><td>23-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td><td><a class="delete" href="https://github.com/aksamuel/StockScanner/issues/new?title=%5BRemove+Exception%5D+WAB&amp;body=Please+remove+%2A%2AWAB%2A%2A+from+the+StockScanner+exception+list.%0A%0A%3C%21--+stockscanner-remove-exception%3A+WAB+--%3E" target="_blank" rel="noopener" onclick="return confirm('Submit this ticker removal request?')">Delete</a></td></tr>
-<tr><td>HR</td><td>24-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td><td><a class="delete" href="https://github.com/aksamuel/StockScanner/issues/new?title=%5BRemove+Exception%5D+HR&amp;body=Please+remove+%2A%2AHR%2A%2A+from+the+StockScanner+exception+list.%0A%0A%3C%21--+stockscanner-remove-exception%3A+HR+--%3E" target="_blank" rel="noopener" onclick="return confirm('Submit this ticker removal request?')">Delete</a></td></tr>
-<tr><td>TRP</td><td>23-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td><td><a class="delete" href="https://github.com/aksamuel/StockScanner/issues/new?title=%5BRemove+Exception%5D+TRP&amp;body=Please+remove+%2A%2ATRP%2A%2A+from+the+StockScanner+exception+list.%0A%0A%3C%21--+stockscanner-remove-exception%3A+TRP+--%3E" target="_blank" rel="noopener" onclick="return confirm('Submit this ticker removal request?')">Delete</a></td></tr>
-<tr><td>HESM</td><td>23-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td><td><a class="delete" href="https://github.com/aksamuel/StockScanner/issues/new?title=%5BRemove+Exception%5D+HESM&amp;body=Please+remove+%2A%2AHESM%2A%2A+from+the+StockScanner+exception+list.%0A%0A%3C%21--+stockscanner-remove-exception%3A+HESM+--%3E" target="_blank" rel="noopener" onclick="return confirm('Submit this ticker removal request?')">Delete</a></td></tr>
-<tr><td>ADX</td><td>23-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td><td><a class="delete" href="https://github.com/aksamuel/StockScanner/issues/new?title=%5BRemove+Exception%5D+ADX&amp;body=Please+remove+%2A%2AADX%2A%2A+from+the+StockScanner+exception+list.%0A%0A%3C%21--+stockscanner-remove-exception%3A+ADX+--%3E" target="_blank" rel="noopener" onclick="return confirm('Submit this ticker removal request?')">Delete</a></td></tr>
-<tr><td>FTS</td><td>23-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td><td><a class="delete" href="https://github.com/aksamuel/StockScanner/issues/new?title=%5BRemove+Exception%5D+FTS&amp;body=Please+remove+%2A%2AFTS%2A%2A+from+the+StockScanner+exception+list.%0A%0A%3C%21--+stockscanner-remove-exception%3A+FTS+--%3E" target="_blank" rel="noopener" onclick="return confirm('Submit this ticker removal request?')">Delete</a></td></tr>
-<tr><td>PM</td><td>23-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td><td><a class="delete" href="https://github.com/aksamuel/StockScanner/issues/new?title=%5BRemove+Exception%5D+PM&amp;body=Please+remove+%2A%2APM%2A%2A+from+the+StockScanner+exception+list.%0A%0A%3C%21--+stockscanner-remove-exception%3A+PM+--%3E" target="_blank" rel="noopener" onclick="return confirm('Submit this ticker removal request?')">Delete</a></td></tr>
-<tr><td>TDY</td><td>23-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td><td><a class="delete" href="https://github.com/aksamuel/StockScanner/issues/new?title=%5BRemove+Exception%5D+TDY&amp;body=Please+remove+%2A%2ATDY%2A%2A+from+the+StockScanner+exception+list.%0A%0A%3C%21--+stockscanner-remove-exception%3A+TDY+--%3E" target="_blank" rel="noopener" onclick="return confirm('Submit this ticker removal request?')">Delete</a></td></tr>
-<tr><td>INGM</td><td>27-Jul-26</td><td>10-Sep-26</td><td>Bought this stocks</td><td><a class="delete" href="https://github.com/aksamuel/StockScanner/issues/new?title=%5BRemove+Exception%5D+INGM&amp;body=Please+remove+%2A%2AINGM%2A%2A+from+the+StockScanner+exception+list.%0A%0A%3C%21--+stockscanner-remove-exception%3A+INGM+--%3E" target="_blank" rel="noopener" onclick="return confirm('Submit this ticker removal request?')">Delete</a></td></tr>
-<tr><td>TAK</td><td>27-Jul-26</td><td>10-Sep-26</td><td>Bought this stocks</td><td><a class="delete" href="https://github.com/aksamuel/StockScanner/issues/new?title=%5BRemove+Exception%5D+TAK&amp;body=Please+remove+%2A%2ATAK%2A%2A+from+the+StockScanner+exception+list.%0A%0A%3C%21--+stockscanner-remove-exception%3A+TAK+--%3E" target="_blank" rel="noopener" onclick="return confirm('Submit this ticker removal request?')">Delete</a></td></tr>
-<tr><td>EPRT</td><td>27-Jul-26</td><td>10-Sep-26</td><td>Bought this stocks</td><td><a class="delete" href="https://github.com/aksamuel/StockScanner/issues/new?title=%5BRemove+Exception%5D+EPRT&amp;body=Please+remove+%2A%2AEPRT%2A%2A+from+the+StockScanner+exception+list.%0A%0A%3C%21--+stockscanner-remove-exception%3A+EPRT+--%3E" target="_blank" rel="noopener" onclick="return confirm('Submit this ticker removal request?')">Delete</a></td></tr></tbody>
+            <thead><tr><th class="select-column"><input id="selectAll" type="checkbox" aria-label="Select all exceptions"></th><th>Symbol</th><th>Date From</th><th>Date To</th><th>Reason</th></tr></thead>
+            <tbody><tr><td class="select-column"><input class="ticker-select" type="checkbox" value="HSHP" aria-label="Select HSHP"></td><td>HSHP</td><td>23-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td></tr>
+<tr><td class="select-column"><input class="ticker-select" type="checkbox" value="TRGP" aria-label="Select TRGP"></td><td>TRGP</td><td>24-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td></tr>
+<tr><td class="select-column"><input class="ticker-select" type="checkbox" value="SOBO" aria-label="Select SOBO"></td><td>SOBO</td><td>23-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td></tr>
+<tr><td class="select-column"><input class="ticker-select" type="checkbox" value="FTI" aria-label="Select FTI"></td><td>FTI</td><td>23-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td></tr>
+<tr><td class="select-column"><input class="ticker-select" type="checkbox" value="EC" aria-label="Select EC"></td><td>EC</td><td>24-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td></tr>
+<tr><td class="select-column"><input class="ticker-select" type="checkbox" value="KNTK" aria-label="Select KNTK"></td><td>KNTK</td><td>24-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td></tr>
+<tr><td class="select-column"><input class="ticker-select" type="checkbox" value="GNK" aria-label="Select GNK"></td><td>GNK</td><td>23-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td></tr>
+<tr><td class="select-column"><input class="ticker-select" type="checkbox" value="ADM" aria-label="Select ADM"></td><td>ADM</td><td>23-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td></tr>
+<tr><td class="select-column"><input class="ticker-select" type="checkbox" value="PBA" aria-label="Select PBA"></td><td>PBA</td><td>24-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td></tr>
+<tr><td class="select-column"><input class="ticker-select" type="checkbox" value="WAB" aria-label="Select WAB"></td><td>WAB</td><td>23-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td></tr>
+<tr><td class="select-column"><input class="ticker-select" type="checkbox" value="HR" aria-label="Select HR"></td><td>HR</td><td>24-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td></tr>
+<tr><td class="select-column"><input class="ticker-select" type="checkbox" value="TRP" aria-label="Select TRP"></td><td>TRP</td><td>23-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td></tr>
+<tr><td class="select-column"><input class="ticker-select" type="checkbox" value="HESM" aria-label="Select HESM"></td><td>HESM</td><td>23-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td></tr>
+<tr><td class="select-column"><input class="ticker-select" type="checkbox" value="ADX" aria-label="Select ADX"></td><td>ADX</td><td>23-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td></tr>
+<tr><td class="select-column"><input class="ticker-select" type="checkbox" value="FTS" aria-label="Select FTS"></td><td>FTS</td><td>23-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td></tr>
+<tr><td class="select-column"><input class="ticker-select" type="checkbox" value="PM" aria-label="Select PM"></td><td>PM</td><td>23-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td></tr>
+<tr><td class="select-column"><input class="ticker-select" type="checkbox" value="TDY" aria-label="Select TDY"></td><td>TDY</td><td>23-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td></tr>
+<tr><td class="select-column"><input class="ticker-select" type="checkbox" value="INGM" aria-label="Select INGM"></td><td>INGM</td><td>27-Jul-26</td><td>10-Sep-26</td><td>Bought this stocks</td></tr>
+<tr><td class="select-column"><input class="ticker-select" type="checkbox" value="TAK" aria-label="Select TAK"></td><td>TAK</td><td>27-Jul-26</td><td>10-Sep-26</td><td>Bought this stocks</td></tr>
+<tr><td class="select-column"><input class="ticker-select" type="checkbox" value="EPRT" aria-label="Select EPRT"></td><td>EPRT</td><td>27-Jul-26</td><td>10-Sep-26</td><td>Bought this stocks</td></tr></tbody>
         </table>
         <div id="empty" class="empty" hidden>No matching exceptions found.</div>
     </div>
@@ -112,6 +123,49 @@ footer { margin-top: 30px; color: #607d8b; font-size: 0.8rem; text-align: center
 const filter = document.getElementById("filter");
 const rows = [...document.querySelectorAll("#exceptions tbody tr")];
 const empty = document.getElementById("empty");
+const selectAll = document.getElementById("selectAll");
+const selections = [...document.querySelectorAll(".ticker-select")];
+const deleteSelected = document.getElementById("deleteSelected");
+
+function updateSelection() {
+    const count = selections.filter(checkbox => checkbox.checked).length;
+    deleteSelected.disabled = count === 0;
+    deleteSelected.textContent = `Delete Selected (${count})`;
+    selectAll.checked = count === selections.length && count > 0;
+    selectAll.indeterminate = count > 0 && count < selections.length;
+}
+
+selectAll.addEventListener("change", () => {
+    selections.forEach(checkbox => checkbox.checked = selectAll.checked);
+    updateSelection();
+});
+selections.forEach(checkbox => checkbox.addEventListener("change", updateSelection));
+
+deleteSelected.addEventListener("click", () => {
+    const symbols = selections
+        .filter(checkbox => checkbox.checked)
+        .map(checkbox => checkbox.value);
+    if (!symbols.length || !confirm(`Submit a request to delete ${symbols.length} selected ticker(s)?`)) return;
+
+    const countLabel = symbols.length === 1 ? "1 ticker" : `${symbols.length} tickers`;
+    const body = [
+        `Please remove these tickers from the StockScanner exception list:`,
+        "",
+        ...symbols.map(symbol => `- **${symbol}**`),
+        "",
+        `<!-- stockscanner-remove-exceptions: ${symbols.join(",")} -->`,
+    ].join("\n");
+    const query = new URLSearchParams({
+        title: `[Remove Exceptions] ${countLabel}`,
+        body,
+    });
+    window.open(
+        `https://github.com/aksamuel/StockScanner/issues/new?${query}`,
+        "_blank",
+        "noopener",
+    );
+});
+
 filter.addEventListener("input", () => {
     const query = filter.value.trim().toLowerCase();
     let visible = 0;
