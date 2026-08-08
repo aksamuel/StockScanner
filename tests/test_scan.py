@@ -2,6 +2,7 @@ import pandas as pd
 
 from stockscanner import report
 from stockscanner.exceptions_dashboard import export_exceptions_dashboard
+from stockscanner.remove_exception import remove_exception
 from stockscanner.scoring import score_stock
 from stockscanner.signals import generate_signal
 
@@ -86,3 +87,22 @@ def test_export_exceptions_dashboard(tmp_path):
     assert "Bought &amp; held" in page
     assert "&lt;review&gt;" in page
     assert "Back to Scanner Dashboard" in page
+    assert "<th>Action</th>" in page
+    assert "%5BRemove+Exception%5D+ABC" in page
+    assert ">Delete</a>" in page
+
+
+def test_remove_exception_matches_complete_symbol_case_insensitively(tmp_path):
+    exception_list = tmp_path / "exceptions.csv"
+    exception_list.write_text(
+        "Symbol,Reason\nABC,First\nABCD,Second\nabc,Duplicate\n",
+        encoding="utf-8",
+    )
+
+    removed_count = remove_exception("AbC", str(exception_list))
+    remaining = exception_list.read_text(encoding="utf-8")
+
+    assert removed_count == 2
+    assert "ABC," not in remaining
+    assert "abc," not in remaining
+    assert "ABCD,Second" in remaining

@@ -1,0 +1,97 @@
+name: Remove Exception
+
+on:
+  issues:
+    types: [opened, reopened]
+
+permissions:
+  contents: write
+  issues: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: exception-list-update
+  cancel-in-progress: false
+
+jobs:
+  reject-unauthorized:
+    if: >-
+      startsWith(github.event.issue.title, '[Remove Exception] ') &&
+      !contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.issue.author_association)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Reject unauthorized request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_URL: ${{ github.event.issue.html_url }}
+        run: |
+          gh issue comment "$ISSUE_URL" --body "Only authorized repository collaborators can remove exception-list entries."
+          gh issue close "$ISSUE_URL" --reason "not planned"
+
+  remove:
+    if: >-
+      startsWith(github.event.issue.title, '[Remove Exception] ') &&
+      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.issue.author_association)
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Validate request
+        id: request
+        shell: bash
+        env:
+          REQUEST_TITLE: ${{ github.event.issue.title }}
+          REQUEST_BODY: ${{ github.event.issue.body }}
+        run: |
+          if [[ "$REQUEST_TITLE" =~ ^\[Remove\ Exception\]\ ([A-Za-z0-9.-]+)$ ]]; then
+            SYMBOL="${BASH_REMATCH[1]^^}"
+          else
+            echo "Invalid removal-request title." >&2
+            exit 1
+          fi
+          if ! grep -Fq "<!-- stockscanner-remove-exception: $SYMBOL -->" <<< "$REQUEST_BODY"; then
+            echo "The request marker does not match the title." >&2
+            exit 1
+          fi
+          echo "symbol=$SYMBOL" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          ref: main
+
+      - name: Remove ticker and regenerate dashboard
+        run: |
+          python -m stockscanner.remove_exception "${{ steps.request.outputs.symbol }}"
+          python -m stockscanner.exceptions_dashboard
+
+      - name: Commit exception-list update
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add watchlists/exceptions.csv exceptions.html
+          git commit -m "Remove ${{ steps.request.outputs.symbol }} from exception list"
+          git push
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v3
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: .
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+      - name: Close completed request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_URL: ${{ github.event.issue.html_url }}
+          SYMBOL: ${{ steps.request.outputs.symbol }}
+        run: |
+          gh issue comment "$ISSUE_URL" --body "Removed **$SYMBOL** from the exception list and republished the dashboard."
+          gh issue close "$ISSUE_URL" --reason "completed"

@@ -4,6 +4,7 @@ import csv
 import html
 import os
 from datetime import datetime
+from urllib.parse import urlencode
 
 from .config import EXCEPTION_LIST
 
@@ -21,13 +22,35 @@ def _load_rows(csv_path):
     return columns, rows
 
 
+def _removal_url(symbol):
+    query = urlencode(
+        {
+            "title": f"[Remove Exception] {symbol}",
+            "body": (
+                f"Please remove **{symbol}** from the StockScanner exception list.\n\n"
+                f"<!-- stockscanner-remove-exception: {symbol} -->"
+            ),
+        }
+    )
+    return f"https://github.com/aksamuel/StockScanner/issues/new?{query}"
+
+
 def _generate_html(columns, rows, generated_at):
     headers = "".join(f"<th>{html.escape(column)}</th>" for column in columns)
+    headers += "<th>Action</th>"
     body_rows = []
     for row in rows:
         cells = "".join(
             f"<td>{html.escape(row.get(column, ''))}</td>" for column in columns
         )
+        symbol = row.get("Symbol", "").strip().upper()
+        action = (
+            f'<td><a class="delete" href="{html.escape(_removal_url(symbol))}" '
+            f'target="_blank" rel="noopener" '
+            f'onclick="return confirm(\'Submit this ticker removal request?\')">'
+            "Delete</a></td>"
+        )
+        cells += action
         body_rows.append(f"<tr>{cells}</tr>")
 
     table_body = "\n".join(body_rows)
@@ -88,6 +111,16 @@ table {{ width: 100%; border-collapse: collapse; background: #1a2a3a; }}
 th, td {{ padding: 11px 14px; border-bottom: 1px solid #263d50; text-align: left; }}
 th {{ color: #4fc3f7; background: #162534; cursor: pointer; white-space: nowrap; }}
 tr:hover td {{ background: #203548; }}
+.delete {{
+    display: inline-block;
+    padding: 5px 10px;
+    color: #ffcdd2;
+    background: #7f1d1d;
+    border: 1px solid #ef5350;
+    border-radius: 5px;
+    text-decoration: none;
+}}
+.delete:hover {{ background: #b71c1c; }}
 .empty {{ padding: 24px; color: #90a4ae; text-align: center; }}
 footer {{ margin-top: 30px; color: #607d8b; font-size: 0.8rem; text-align: center; }}
 </style>
