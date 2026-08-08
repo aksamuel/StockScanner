@@ -2,6 +2,8 @@ import os
 from datetime import datetime
 
 import pandas as pd
+
+from stockscanner.ranking import setup_priority
 from openpyxl import load_workbook
 from openpyxl.chart import BarChart, Reference
 from openpyxl.formatting.rule import CellIsRule, FormulaRule
@@ -166,9 +168,20 @@ def prepare_results_dataframe(results):
     for column in numeric_columns:
         if column in df.columns:
             df[column] = pd.to_numeric(df[column], errors="coerce")
-    sort_columns = [column for column in ["Score", "Risk/Reward", "Relative Strength"] if column in df.columns]
+    sort_columns = []
+    if "Score" in df.columns:
+        sort_columns.append("Score")
+    if "Signal" in df.columns:
+        df["_setup_priority"] = df["Signal"].map(setup_priority)
+        sort_columns.append("_setup_priority")
+    sort_columns.extend(
+        column
+        for column in ["Risk/Reward", "Relative Strength"]
+        if column in df.columns
+    )
     if sort_columns:
         df = df.sort_values(by=sort_columns, ascending=[False] * len(sort_columns))
+    df = df.drop(columns=["_setup_priority"], errors="ignore")
     df = df.reset_index(drop=True)
     if "Rank" in df.columns:
         df = df.drop(columns=["Rank"])

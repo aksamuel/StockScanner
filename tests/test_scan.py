@@ -5,6 +5,7 @@ from stockscanner import report
 from stockscanner.add_exception import add_exceptions
 from stockscanner.exceptions_dashboard import export_exceptions_dashboard
 from stockscanner.html_report import _generate_html
+from stockscanner.ranking import rank_stocks, setup_priority
 from stockscanner.remove_exception import remove_exception, remove_exceptions
 from stockscanner.scoring import score_stock
 from stockscanner.signals import generate_signal
@@ -162,3 +163,58 @@ def test_scan_dashboard_supports_selecting_top_and_all_results():
     assert page.count('class="select-all"') == 2
     assert 'id="addExceptions"' in page
     assert "[Add Exceptions]" in page
+
+
+def test_setup_priority_orders_supported_entry_setups():
+    assert setup_priority("Strong Uptrend") > setup_priority("Pullback to 20 MA")
+    assert setup_priority("Pullback to 20 MA") > setup_priority("Pullback to 50 MA")
+    assert setup_priority("Pullback to 50 MA") > setup_priority("Breakout Candidate")
+    assert setup_priority("Breakout Candidate") > setup_priority("Neutral")
+
+
+def test_setup_priority_is_secondary_to_score(monkeypatch):
+    monkeypatch.setattr("stockscanner.ranking.load_exceptions", lambda: set())
+    results = [
+        {
+            "Symbol": "LOW",
+            "Score": 89,
+            "Signal": "Strong Uptrend",
+            "Risk/Reward": 10,
+            "Relative Strength": 50,
+        },
+        {
+            "Symbol": "BREAK",
+            "Score": 90,
+            "Signal": "Breakout Candidate",
+            "Risk/Reward": 1,
+            "Relative Strength": 5,
+        },
+        {
+            "Symbol": "PULL50",
+            "Score": 90,
+            "Signal": "Pullback to 50 MA",
+            "Risk/Reward": 1,
+            "Relative Strength": 5,
+        },
+        {
+            "Symbol": "PULL20",
+            "Score": 90,
+            "Signal": "Pullback to 20 MA",
+            "Risk/Reward": 1,
+            "Relative Strength": 5,
+        },
+        {
+            "Symbol": "UP",
+            "Score": 90,
+            "Signal": "Strong Uptrend",
+            "Risk/Reward": 1,
+            "Relative Strength": 5,
+        },
+    ]
+
+    ranked = rank_stocks(results)
+    prepared = report.prepare_results_dataframe(results)
+    expected = ["UP", "PULL20", "PULL50", "BREAK", "LOW"]
+
+    assert ranked["Symbol"].tolist() == expected
+    assert prepared["Symbol"].tolist() == expected
