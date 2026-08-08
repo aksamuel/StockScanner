@@ -55,6 +55,16 @@ table { width: 100%; border-collapse: collapse; background: #1a2a3a; }
 th, td { padding: 11px 14px; border-bottom: 1px solid #263d50; text-align: left; }
 th { color: #4fc3f7; background: #162534; cursor: pointer; white-space: nowrap; }
 tr:hover td { background: #203548; }
+.delete {
+    display: inline-block;
+    padding: 5px 10px;
+    color: #ffcdd2;
+    background: #7f1d1d;
+    border: 1px solid #ef5350;
+    border-radius: 5px;
+    text-decoration: none;
+}
+.delete:hover { background: #b71c1c; }
 .empty { padding: 24px; color: #90a4ae; text-align: center; }
 footer { margin-top: 30px; color: #607d8b; font-size: 0.8rem; text-align: center; }
 </style>
@@ -63,7 +73,7 @@ footer { margin-top: 30px; color: #607d8b; font-size: 0.8rem; text-align: center
 <header>
     <div class="container">
         <h1>Stock Exception List</h1>
-        <div class="subtitle">Updated: 08 August 2026, 01:07 PM</div>
+        <div class="subtitle">Updated: 08 August 2026, 04:16 PM</div>
         <div class="nav"><a href="index.html">Back to Scanner Dashboard</a></div>
     </div>
 </header>
@@ -72,28 +82,28 @@ footer { margin-top: 30px; color: #607d8b; font-size: 0.8rem; text-align: center
     <div><input id="filter" type="search" placeholder="Filter exceptions..." aria-label="Filter exceptions"></div>
     <div class="table-wrap">
         <table id="exceptions">
-            <thead><tr><th>Symbol</th><th>Date From</th><th>Date To</th><th>Reason</th></tr></thead>
-            <tbody><tr><td>HSHP</td><td>23-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td></tr>
-<tr><td>TRGP</td><td>24-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td></tr>
-<tr><td>SB</td><td>24-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td></tr>
-<tr><td>SOBO</td><td>23-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td></tr>
-<tr><td>FTI</td><td>23-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td></tr>
-<tr><td>EC</td><td>24-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td></tr>
-<tr><td>KNTK</td><td>24-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td></tr>
-<tr><td>GNK</td><td>23-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td></tr>
-<tr><td>ADM</td><td>23-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td></tr>
-<tr><td>PBA</td><td>24-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td></tr>
-<tr><td>WAB</td><td>23-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td></tr>
-<tr><td>HR</td><td>24-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td></tr>
-<tr><td>TRP</td><td>23-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td></tr>
-<tr><td>HESM</td><td>23-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td></tr>
-<tr><td>ADX</td><td>23-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td></tr>
-<tr><td>FTS</td><td>23-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td></tr>
-<tr><td>PM</td><td>23-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td></tr>
-<tr><td>TDY</td><td>23-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td></tr>
-<tr><td>INGM</td><td>27-Jul-26</td><td>10-Sep-26</td><td>Bought this stocks</td></tr>
-<tr><td>TAK</td><td>27-Jul-26</td><td>10-Sep-26</td><td>Bought this stocks</td></tr>
-<tr><td>EPRT</td><td>27-Jul-26</td><td>10-Sep-26</td><td>Bought this stocks</td></tr></tbody>
+            <thead><tr><th>Symbol</th><th>Date From</th><th>Date To</th><th>Reason</th><th>Action</th></tr></thead>
+            <tbody><tr><td>HSHP</td><td>23-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td><td><a class="delete" href="https://github.com/aksamuel/StockScanner/issues/new?title=%5BRemove+Exception%5D+HSHP&amp;body=Please+remove+%2A%2AHSHP%2A%2A+from+the+StockScanner+exception+list.%0A%0A%3C%21--+stockscanner-remove-exception%3A+HSHP+--%3E" target="_blank" rel="noopener" onclick="return confirm('Submit this ticker removal request?')">Delete</a></td></tr>
+<tr><td>TRGP</td><td>24-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td><td><a class="delete" href="https://github.com/aksamuel/StockScanner/issues/new?title=%5BRemove+Exception%5D+TRGP&amp;body=Please+remove+%2A%2ATRGP%2A%2A+from+the+StockScanner+exception+list.%0A%0A%3C%21--+stockscanner-remove-exception%3A+TRGP+--%3E" target="_blank" rel="noopener" onclick="return confirm('Submit this ticker removal request?')">Delete</a></td></tr>
+<tr><td>SB</td><td>24-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td><td><a class="delete" href="https://github.com/aksamuel/StockScanner/issues/new?title=%5BRemove+Exception%5D+SB&amp;body=Please+remove+%2A%2ASB%2A%2A+from+the+StockScanner+exception+list.%0A%0A%3C%21--+stockscanner-remove-exception%3A+SB+--%3E" target="_blank" rel="noopener" onclick="return confirm('Submit this ticker removal request?')">Delete</a></td></tr>
+<tr><td>SOBO</td><td>23-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td><td><a class="delete" href="https://github.com/aksamuel/StockScanner/issues/new?title=%5BRemove+Exception%5D+SOBO&amp;body=Please+remove+%2A%2ASOBO%2A%2A+from+the+StockScanner+exception+list.%0A%0A%3C%21--+stockscanner-remove-exception%3A+SOBO+--%3E" target="_blank" rel="noopener" onclick="return confirm('Submit this ticker removal request?')">Delete</a></td></tr>
+<tr><td>FTI</td><td>23-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td><td><a class="delete" href="https://github.com/aksamuel/StockScanner/issues/new?title=%5BRemove+Exception%5D+FTI&amp;body=Please+remove+%2A%2AFTI%2A%2A+from+the+StockScanner+exception+list.%0A%0A%3C%21--+stockscanner-remove-exception%3A+FTI+--%3E" target="_blank" rel="noopener" onclick="return confirm('Submit this ticker removal request?')">Delete</a></td></tr>
+<tr><td>EC</td><td>24-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td><td><a class="delete" href="https://github.com/aksamuel/StockScanner/issues/new?title=%5BRemove+Exception%5D+EC&amp;body=Please+remove+%2A%2AEC%2A%2A+from+the+StockScanner+exception+list.%0A%0A%3C%21--+stockscanner-remove-exception%3A+EC+--%3E" target="_blank" rel="noopener" onclick="return confirm('Submit this ticker removal request?')">Delete</a></td></tr>
+<tr><td>KNTK</td><td>24-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td><td><a class="delete" href="https://github.com/aksamuel/StockScanner/issues/new?title=%5BRemove+Exception%5D+KNTK&amp;body=Please+remove+%2A%2AKNTK%2A%2A+from+the+StockScanner+exception+list.%0A%0A%3C%21--+stockscanner-remove-exception%3A+KNTK+--%3E" target="_blank" rel="noopener" onclick="return confirm('Submit this ticker removal request?')">Delete</a></td></tr>
+<tr><td>GNK</td><td>23-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td><td><a class="delete" href="https://github.com/aksamuel/StockScanner/issues/new?title=%5BRemove+Exception%5D+GNK&amp;body=Please+remove+%2A%2AGNK%2A%2A+from+the+StockScanner+exception+list.%0A%0A%3C%21--+stockscanner-remove-exception%3A+GNK+--%3E" target="_blank" rel="noopener" onclick="return confirm('Submit this ticker removal request?')">Delete</a></td></tr>
+<tr><td>ADM</td><td>23-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td><td><a class="delete" href="https://github.com/aksamuel/StockScanner/issues/new?title=%5BRemove+Exception%5D+ADM&amp;body=Please+remove+%2A%2AADM%2A%2A+from+the+StockScanner+exception+list.%0A%0A%3C%21--+stockscanner-remove-exception%3A+ADM+--%3E" target="_blank" rel="noopener" onclick="return confirm('Submit this ticker removal request?')">Delete</a></td></tr>
+<tr><td>PBA</td><td>24-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td><td><a class="delete" href="https://github.com/aksamuel/StockScanner/issues/new?title=%5BRemove+Exception%5D+PBA&amp;body=Please+remove+%2A%2APBA%2A%2A+from+the+StockScanner+exception+list.%0A%0A%3C%21--+stockscanner-remove-exception%3A+PBA+--%3E" target="_blank" rel="noopener" onclick="return confirm('Submit this ticker removal request?')">Delete</a></td></tr>
+<tr><td>WAB</td><td>23-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td><td><a class="delete" href="https://github.com/aksamuel/StockScanner/issues/new?title=%5BRemove+Exception%5D+WAB&amp;body=Please+remove+%2A%2AWAB%2A%2A+from+the+StockScanner+exception+list.%0A%0A%3C%21--+stockscanner-remove-exception%3A+WAB+--%3E" target="_blank" rel="noopener" onclick="return confirm('Submit this ticker removal request?')">Delete</a></td></tr>
+<tr><td>HR</td><td>24-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td><td><a class="delete" href="https://github.com/aksamuel/StockScanner/issues/new?title=%5BRemove+Exception%5D+HR&amp;body=Please+remove+%2A%2AHR%2A%2A+from+the+StockScanner+exception+list.%0A%0A%3C%21--+stockscanner-remove-exception%3A+HR+--%3E" target="_blank" rel="noopener" onclick="return confirm('Submit this ticker removal request?')">Delete</a></td></tr>
+<tr><td>TRP</td><td>23-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td><td><a class="delete" href="https://github.com/aksamuel/StockScanner/issues/new?title=%5BRemove+Exception%5D+TRP&amp;body=Please+remove+%2A%2ATRP%2A%2A+from+the+StockScanner+exception+list.%0A%0A%3C%21--+stockscanner-remove-exception%3A+TRP+--%3E" target="_blank" rel="noopener" onclick="return confirm('Submit this ticker removal request?')">Delete</a></td></tr>
+<tr><td>HESM</td><td>23-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td><td><a class="delete" href="https://github.com/aksamuel/StockScanner/issues/new?title=%5BRemove+Exception%5D+HESM&amp;body=Please+remove+%2A%2AHESM%2A%2A+from+the+StockScanner+exception+list.%0A%0A%3C%21--+stockscanner-remove-exception%3A+HESM+--%3E" target="_blank" rel="noopener" onclick="return confirm('Submit this ticker removal request?')">Delete</a></td></tr>
+<tr><td>ADX</td><td>23-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td><td><a class="delete" href="https://github.com/aksamuel/StockScanner/issues/new?title=%5BRemove+Exception%5D+ADX&amp;body=Please+remove+%2A%2AADX%2A%2A+from+the+StockScanner+exception+list.%0A%0A%3C%21--+stockscanner-remove-exception%3A+ADX+--%3E" target="_blank" rel="noopener" onclick="return confirm('Submit this ticker removal request?')">Delete</a></td></tr>
+<tr><td>FTS</td><td>23-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td><td><a class="delete" href="https://github.com/aksamuel/StockScanner/issues/new?title=%5BRemove+Exception%5D+FTS&amp;body=Please+remove+%2A%2AFTS%2A%2A+from+the+StockScanner+exception+list.%0A%0A%3C%21--+stockscanner-remove-exception%3A+FTS+--%3E" target="_blank" rel="noopener" onclick="return confirm('Submit this ticker removal request?')">Delete</a></td></tr>
+<tr><td>PM</td><td>23-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td><td><a class="delete" href="https://github.com/aksamuel/StockScanner/issues/new?title=%5BRemove+Exception%5D+PM&amp;body=Please+remove+%2A%2APM%2A%2A+from+the+StockScanner+exception+list.%0A%0A%3C%21--+stockscanner-remove-exception%3A+PM+--%3E" target="_blank" rel="noopener" onclick="return confirm('Submit this ticker removal request?')">Delete</a></td></tr>
+<tr><td>TDY</td><td>23-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td><td><a class="delete" href="https://github.com/aksamuel/StockScanner/issues/new?title=%5BRemove+Exception%5D+TDY&amp;body=Please+remove+%2A%2ATDY%2A%2A+from+the+StockScanner+exception+list.%0A%0A%3C%21--+stockscanner-remove-exception%3A+TDY+--%3E" target="_blank" rel="noopener" onclick="return confirm('Submit this ticker removal request?')">Delete</a></td></tr>
+<tr><td>INGM</td><td>27-Jul-26</td><td>10-Sep-26</td><td>Bought this stocks</td><td><a class="delete" href="https://github.com/aksamuel/StockScanner/issues/new?title=%5BRemove+Exception%5D+INGM&amp;body=Please+remove+%2A%2AINGM%2A%2A+from+the+StockScanner+exception+list.%0A%0A%3C%21--+stockscanner-remove-exception%3A+INGM+--%3E" target="_blank" rel="noopener" onclick="return confirm('Submit this ticker removal request?')">Delete</a></td></tr>
+<tr><td>TAK</td><td>27-Jul-26</td><td>10-Sep-26</td><td>Bought this stocks</td><td><a class="delete" href="https://github.com/aksamuel/StockScanner/issues/new?title=%5BRemove+Exception%5D+TAK&amp;body=Please+remove+%2A%2ATAK%2A%2A+from+the+StockScanner+exception+list.%0A%0A%3C%21--+stockscanner-remove-exception%3A+TAK+--%3E" target="_blank" rel="noopener" onclick="return confirm('Submit this ticker removal request?')">Delete</a></td></tr>
+<tr><td>EPRT</td><td>27-Jul-26</td><td>10-Sep-26</td><td>Bought this stocks</td><td><a class="delete" href="https://github.com/aksamuel/StockScanner/issues/new?title=%5BRemove+Exception%5D+EPRT&amp;body=Please+remove+%2A%2AEPRT%2A%2A+from+the+StockScanner+exception+list.%0A%0A%3C%21--+stockscanner-remove-exception%3A+EPRT+--%3E" target="_blank" rel="noopener" onclick="return confirm('Submit this ticker removal request?')">Delete</a></td></tr></tbody>
         </table>
         <div id="empty" class="empty" hidden>No matching exceptions found.</div>
     </div>
