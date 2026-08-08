@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>StockScanner Exception List</title>
+<style>
+* { box-sizing: border-box; }
+body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #0f1923;
+    color: #e0e0e0;
+    line-height: 1.6;
+}
+.container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+header {
+    padding: 24px 0;
+    margin-bottom: 24px;
+    background: linear-gradient(135deg, #1a2a3a 0%, #0f1923 100%);
+    border-bottom: 2px solid #1f4e78;
+    text-align: center;
+}
+h1 { margin: 0; color: #4fc3f7; font-size: 1.8rem; }
+.subtitle { color: #90a4ae; margin-top: 4px; font-size: 0.9rem; }
+.nav { margin-top: 14px; }
+.nav a {
+    display: inline-block;
+    padding: 7px 14px;
+    color: #4fc3f7;
+    border: 1px solid #1f4e78;
+    border-radius: 6px;
+    text-decoration: none;
+}
+.summary {
+    display: inline-block;
+    margin-bottom: 18px;
+    padding: 14px 20px;
+    background: #1a2a3a;
+    border: 1px solid #263d50;
+    border-radius: 8px;
+}
+.summary strong { color: #4fc3f7; font-size: 1.4rem; }
+input {
+    width: min(100%, 360px);
+    margin-bottom: 14px;
+    padding: 10px 12px;
+    color: #e0e0e0;
+    background: #162534;
+    border: 1px solid #365069;
+    border-radius: 6px;
+}
+.table-wrap { overflow-x: auto; border: 1px solid #263d50; border-radius: 8px; }
+table { width: 100%; border-collapse: collapse; background: #1a2a3a; }
+th, td { padding: 11px 14px; border-bottom: 1px solid #263d50; text-align: left; }
+th { color: #4fc3f7; background: #162534; cursor: pointer; white-space: nowrap; }
+tr:hover td { background: #203548; }
+.empty { padding: 24px; color: #90a4ae; text-align: center; }
+footer { margin-top: 30px; color: #607d8b; font-size: 0.8rem; text-align: center; }
+</style>
+</head>
+<body>
+<header>
+    <div class="container">
+        <h1>Stock Exception List</h1>
+        <div class="subtitle">Updated: 08 August 2026, 04:00 PM</div>
+        <div class="nav"><a href="index.html">Back to Scanner Dashboard</a></div>
+    </div>
+</header>
+<main class="container">
+    <div class="summary"><strong>21</strong><br>Listed exceptions</div>
+    <div><input id="filter" type="search" placeholder="Filter exceptions..." aria-label="Filter exceptions"></div>
+    <div class="table-wrap">
+        <table id="exceptions">
+            <thead><tr><th>Symbol</th><th>Date From</th><th>Date To</th><th>Reason</th></tr></thead>
+            <tbody><tr><td>HSHP</td><td>23-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td></tr>
+<tr><td>TRGP</td><td>24-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td></tr>
+<tr><td>SB</td><td>24-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td></tr>
+<tr><td>SOBO</td><td>23-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td></tr>
+<tr><td>FTI</td><td>23-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td></tr>
+<tr><td>EC</td><td>24-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td></tr>
+<tr><td>KNTK</td><td>24-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td></tr>
+<tr><td>GNK</td><td>23-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td></tr>
+<tr><td>ADM</td><td>23-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td></tr>
+<tr><td>PBA</td><td>24-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td></tr>
+<tr><td>WAB</td><td>23-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td></tr>
+<tr><td>HR</td><td>24-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td></tr>
+<tr><td>TRP</td><td>23-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td></tr>
+<tr><td>HESM</td><td>23-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td></tr>
+<tr><td>ADX</td><td>23-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td></tr>
+<tr><td>FTS</td><td>23-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td></tr>
+<tr><td>PM</td><td>23-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td></tr>
+<tr><td>TDY</td><td>23-Jul-26</td><td>31/Sep/2026</td><td>Bought this stocks</td></tr>
+<tr><td>INGM</td><td>27-Jul-26</td><td>10-Sep-26</td><td>Bought this stocks</td></tr>
+<tr><td>TAK</td><td>27-Jul-26</td><td>10-Sep-26</td><td>Bought this stocks</td></tr>
+<tr><td>EPRT</td><td>27-Jul-26</td><td>10-Sep-26</td><td>Bought this stocks</td></tr></tbody>
+        </table>
+        <div id="empty" class="empty" hidden>No matching exceptions found.</div>
+    </div>
+</main>
+<footer>Generated from watchlists/exceptions.csv</footer>
+<script>
+const filter = document.getElementById("filter");
+const rows = [...document.querySelectorAll("#exceptions tbody tr")];
+const empty = document.getElementById("empty");
+filter.addEventListener("input", () => {
+    const query = filter.value.trim().toLowerCase();
+    let visible = 0;
+    rows.forEach(row => {
+        const show = row.textContent.toLowerCase().includes(query);
+        row.hidden = !show;
+        if (show) visible++;
+    });
+    empty.hidden = visible !== 0;
+});
+</script>
+</body>
+</html>

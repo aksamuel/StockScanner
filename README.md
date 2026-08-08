@@ -227,6 +227,7 @@ Features:
 - Interactive bar chart (recommendation breakdown)
 - Sortable and filterable results tables (Top 20 + All)
 - Color-coded scores and recommendations
+- A filterable exception-list page at `exceptions.html`, regenerated from `watchlists/exceptions.csv`
 
 ## Folder layout
 

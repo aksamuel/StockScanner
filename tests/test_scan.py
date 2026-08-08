@@ -1,6 +1,7 @@
 import pandas as pd
 
 from stockscanner import report
+from stockscanner.exceptions_dashboard import export_exceptions_dashboard
 from stockscanner.scoring import score_stock
 from stockscanner.signals import generate_signal
 
@@ -61,3 +62,27 @@ def test_report_indexes_link_to_dated_reports(tmp_path, monkeypatch):
     assert "href='StockScanner_Combined_2026-08-03_16-40-23.html'" in date_index
     assert "href='2026-08-03/index.html'" in root_index
     assert "href='2026-08-03/StockScanner_Combined_2026-08-03_16-40-23.html'" in root_index
+
+
+def test_export_exceptions_dashboard(tmp_path):
+    exception_list = tmp_path / "exceptions.csv"
+    exception_list.write_text(
+        "Symbol,Date From,Date To,Reason\n"
+        "ABC,01/Aug/2026,31/Aug/2026,Bought & held\n"
+        ",,,\n"
+        "XYZ,02/Aug/2026,01/Sep/2026,<review>\n",
+        encoding="utf-8",
+    )
+    output = tmp_path / "exceptions.html"
+
+    result = export_exceptions_dashboard(
+        str(exception_list), str(output), "08 August 2026, 04:00 PM"
+    )
+    page = output.read_text(encoding="utf-8")
+
+    assert result == str(output)
+    assert "<strong>2</strong>" in page
+    assert "ABC" in page
+    assert "Bought &amp; held" in page
+    assert "&lt;review&gt;" in page
+    assert "Back to Scanner Dashboard" in page
