@@ -113,6 +113,7 @@ jobs:
       - name: Deploy Dashboard as landing page
         if: ${{ always() }}
         run: |
+          python -m stockscanner.exceptions_dashboard
           touch .nojekyll
           touch reports/.nojekyll
           # Use the latest Dashboard HTML as the site's index page
@@ -142,7 +143,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add index.html .nojekyll reports/
+          git add index.html exceptions.html .nojekyll reports/
           if git diff --cached --quiet; then
             echo "No report changes to commit."
           else
