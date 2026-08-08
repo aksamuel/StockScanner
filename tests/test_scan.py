@@ -2,7 +2,9 @@ import pandas as pd
 import pytest
 
 from stockscanner import report
+from stockscanner.add_exception import add_exceptions
 from stockscanner.exceptions_dashboard import export_exceptions_dashboard
+from stockscanner.html_report import _generate_html
 from stockscanner.remove_exception import remove_exception, remove_exceptions
 from stockscanner.scoring import score_stock
 from stockscanner.signals import generate_signal
@@ -127,3 +129,36 @@ def test_remove_exceptions_removes_multiple_tickers_atomically(tmp_path):
     with pytest.raises(ValueError, match="MISSING"):
         remove_exceptions(["ABC", "MISSING"], str(exception_list))
     assert exception_list.read_text(encoding="utf-8") == original
+
+
+def test_add_exceptions_adds_permanent_rows_atomically(tmp_path):
+    exception_list = tmp_path / "exceptions.csv"
+    original = "Symbol,Date From,Date To,Reason\nABC,,,Existing\n"
+    exception_list.write_text(original, encoding="utf-8")
+
+    added_count = add_exceptions(["def", "GHI"], str(exception_list))
+    updated = exception_list.read_text(encoding="utf-8")
+
+    assert added_count == 2
+    assert "DEF,,,Added from scanner dashboard" in updated
+    assert "GHI,,,Added from scanner dashboard" in updated
+
+    with pytest.raises(ValueError, match="ABC"):
+        add_exceptions(["JKL", "ABC"], str(exception_list))
+    assert "JKL" not in exception_list.read_text(encoding="utf-8")
+
+
+def test_scan_dashboard_supports_selecting_top_and_all_results():
+    dataframe = pd.DataFrame(
+        [
+            {"Symbol": "ABC", "Score": 90, "Recommendation": "BUY"},
+            {"Symbol": "XYZ", "Score": 80, "Recommendation": "WATCH"},
+        ]
+    )
+
+    page = _generate_html(dataframe, "08 August 2026, 04:00 PM")
+
+    assert page.count('class="exception-select"') == 4
+    assert page.count('class="select-all"') == 2
+    assert 'id="addExceptions"' in page
+    assert "[Add Exceptions]" in page
