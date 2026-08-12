@@ -294,11 +294,11 @@ def test_current_price_cells_use_rsi_background_colors(tmp_path):
 def test_symbol_cells_use_relative_strength_background_colors(tmp_path):
     dataframe = report.prepare_results_dataframe(
         [
-            {"Symbol": "STRONG", "Relative Strength": 81, "Score": 90},
-            {"Symbol": "UPPER", "Relative Strength": 80, "Score": 80},
-            {"Symbol": "NEUTRAL", "Relative Strength": 60, "Score": 70},
-            {"Symbol": "LOWER", "Relative Strength": 40, "Score": 60},
-            {"Symbol": "WEAK", "Relative Strength": 20, "Score": 50},
+            {"Symbol": "STRONG", "Relative Strength": 6, "Score": 90},
+            {"Symbol": "UPPER", "Relative Strength": 5, "Score": 80},
+            {"Symbol": "NEUTRAL", "Relative Strength": 0, "Score": 70},
+            {"Symbol": "LOWER", "Relative Strength": -5, "Score": 60},
+            {"Symbol": "WEAK", "Relative Strength": -6, "Score": 50},
         ]
     )
 

@@ -69,13 +69,13 @@ def _symbol_relative_strength_class(relative_strength):
         value = float(relative_strength)
     except (ValueError, TypeError):
         return ""
-    if value > 80:
+    if value > 5:
         return "symbol-rs-strong"
-    if value > 60:
+    if value > 0:
         return "symbol-rs-upper"
-    if value > 40:
+    if value == 0:
         return "symbol-rs-neutral"
-    if value > 20:
+    if value >= -5:
         return "symbol-rs-lower"
     return "symbol-rs-weak"
 

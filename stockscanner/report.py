@@ -215,13 +215,13 @@ def apply_symbol_relative_strength_colors(worksheet):
             relative_strength = float(relative_strength)
         except (TypeError, ValueError):
             continue
-        if relative_strength > 80:
+        if relative_strength > 5:
             fill = RS_STRONG_FILL
-        elif relative_strength > 60:
+        elif relative_strength > 0:
             fill = RS_UPPER_FILL
-        elif relative_strength > 40:
+        elif relative_strength == 0:
             fill = RS_NEUTRAL_FILL
-        elif relative_strength > 20:
+        elif relative_strength >= -5:
             fill = RS_LOWER_FILL
         else:
             fill = RS_WEAK_FILL
