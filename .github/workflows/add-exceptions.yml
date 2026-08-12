@@ -107,5 +107,5 @@ jobs:
           ISSUE_URL: ${{ github.event.issue.html_url }}
           SYMBOLS: ${{ steps.request.outputs.symbols }}
         run: |
-          gh issue comment "$ISSUE_URL" --body "Added **$SYMBOLS** to the permanent exception list and republished the dashboard."
+          gh issue comment "$ISSUE_URL" --body "Added **$SYMBOLS** to the exception list for 30 days and republished the dashboard."
           gh issue close "$ISSUE_URL" --reason "completed"

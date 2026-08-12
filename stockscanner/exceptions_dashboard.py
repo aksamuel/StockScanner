@@ -6,6 +6,7 @@ import os
 from datetime import datetime
 
 from .config import EXCEPTION_LIST
+from .exception_list import sort_exception_rows
 
 
 def _load_rows(csv_path):
@@ -18,7 +19,7 @@ def _load_rows(csv_path):
             for row in reader
             if any((value or "").strip() for value in row.values())
         ]
-    return columns, rows
+    return columns, sort_exception_rows(rows)
 
 
 def _generate_html(columns, rows, generated_at):

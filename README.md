@@ -1,4 +1,4 @@
-# StockScanner v2.3.1
+# StockScanner v2.3.2
 
 [![Stock Scanner](https://github.com/aksamuel/StockScanner/actions/workflows/scan.yml/badge.svg)](https://github.com/aksamuel/StockScanner/actions/workflows/scan.yml)
 
@@ -228,8 +228,11 @@ Features:
 - Sortable and filterable results tables (Top 20 + All)
 - Color-coded scores and recommendations
 - A filterable exception-list page at `exceptions.html`, regenerated from `watchlists/exceptions.csv`
+- Exception entries are kept in alphabetical ticker order after additions and removals
 - Authorized collaborators can select multiple exception rows and submit one GitHub removal request; the `Remove Exception` Action validates the request, updates the CSV atomically, and republishes the page
-- The Top 20 and All Results tables support selecting up to 50 tickers and submitting one authorized request to add them permanently to the exception list
+- The Top 20 and All Results tables support selecting up to 50 tickers and submitting one authorized request to exclude them for 30 days
+
+Screening requires a share price of at least **$1.00** and average daily dollar volume of at least **$5 million**.
 
 ## Folder layout
 
