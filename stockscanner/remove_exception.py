@@ -6,6 +6,7 @@ import os
 import tempfile
 
 from .config import EXCEPTION_LIST
+from .exception_list import sort_exception_rows
 
 
 def remove_exceptions(symbols, csv_path=EXCEPTION_LIST):
@@ -40,6 +41,7 @@ def remove_exceptions(symbols, csv_path=EXCEPTION_LIST):
         for row in rows
         if (row.get("Symbol") or "").strip().upper() not in requested
     ]
+    kept_rows = sort_exception_rows(kept_rows)
     removed_count = len(rows) - len(kept_rows)
 
     directory = os.path.dirname(os.path.abspath(csv_path))

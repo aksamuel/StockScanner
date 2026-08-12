@@ -100,6 +100,7 @@ def test_export_exceptions_dashboard(tmp_path):
     assert 'class="ticker-select"' in page
     assert 'id="deleteSelected"' in page
     assert "[Remove Exceptions]" in page
+    assert page.index("ABC") < page.index("XYZ")
 
 
 def test_remove_exception_matches_complete_symbol_case_insensitively(tmp_path):
@@ -148,10 +149,28 @@ def test_add_exceptions_adds_permanent_rows_atomically(tmp_path):
     assert added_count == 2
     assert "DEF,,,Added from scanner dashboard" in updated
     assert "GHI,,,Added from scanner dashboard" in updated
+    assert updated.index("ABC") < updated.index("DEF") < updated.index("GHI")
 
     with pytest.raises(ValueError, match="ABC"):
         add_exceptions(["JKL", "ABC"], str(exception_list))
     assert "JKL" not in exception_list.read_text(encoding="utf-8")
+
+
+def test_exception_updates_sort_symbols_alphabetically(tmp_path):
+    exception_list = tmp_path / "exceptions.csv"
+    exception_list.write_text(
+        "Symbol,Date From,Date To,Reason\n"
+        "XYZ,,,Last\n"
+        "DEF,,,Remove\n"
+        "ABC,,,First\n",
+        encoding="utf-8",
+    )
+
+    remove_exceptions(["DEF"], str(exception_list))
+    add_exceptions(["mno"], str(exception_list))
+    symbols = pd.read_csv(exception_list)["Symbol"].tolist()
+
+    assert symbols == ["ABC", "MNO", "XYZ"]
 
 
 def test_scan_dashboard_supports_selecting_top_and_all_results():
