@@ -66,6 +66,11 @@ def apply_number_formats(worksheet):
         "20 MA",
         "50 MA",
         "200 MA",
+        "Support Low",
+        "Support High",
+        "Resistance Low",
+        "Resistance High",
+        "Zone Tolerance",
         "Entry",
         "Stop Loss",
         "Target 1",
@@ -79,11 +84,18 @@ def apply_number_formats(worksheet):
         "Relative Strength",
         "Risk/Reward",
     }
-    percentage_columns = {"Target Upside"}
+    percentage_columns = {
+        "Target Upside",
+        "Support Distance %",
+        "Resistance Distance %",
+        "Zone Tolerance %",
+    }
     integer_columns = {
         "Rank",
         "Score",
         "Suggested Shares",
+        "Support Tests",
+        "Resistance Tests",
     }
     headers = {cell.value: cell.column for cell in worksheet[1] if cell.value is not None}
     for heading in currency_columns:
@@ -159,6 +171,14 @@ def prepare_results_dataframe(results):
         "20 MA",
         "50 MA",
         "200 MA",
+        "Support Low",
+        "Support High",
+        "Support Distance %",
+        "Resistance Low",
+        "Resistance High",
+        "Resistance Distance %",
+        "Zone Tolerance",
+        "Zone Tolerance %",
         "RSI",
         "MACD",
         "Relative Strength",
@@ -207,6 +227,29 @@ def prepare_results_dataframe(results):
     if "Rank" in df.columns:
         df = df.drop(columns=["Rank"])
     df.insert(0, "Rank", range(1, len(df) + 1))
+    zone_columns = [
+        "Zone Status",
+        "Support Low",
+        "Support High",
+        "Support Distance %",
+        "Support Tests",
+        "Support Confidence",
+        "Support Details",
+        "Resistance Low",
+        "Resistance High",
+        "Resistance Distance %",
+        "Resistance Tests",
+        "Resistance Confidence",
+        "Resistance Details",
+        "Zone Tolerance",
+        "Zone Tolerance %",
+    ]
+    present_zone_columns = [column for column in zone_columns if column in df.columns]
+    if present_zone_columns:
+        remaining = [column for column in df.columns if column not in present_zone_columns]
+        insert_at = remaining.index("Current Price") + 1 if "Current Price" in remaining else 1
+        ordered = remaining[:insert_at] + present_zone_columns + remaining[insert_at:]
+        df = df[ordered]
     return df
 
 

@@ -72,11 +72,19 @@ def _format_integer(value):
 
 CURRENCY_COLUMNS = {
     "Current Price", "20 MA", "50 MA", "200 MA",
+    "Support Low", "Support High", "Resistance Low", "Resistance High",
+    "Zone Tolerance",
     "Entry", "Stop Loss", "Target 1", "Target 2", "Target 3", "Investment",
 }
 DECIMAL_COLUMNS = {"RSI", "MACD", "Relative Strength", "Risk/Reward"}
-PERCENT_COLUMNS = {"Target Upside"}
-INTEGER_COLUMNS = {"Rank", "Score", "Suggested Shares", "Average Volume", "Average Dollar Volume"}
+PERCENT_COLUMNS = {
+    "Target Upside", "Support Distance %", "Resistance Distance %",
+    "Zone Tolerance %",
+}
+INTEGER_COLUMNS = {
+    "Rank", "Score", "Suggested Shares", "Average Volume",
+    "Average Dollar Volume", "Support Tests", "Resistance Tests",
+}
 
 
 def _format_cell(column, value):

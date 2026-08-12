@@ -23,6 +23,7 @@ from stockscanner.ranking import rank_stocks
 from stockscanner.analyst_data import get_analyst_data
 from stockscanner.signals import generate_signal
 from stockscanner.relative_strength import calculate_relative_strength
+from stockscanner.support_resistance import analyze_support_resistance
 
 
 def _prefer_emoji(text_emoji: str, text_ascii: str) -> str:
@@ -100,6 +101,12 @@ def process_stock(row, quiet=False, available_cash=1000, risk_percent=1):
     latest = analysis_df.iloc[-1]
     current_price = float(latest["Close"])
     average_dollar_volume = current_price * average_volume
+    try:
+        zone_analysis = analyze_support_resistance(df, current_price=current_price)
+    except Exception as error:
+        if not quiet:
+            print(f"Support/Resistance Error: {error}")
+        zone_analysis = analyze_support_resistance(None)
 
     if current_price < MIN_PRICE:
         if not quiet:
@@ -176,6 +183,7 @@ def process_stock(row, quiet=False, available_cash=1000, risk_percent=1):
         "20 MA": round(float(latest["MA20"]), 2),
         "50 MA": round(float(latest["MA50"]), 2),
         "200 MA": round(float(latest["MA200"]), 2),
+        **zone_analysis,
         "RSI": round(float(latest["RSI"]), 2),
         "MACD": round(float(latest["MACD"]), 2),
         "Relative Strength": round(relative_strength, 2),
