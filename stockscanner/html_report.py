@@ -296,7 +296,7 @@ def _sort_technical_by_symbol_color(dataframe):
     sorted_data["_relative_strength_order"] = relative_strength.fillna(float("inf"))
     sorted_data = sorted_data.sort_values(
         ["_symbol_color_priority", "_relative_strength_order"],
-        ascending=[True, True],
+        ascending=[True, False],
         kind="stable",
     ).drop(columns=["_symbol_color_priority", "_relative_strength_order"])
     sorted_data = sorted_data.reset_index(drop=True)

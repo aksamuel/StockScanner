@@ -505,6 +505,7 @@ def test_technical_page_sorts_symbol_colors_from_green_to_orange():
             {"Symbol": "MISSING", "Relative Strength": None, "Score": 80},
             {"Symbol": "BLUE", "Relative Strength": 0, "Score": 70},
             {"Symbol": "GREEN", "Relative Strength": -6, "Score": 60},
+            {"Symbol": "GREENLOWER", "Relative Strength": -20, "Score": 55},
             {"Symbol": "PEACH", "Relative Strength": 5, "Score": 50},
             {"Symbol": "LIGHTGREEN", "Relative Strength": -5, "Score": 40},
         ]
@@ -516,7 +517,15 @@ def test_technical_page_sorts_symbol_colors_from_green_to_orange():
         page_key="technical",
     )
     top_table = page.split('<table id="topTable">', 1)[1].split("</table>", 1)[0]
-    ordered_symbols = ["GREEN", "LIGHTGREEN", "BLUE", "PEACH", "ORANGE", "MISSING"]
+    ordered_symbols = [
+        "GREEN",
+        "GREENLOWER",
+        "LIGHTGREEN",
+        "BLUE",
+        "PEACH",
+        "ORANGE",
+        "MISSING",
+    ]
 
     positions = [top_table.index(f">{symbol}</td>") for symbol in ordered_symbols]
     assert positions == sorted(positions)
