@@ -9,7 +9,11 @@ from stockscanner.config import (
 )
 from stockscanner.universe import load_nyse_tickers
 from stockscanner.watchlist import load_watchlist
-from stockscanner.market_data import download_data
+from stockscanner.market_data import (
+    completed_daily_data,
+    download_data,
+    download_intraday_snapshot,
+)
 from stockscanner.indicators import calculate_indicators
 from stockscanner.scoring import score_stock
 from stockscanner.trade_plan import generate_trade_plan
@@ -61,6 +65,7 @@ def process_stock(row, quiet=False, available_cash=1000, risk_percent=1):
         print(f"Download Error: {error}")
         return None
 
+    df = completed_daily_data(df)
     if df is None or df.empty or len(df) < 200:
         if not quiet:
             print("Not enough historical data.")
@@ -69,14 +74,32 @@ def process_stock(row, quiet=False, available_cash=1000, risk_percent=1):
     try:
         df = calculate_indicators(df)
         latest = df.iloc[-1]
-
-        current_price = float(latest["Close"])
         average_volume = float(df["Volume"].tail(AVERAGE_VOLUME_DAYS).mean())
-        average_dollar_volume = current_price * average_volume
     except Exception as error:
         if not quiet:
             print(f"Indicator Error: {error}")
         return None
+
+    analysis_df = df.copy()
+    price_timestamp = str(analysis_df.index[-1])
+    try:
+        intraday = download_intraday_snapshot(symbol)
+    except Exception as error:
+        if not quiet:
+            print(f"Intraday Data Error: {error}")
+        intraday = None
+    if intraday is not None:
+        analysis_df.loc[analysis_df.index[-1], "Close"] = intraday["price"]
+        analysis_df.loc[analysis_df.index[-1], "High"] = max(
+            float(analysis_df["High"].iloc[-1]),
+            intraday["price"],
+        )
+        analysis_df.loc[analysis_df.index[-1], "Volume"] = intraday["volume"]
+        price_timestamp = intraday["timestamp"]
+
+    latest = analysis_df.iloc[-1]
+    current_price = float(latest["Close"])
+    average_dollar_volume = current_price * average_volume
 
     if current_price < MIN_PRICE:
         if not quiet:
@@ -99,8 +122,8 @@ def process_stock(row, quiet=False, available_cash=1000, risk_percent=1):
         relative_strength = 0.0
 
     try:
-        score = score_stock(df, relative_strength)
-        signal = generate_signal(df)
+        score = score_stock(analysis_df, relative_strength)
+        signal = generate_signal(analysis_df)
     except Exception as error:
         if not quiet:
             print(f"Score or Signal Error: {error}")
@@ -109,7 +132,11 @@ def process_stock(row, quiet=False, available_cash=1000, risk_percent=1):
     recommendation = get_recommendation(score)
 
     try:
-        plan = generate_trade_plan(df, available_cash=available_cash, risk_percent=risk_percent)
+        plan = generate_trade_plan(
+            analysis_df,
+            available_cash=available_cash,
+            risk_percent=risk_percent,
+        )
     except Exception as error:
         if not quiet:
             print(f"Trade Plan Error: {error}")
@@ -142,6 +169,7 @@ def process_stock(row, quiet=False, available_cash=1000, risk_percent=1):
         "Priority": priority,
         "Market Cap": market_cap,
         "Current Price": round(current_price, 2),
+        "Price As Of": price_timestamp,
         "Average Volume": round(average_volume, 0),
         "Average Dollar Volume": round(average_dollar_volume, 0),
         "Liquidity Status": "PASS",

@@ -1,6 +1,6 @@
 [project]
 name = "stockscanner"
-version = "2.4.0"
+version = "2.4.1"
 description = "StockScanner — NYSE stock scanner with interactive HTML dashboard, position sizing, and GitHub Pages deployment."
 readme = "README.md"
 requires-python = ">=3.11"

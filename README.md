@@ -1,4 +1,4 @@
-# StockScanner v2.4.0
+# StockScanner v2.4.1
 
 [![Stock Scanner](https://github.com/aksamuel/StockScanner/actions/workflows/scan.yml/badge.svg)](https://github.com/aksamuel/StockScanner/actions/workflows/scan.yml)
 
@@ -241,6 +241,12 @@ Strength; they do not change the technical score. Yahoo Finance analyst targets
 are generally longer-horizon estimates, while the scanner's technical factors
 remain the short-term selection method.
 
+During market hours, the scanner overlays Yahoo Finance's latest one-minute
+extended-hours price and cumulative session volume. Moving averages, RSI, and
+MACD continue to use completed daily candles only. Before the first quote of
+the current session is available, the scanner falls back to the latest
+completed close.
+
 ## Folder layout
 
 - `stockscanner/` — package source
@@ -255,7 +261,7 @@ remain the short-term selection method.
 
 - Historical market data is cached on-disk to avoid repeated downloads and speed up scans.
 - Cache location: `data/history/` (files named `{SYMBOL}.csv`).
-- Default TTL: 7 days. The scanner will use a cached file while it's newer than the TTL.
+- Default TTL: 1 day. The scanner will use a cached file while it's newer than the TTL.
 - To force-refresh cached data for a symbol, either delete its CSV in `data/history/` or run a quick Python call:
 
 ```py

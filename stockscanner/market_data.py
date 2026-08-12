@@ -1,12 +1,14 @@
 import os
 import time
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 import yfinance as yf
 
 
-CACHE_DAYS = 7
+CACHE_DAYS = 1
+NEW_YORK = ZoneInfo("America/New_York")
 
 
 def _cache_path(symbol):
@@ -54,6 +56,67 @@ def download_data(symbol, force=False, period="1y", cache_days=CACHE_DAYS):
         pass
 
     return df
+
+
+def completed_daily_data(dataframe, now=None):
+    """Remove today's incomplete daily candle, if Yahoo returned one."""
+    if dataframe is None or dataframe.empty or not isinstance(
+        dataframe.index, pd.DatetimeIndex
+    ):
+        return dataframe
+
+    now = now or datetime.now(NEW_YORK)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=NEW_YORK)
+    else:
+        now = now.astimezone(NEW_YORK)
+
+    latest_timestamp = dataframe.index[-1]
+    if latest_timestamp.tzinfo is None:
+        latest_date = latest_timestamp.date()
+    else:
+        latest_date = latest_timestamp.tz_convert(NEW_YORK).date()
+    if latest_date >= now.date():
+        return dataframe.iloc[:-1].copy()
+    return dataframe
+
+
+def download_intraday_snapshot(symbol, now=None):
+    """Return today's latest extended-hours price and cumulative volume."""
+    now = now or datetime.now(NEW_YORK)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=NEW_YORK)
+    else:
+        now = now.astimezone(NEW_YORK)
+
+    intraday = yf.Ticker(symbol).history(
+        period="1d",
+        interval="1m",
+        prepost=True,
+    )
+    if intraday is None or intraday.empty:
+        return None
+
+    valid = intraday.dropna(subset=["Close"])
+    if valid.empty:
+        return None
+    timestamp = valid.index[-1]
+    if timestamp.tzinfo is None:
+        timestamp = timestamp.tz_localize(NEW_YORK)
+    else:
+        timestamp = timestamp.tz_convert(NEW_YORK)
+    if timestamp.date() != now.date():
+        return None
+
+    if "Volume" in valid.columns:
+        volume = pd.to_numeric(valid["Volume"], errors="coerce").fillna(0).sum()
+    else:
+        volume = 0
+    return {
+        "price": float(valid["Close"].iloc[-1]),
+        "volume": float(volume),
+        "timestamp": timestamp.isoformat(),
+    }
 
 
 def _chunked(iterable, size):
