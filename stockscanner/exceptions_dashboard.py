@@ -3,7 +3,7 @@
 import csv
 import html
 import os
-from datetime import datetime
+from datetime import date, datetime
 
 from .config import EXCEPTION_LIST
 from .exception_list import sort_exception_rows
@@ -22,14 +22,35 @@ def _load_rows(csv_path):
     return columns, sort_exception_rows(rows)
 
 
-def _generate_html(columns, rows, generated_at):
+def _parse_exception_date(value):
+    """Parse supported exception-list date formats."""
+    text = str(value or "").strip()
+    for date_format in ("%d/%b/%Y", "%d-%b-%y", "%d-%b-%Y"):
+        try:
+            return datetime.strptime(text, date_format).date()
+        except ValueError:
+            continue
+    return None
+
+
+def _generate_html(columns, rows, generated_at, today):
     headers = '<th class="select-column"><input id="selectAll" type="checkbox" aria-label="Select all exceptions"></th>'
     headers += "".join(f"<th>{html.escape(column)}</th>" for column in columns)
     body_rows = []
     for row in rows:
-        cells = "".join(
-            f"<td>{html.escape(row.get(column, ''))}</td>" for column in columns
-        )
+        cells = []
+        for column in columns:
+            value = row.get(column, "")
+            css_class = ""
+            title = ""
+            if column == "Date To":
+                date_to = _parse_exception_date(value)
+                if date_to is not None and date_to < today:
+                    css_class = ' class="expired-date"'
+                    title = ' title="Expired"'
+            cells.append(
+                f"<td{css_class}{title}>{html.escape(value)}</td>"
+            )
         symbol = row.get("Symbol", "").strip().upper()
         selection = (
             '<td class="select-column">'
@@ -37,7 +58,7 @@ def _generate_html(columns, rows, generated_at):
             f'aria-label="Select {html.escape(symbol)}">'
             "</td>"
         )
-        body_rows.append(f"<tr>{selection}{cells}</tr>")
+        body_rows.append(f"<tr>{selection}{''.join(cells)}</tr>")
 
     table_body = "\n".join(body_rows)
     return f"""<!DOCTYPE html>
@@ -96,6 +117,12 @@ table {{ width: 100%; border-collapse: collapse; background: #1a2a3a; }}
 th, td {{ padding: 11px 14px; border-bottom: 1px solid #263d50; text-align: left; }}
 th {{ color: #4fc3f7; background: #162534; cursor: pointer; white-space: nowrap; }}
 tr:hover td {{ background: #203548; }}
+.expired-date {{
+    color: #fff;
+    background: #b71c1c;
+    font-weight: 700;
+}}
+tr:hover .expired-date {{ background: #c62828; }}
 .controls {{
     display: flex;
     flex-wrap: wrap;
@@ -206,7 +233,7 @@ filter.addEventListener("input", () => {{
 
 
 def export_exceptions_dashboard(
-    csv_path=EXCEPTION_LIST, output_path="exceptions.html", generated_at=None
+    csv_path=EXCEPTION_LIST, output_path="exceptions.html", generated_at=None, today=None
 ):
     """Write the exception-list dashboard and return its output path."""
     columns, rows = _load_rows(csv_path)
@@ -214,12 +241,13 @@ def export_exceptions_dashboard(
         raise ValueError(f"Exception list has no columns: {csv_path}")
 
     generated_at = generated_at or datetime.now().strftime("%d %B %Y, %I:%M %p")
+    today = today or date.today()
     output_directory = os.path.dirname(output_path)
     if output_directory:
         os.makedirs(output_directory, exist_ok=True)
 
     with open(output_path, "w", encoding="utf-8") as output_file:
-        output_file.write(_generate_html(columns, rows, generated_at))
+        output_file.write(_generate_html(columns, rows, generated_at, today))
     return output_path
 
 

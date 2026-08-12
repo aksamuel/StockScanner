@@ -88,7 +88,10 @@ def test_export_exceptions_dashboard(tmp_path):
     output = tmp_path / "exceptions.html"
 
     result = export_exceptions_dashboard(
-        str(exception_list), str(output), "08 August 2026, 04:00 PM"
+        str(exception_list),
+        str(output),
+        "08 August 2026, 04:00 PM",
+        today=date(2026, 8, 15),
     )
     page = output.read_text(encoding="utf-8")
 
@@ -103,6 +106,29 @@ def test_export_exceptions_dashboard(tmp_path):
     assert 'id="deleteSelected"' in page
     assert "[Remove Exceptions]" in page
     assert page.index("ABC") < page.index("XYZ")
+    assert 'class="expired-date" title="Expired">31/Aug/2026' not in page
+
+
+def test_expired_date_to_is_highlighted(tmp_path):
+    exception_list = tmp_path / "exceptions.csv"
+    exception_list.write_text(
+        "Symbol,Date From,Date To,Reason\n"
+        "OLD,01/Jul/2026,31/Jul/2026,Expired\n"
+        "LIVE,01/Aug/2026,31/Aug/2026,Active\n",
+        encoding="utf-8",
+    )
+    output = tmp_path / "exceptions.html"
+
+    export_exceptions_dashboard(
+        str(exception_list),
+        str(output),
+        "15 August 2026, 04:00 PM",
+        today=date(2026, 8, 15),
+    )
+    page = output.read_text(encoding="utf-8")
+
+    assert 'class="expired-date" title="Expired">31/Jul/2026</td>' in page
+    assert 'class="expired-date" title="Expired">31/Aug/2026</td>' not in page
 
 
 def test_remove_exception_matches_complete_symbol_case_insensitively(tmp_path):
