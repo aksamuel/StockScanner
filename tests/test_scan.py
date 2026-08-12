@@ -117,6 +117,7 @@ def test_export_exceptions_dashboard(tmp_path):
     assert "ABC" in page
     assert "Bought &amp; held" in page
     assert "&lt;review&gt;" in page
+    assert "KPI Dashboard" in page
     assert "Technical Analysis" in page
     assert "Analysts Rating" in page
     assert "Bought Selection" in page
@@ -304,11 +305,11 @@ def test_symbol_cells_use_relative_strength_background_colors(tmp_path):
 
     page = _generate_html(dataframe, "12 August 2026, 10:00 PM")
     for css_class in [
-        "symbol-rs-strong",
-        "symbol-rs-upper",
-        "symbol-rs-neutral",
-        "symbol-rs-lower",
         "symbol-rs-weak",
+        "symbol-rs-lower",
+        "symbol-rs-neutral",
+        "symbol-rs-upper",
+        "symbol-rs-strong",
     ]:
         assert page.count(f'class="{css_class}"') == 2
 
@@ -321,11 +322,11 @@ def test_symbol_cells_use_relative_strength_background_colors(tmp_path):
         worksheet.cell(row=row_number, column=symbol_column).fill.fgColor.rgb
         for row_number in range(2, 7)
     ] == [
-        "004FB52A",
-        "00D8EDCC",
-        "00BFE7F5",
-        "00F8DDCC",
         "00F47732",
+        "00F8DDCC",
+        "00BFE7F5",
+        "00D8EDCC",
+        "004FB52A",
     ]
 
 
@@ -341,10 +342,15 @@ def test_reports_replace_price_as_of_column_with_refresh_time_near_graph():
     )
 
     assert "Price As Of" not in dataframe.columns
-    page = _generate_html(dataframe, "12 August 2026, 10:00 PM")
-    marker = "Page refreshed as of: 12 August 2026, 10:00 PM"
+    page = _generate_html(
+        dataframe,
+        "12 August 2026, 10:00 PM",
+        page_key="landing",
+    )
+    marker = "Scan completed: 12 August 2026, 10:00 PM"
     assert page.count(marker) == 1
     assert page.index(marker) < page.index('<canvas id="recChart"')
+    assert "Temporary sorting uses prices captured during this scanner run." in page
 
 
 def test_current_price_is_displayed_below_symbol_in_smaller_text(tmp_path):
@@ -395,10 +401,11 @@ def test_three_report_pages_have_requested_columns_navigation_and_selection():
 
     pages = {
         key: _generate_html(dataframe, "12 August 2026, 10:00 PM", page_key=key)
-        for key in ["technical", "analysts", "bought-selection"]
+        for key in ["landing", "technical", "analysts", "bought-selection"]
     }
     for page in pages.values():
-        assert 'href="index.html">Technical Analysis</a>' in page
+        assert 'href="index.html">KPI Dashboard</a>' in page
+        assert 'href="technical.html">Technical Analysis</a>' in page
         assert 'href="analysts.html">Analysts Rating</a>' in page
         assert 'href="bought-selection.html">Bought Selection</a>' in page
         assert 'href="exceptions.html">Exception List</a>' in page
@@ -432,6 +439,87 @@ def test_three_report_pages_have_requested_columns_navigation_and_selection():
     assert pages["bought-selection"].count('class="exception-select"') == 2
     assert '<button id="sortTargetUpside"' not in pages["analysts"]
     assert '<button id="sortTargetUpside"' not in pages["bought-selection"]
+    assert "Recommendation Breakdown" in pages["landing"]
+    assert '<canvas id="recChart"' in pages["landing"]
+    assert '<table id="topTable">' not in pages["landing"]
+    for page_key in ["technical", "analysts", "bought-selection"]:
+        assert "Recommendation Breakdown" not in pages[page_key]
+        assert '<canvas id="recChart"' not in pages[page_key]
+        assert "Scan completed:" not in pages[page_key]
+
+
+def test_analyst_page_symbols_use_current_price_to_support_low_gap_colors():
+    dataframe = report.prepare_results_dataframe(
+        [
+            {"Symbol": "ABOVE5", "Current Price": 100, "Support Low": 94, "Score": 90},
+            {"Symbol": "ABOVE0", "Current Price": 100, "Support Low": 95, "Score": 80},
+            {"Symbol": "ZERO", "Current Price": 100, "Support Low": 100, "Score": 70},
+            {"Symbol": "BELOW0", "Current Price": 100, "Support Low": 105, "Score": 60},
+            {"Symbol": "BELOW5", "Current Price": 100, "Support Low": 106, "Score": 50},
+        ]
+    )
+
+    page = _generate_html(
+        dataframe,
+        "12 August 2026, 10:00 PM",
+        page_key="analysts",
+    )
+
+    for css_class in [
+        "symbol-support-above-five",
+        "symbol-support-above-zero",
+        "symbol-support-zero",
+        "symbol-support-below-zero",
+        "symbol-support-below-five",
+    ]:
+        assert page.count(f'class="{css_class}"') == 2
+    assert 'class="symbol-rs-weak"' not in page
+
+
+def test_analyst_page_sorts_nearest_support_first_and_missing_support_last():
+    dataframe = report.prepare_results_dataframe(
+        [
+            {"Symbol": "FAR", "Current Price": 100, "Support Low": 80, "Score": 90},
+            {"Symbol": "MISSING", "Current Price": 100, "Support Low": None, "Score": 80},
+            {"Symbol": "NEAREST", "Current Price": 100, "Support Low": 99, "Score": 70},
+            {"Symbol": "NEAR", "Current Price": 100, "Support Low": 95, "Score": 60},
+        ]
+    )
+
+    page = _generate_html(
+        dataframe,
+        "12 August 2026, 10:00 PM",
+        page_key="analysts",
+    )
+    top_table = page.split('<table id="topTable">', 1)[1].split("</table>", 1)[0]
+
+    assert top_table.index(">NEAREST</span>") < top_table.index(">NEAR</span>")
+    assert top_table.index(">NEAR</span>") < top_table.index(">FAR</span>")
+    assert top_table.index(">FAR</span>") < top_table.index(">MISSING</span>")
+
+
+def test_technical_page_sorts_symbol_colors_from_green_to_orange():
+    dataframe = report.prepare_results_dataframe(
+        [
+            {"Symbol": "ORANGE", "Relative Strength": 6, "Score": 90},
+            {"Symbol": "MISSING", "Relative Strength": None, "Score": 80},
+            {"Symbol": "BLUE", "Relative Strength": 0, "Score": 70},
+            {"Symbol": "GREEN", "Relative Strength": -6, "Score": 60},
+            {"Symbol": "PEACH", "Relative Strength": 5, "Score": 50},
+            {"Symbol": "LIGHTGREEN", "Relative Strength": -5, "Score": 40},
+        ]
+    )
+
+    page = _generate_html(
+        dataframe,
+        "12 August 2026, 10:00 PM",
+        page_key="technical",
+    )
+    top_table = page.split('<table id="topTable">', 1)[1].split("</table>", 1)[0]
+    ordered_symbols = ["GREEN", "LIGHTGREEN", "BLUE", "PEACH", "ORANGE", "MISSING"]
+
+    positions = [top_table.index(f">{symbol}</td>") for symbol in ordered_symbols]
+    assert positions == sorted(positions)
 
 
 def test_html_export_creates_three_stable_linked_pages(tmp_path, monkeypatch):
@@ -443,6 +531,7 @@ def test_html_export_creates_three_stable_linked_pages(tmp_path, monkeypatch):
     )
 
     date_folder = Path(archived_page).parent
+    assert (date_folder / "landing.html").exists()
     assert (date_folder / "technical.html").exists()
     assert (date_folder / "analysts.html").exists()
     assert (date_folder / "bought-selection.html").exists()

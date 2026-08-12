@@ -216,15 +216,15 @@ def apply_symbol_relative_strength_colors(worksheet):
         except (TypeError, ValueError):
             continue
         if relative_strength > 5:
-            fill = RS_STRONG_FILL
+            fill = RS_WEAK_FILL
         elif relative_strength > 0:
-            fill = RS_UPPER_FILL
+            fill = RS_LOWER_FILL
         elif relative_strength == 0:
             fill = RS_NEUTRAL_FILL
         elif relative_strength >= -5:
-            fill = RS_LOWER_FILL
+            fill = RS_UPPER_FILL
         else:
-            fill = RS_WEAK_FILL
+            fill = RS_STRONG_FILL
         worksheet.cell(row=row_number, column=symbol_column).fill = fill
 
 

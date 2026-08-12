@@ -70,14 +70,36 @@ def _symbol_relative_strength_class(relative_strength):
     except (ValueError, TypeError):
         return ""
     if value > 5:
-        return "symbol-rs-strong"
+        return "symbol-rs-weak"
     if value > 0:
-        return "symbol-rs-upper"
+        return "symbol-rs-lower"
     if value == 0:
         return "symbol-rs-neutral"
     if value >= -5:
-        return "symbol-rs-lower"
-    return "symbol-rs-weak"
+        return "symbol-rs-upper"
+    return "symbol-rs-strong"
+
+
+def _analyst_support_gap_class(current_price, support_low):
+    """Return the Analyst-page Symbol colour from price versus support."""
+    try:
+        current_price = float(current_price)
+        support_low = float(support_low)
+    except (ValueError, TypeError):
+        return ""
+    if current_price <= 0:
+        return ""
+
+    gap_percent = (current_price - support_low) / current_price * 100
+    if gap_percent > 5:
+        return "symbol-support-above-five"
+    if gap_percent > 0:
+        return "symbol-support-above-zero"
+    if gap_percent == 0:
+        return "symbol-support-zero"
+    if gap_percent >= -5:
+        return "symbol-support-below-zero"
+    return "symbol-support-below-five"
 
 
 def _format_symbol_with_price(symbol, current_price):
@@ -141,6 +163,12 @@ INTEGER_COLUMNS = {
     "Average Dollar Volume", "Support Tests", "Resistance Tests",
 }
 PAGE_CONFIGS = {
+    "landing": {
+        "title": "StockScanner KPI Dashboard",
+        "columns": [],
+        "accent": "#1f4e78",
+        "selection": False,
+    },
     "technical": {
         "title": "Technical Analysis Page",
         "columns": [
@@ -220,8 +248,69 @@ def _build_summary(dataframe):
     }
 
 
+def _sort_analysts_by_support_proximity(dataframe):
+    """Sort the Analysts page by absolute price-to-support percentage gap."""
+    sorted_data = dataframe.copy()
+    current_price = (
+        pd.to_numeric(sorted_data["Current Price"], errors="coerce")
+        if "Current Price" in sorted_data.columns
+        else pd.Series(float("nan"), index=sorted_data.index)
+    )
+    support_low = (
+        pd.to_numeric(sorted_data["Support Low"], errors="coerce")
+        if "Support Low" in sorted_data.columns
+        else pd.Series(float("nan"), index=sorted_data.index)
+    )
+    valid_price = current_price > 0
+    sorted_data["_support_proximity"] = (
+        ((current_price - support_low) / current_price * 100).abs()
+        .where(valid_price)
+        .fillna(float("inf"))
+    )
+    sorted_data = sorted_data.sort_values(
+        "_support_proximity",
+        ascending=True,
+        kind="stable",
+    ).drop(columns="_support_proximity")
+    sorted_data = sorted_data.reset_index(drop=True)
+    if "Rank" in sorted_data.columns:
+        sorted_data["Rank"] = range(1, len(sorted_data) + 1)
+    return sorted_data
+
+
+def _sort_technical_by_symbol_color(dataframe):
+    """Sort the Technical page from green through orange Symbol bands."""
+    sorted_data = dataframe.copy()
+    relative_strength = (
+        pd.to_numeric(sorted_data["Relative Strength"], errors="coerce")
+        if "Relative Strength" in sorted_data.columns
+        else pd.Series(float("nan"), index=sorted_data.index)
+    )
+    color_priority = pd.Series(5, index=sorted_data.index)
+    color_priority.loc[relative_strength < -5] = 0
+    color_priority.loc[(relative_strength >= -5) & (relative_strength < 0)] = 1
+    color_priority.loc[relative_strength == 0] = 2
+    color_priority.loc[(relative_strength > 0) & (relative_strength <= 5)] = 3
+    color_priority.loc[relative_strength > 5] = 4
+    sorted_data["_symbol_color_priority"] = color_priority
+    sorted_data["_relative_strength_order"] = relative_strength.fillna(float("inf"))
+    sorted_data = sorted_data.sort_values(
+        ["_symbol_color_priority", "_relative_strength_order"],
+        ascending=[True, True],
+        kind="stable",
+    ).drop(columns=["_symbol_color_priority", "_relative_strength_order"])
+    sorted_data = sorted_data.reset_index(drop=True)
+    if "Rank" in sorted_data.columns:
+        sorted_data["Rank"] = range(1, len(sorted_data) + 1)
+    return sorted_data
+
+
 def _generate_html(dataframe, scan_time, page_key=None):
     """Generate the complete HTML dashboard string."""
+    if page_key == "analysts":
+        dataframe = _sort_analysts_by_support_proximity(dataframe)
+    elif page_key == "technical":
+        dataframe = _sort_technical_by_symbol_color(dataframe)
     summary = _build_summary(dataframe)
     top_df = dataframe.head(TOP_RESULTS)
     config = PAGE_CONFIGS.get(page_key)
@@ -260,8 +349,12 @@ def _generate_html(dataframe, scan_time, page_key=None):
             elif col == "Current Price":
                 css_class = _current_price_rsi_class(row.get("RSI"))
             elif col == "Symbol":
-                css_class = _symbol_relative_strength_class(
-                    row.get("Relative Strength")
+                css_class = (
+                    _analyst_support_gap_class(
+                        row.get("Current Price"), row.get("Support Low")
+                    )
+                    if page_key == "analysts"
+                    else _symbol_relative_strength_class(row.get("Relative Strength"))
                 )
             cells.append(f'<td class="{css_class}">{formatted}</td>')
         top_rows_html.append(
@@ -297,8 +390,12 @@ def _generate_html(dataframe, scan_time, page_key=None):
             elif col == "Current Price":
                 css_class = _current_price_rsi_class(row.get("RSI"))
             elif col == "Symbol":
-                css_class = _symbol_relative_strength_class(
-                    row.get("Relative Strength")
+                css_class = (
+                    _analyst_support_gap_class(
+                        row.get("Current Price"), row.get("Support Low")
+                    )
+                    if page_key == "analysts"
+                    else _symbol_relative_strength_class(row.get("Relative Strength"))
                 )
             cells.append(f'<td class="{css_class}">{formatted}</td>')
         all_rows_html.append(
@@ -348,6 +445,67 @@ def _generate_html(dataframe, scan_time, page_key=None):
         summary["strong_buy"], summary["buy"], summary["accumulate"],
         summary["hold"], summary["watch"], summary["avoid"],
     ]
+    dashboard_content = (
+        f"""
+    <div class="cards">
+        <div class="card"><div class="value">{summary['total_stocks']}</div><div class="label">Stocks Scanned</div></div>
+        <div class="card"><div class="value" style="color:#4caf50">{summary['strong_buy']}</div><div class="label">Strong Buy</div></div>
+        <div class="card"><div class="value" style="color:#66bb6a">{summary['buy']}</div><div class="label">Buy</div></div>
+        <div class="card"><div class="value" style="color:#fdd835">{summary['accumulate']}</div><div class="label">Accumulate</div></div>
+        <div class="card"><div class="value" style="color:#ffa726">{summary['watch']}</div><div class="label">Watch</div></div>
+        <div class="card"><div class="value" style="color:#ef5350">{summary['avoid']}</div><div class="label">Avoid</div></div>
+        <div class="card"><div class="value">{summary['average_score']}</div><div class="label">Avg Score</div></div>
+        <div class="card"><div class="value">{summary['highest_score']}</div><div class="label">Best Score</div></div>
+    </div>
+
+    <div class="section">
+        <h2>Recommendation Breakdown</h2>
+        <div class="chart-container">
+            <div class="refresh-time">Scan completed: {scan_time}</div>
+            <div class="price-notice">Temporary sorting uses prices captured during this scanner run.</div>
+            <canvas id="recChart" height="200"></canvas>
+        </div>
+    </div>
+"""
+        if page_key == "landing"
+        else ""
+    )
+    results_content = (
+        f"""
+    <div class="section">
+        <h2>{page_title}</h2>
+        <div class="tabs">
+            <div class="tab active" onclick="switchTab('top', this)">Top {TOP_RESULTS}</div>
+            <div class="tab" onclick="switchTab('all', this)">All Results ({summary['total_stocks']})</div>
+        </div>
+
+        <div class="filter-bar">
+            <input type="text" id="filterInput" placeholder="Filter by symbol or sector..." onkeyup="filterTable()">
+            {target_sort_controls}
+            {add_exceptions_button}
+        </div>
+
+        <div id="tab-top" class="tab-content active">
+            <div class="table-wrapper">
+                <table id="topTable">
+                    <thead><tr>{top_headers}</tr></thead>
+                    <tbody>{''.join(top_rows_html)}</tbody>
+                </table>
+            </div>
+        </div>
+        <div id="tab-all" class="tab-content">
+            <div class="table-wrapper">
+                <table id="allTable">
+                    <thead><tr>{all_headers}</tr></thead>
+                    <tbody>{''.join(all_rows_html)}</tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+"""
+        if page_key != "landing"
+        else ""
+    )
 
     html = f"""<!DOCTYPE html>
 <html lang="en">
@@ -418,6 +576,12 @@ header .subtitle {{ color: #90a4ae; text-align: center; margin-top: 4px; font-si
     margin-bottom: 10px;
     text-align: right;
 }}
+.price-notice {{
+    color: #fdd835;
+    font-size: 0.85rem;
+    margin-bottom: 12px;
+    text-align: right;
+}}
 .table-wrapper {{
     overflow-x: auto;
     border-radius: 8px;
@@ -468,6 +632,11 @@ tr:hover {{ background: #1e3348; }}
 .symbol-rs-neutral {{ background: #bfe7f5 !important; color: #10242d; }}
 .symbol-rs-lower {{ background: #f8ddcc !important; color: #352015; }}
 .symbol-rs-weak {{ background: #f47732 !important; color: #2b1105; font-weight: 600; }}
+.symbol-support-above-five {{ background: #f47732 !important; color: #2b1105; font-weight: 600; }}
+.symbol-support-above-zero {{ background: #f8ddcc !important; color: #352015; }}
+.symbol-support-zero {{ background: #bfe7f5 !important; color: #10242d; }}
+.symbol-support-below-zero {{ background: #d8edcc !important; color: #172217; }}
+.symbol-support-below-five {{ background: #4fb52a !important; color: #102000; font-weight: 600; }}
 .symbol-name {{ display: block; font-weight: 600; }}
 .symbol-price {{ display: block; font-size: 0.78em; font-weight: 400; margin-top: -2px; }}
 .tabs {{
@@ -543,7 +712,8 @@ footer {{
     <div class="container">
         <h1>{page_title}</h1>
         <div class="dashboard-nav">
-            <a href="index.html">Technical Analysis</a>
+            <a href="index.html">KPI Dashboard</a>
+            <a href="technical.html">Technical Analysis</a>
             <a href="analysts.html">Analysts Rating</a>
             <a href="bought-selection.html">Bought Selection</a>
             <a href="exceptions.html">Exception List</a>
@@ -552,55 +722,8 @@ footer {{
 </header>
 
 <div class="container">
-    <div class="cards">
-        <div class="card"><div class="value">{summary['total_stocks']}</div><div class="label">Stocks Scanned</div></div>
-        <div class="card"><div class="value" style="color:#4caf50">{summary['strong_buy']}</div><div class="label">Strong Buy</div></div>
-        <div class="card"><div class="value" style="color:#66bb6a">{summary['buy']}</div><div class="label">Buy</div></div>
-        <div class="card"><div class="value" style="color:#fdd835">{summary['accumulate']}</div><div class="label">Accumulate</div></div>
-        <div class="card"><div class="value" style="color:#ffa726">{summary['watch']}</div><div class="label">Watch</div></div>
-        <div class="card"><div class="value" style="color:#ef5350">{summary['avoid']}</div><div class="label">Avoid</div></div>
-        <div class="card"><div class="value">{summary['average_score']}</div><div class="label">Avg Score</div></div>
-        <div class="card"><div class="value">{summary['highest_score']}</div><div class="label">Best Score</div></div>
-    </div>
-
-    <div class="section">
-        <h2>Recommendation Breakdown</h2>
-        <div class="chart-container">
-            <div class="refresh-time">Page refreshed as of: {scan_time}</div>
-            <canvas id="recChart" height="200"></canvas>
-        </div>
-    </div>
-
-    <div class="section">
-        <h2>{page_title}</h2>
-        <div class="tabs">
-            <div class="tab active" onclick="switchTab('top', this)">Top {TOP_RESULTS}</div>
-            <div class="tab" onclick="switchTab('all', this)">All Results ({summary['total_stocks']})</div>
-        </div>
-
-        <div class="filter-bar">
-            <input type="text" id="filterInput" placeholder="Filter by symbol or sector..." onkeyup="filterTable()">
-            {target_sort_controls}
-            {add_exceptions_button}
-        </div>
-
-        <div id="tab-top" class="tab-content active">
-            <div class="table-wrapper">
-                <table id="topTable">
-                    <thead><tr>{top_headers}</tr></thead>
-                    <tbody>{''.join(top_rows_html)}</tbody>
-                </table>
-            </div>
-        </div>
-        <div id="tab-all" class="tab-content">
-            <div class="table-wrapper">
-                <table id="allTable">
-                    <thead><tr>{all_headers}</tr></thead>
-                    <tbody>{''.join(all_rows_html)}</tbody>
-                </table>
-            </div>
-        </div>
-    </div>
+    {dashboard_content}
+    {results_content}
 </div>
 
 <footer>
@@ -735,7 +858,7 @@ document.querySelectorAll('.select-all').forEach(selectAll => {{
     }});
 }});
 
-addExceptions.addEventListener('click', () => {{
+if (addExceptions) addExceptions.addEventListener('click', () => {{
     const symbols = selectedSymbols();
     if (symbols.length > 50) {{
         alert('Select no more than 50 tickers per request.');
@@ -790,10 +913,10 @@ document.querySelectorAll('th:not(.no-sort)').forEach(th => {{
 
 
 def export_html_report(results, quiet=False):
-    """Export scan results as three linked HTML dashboard pages.
+    """Export scan results as linked KPI and analysis pages.
 
     Each page is self-contained except for Chart.js, which is loaded from a CDN.
-    Stable filenames provide navigation, while the timestamped technical page
+    Stable filenames provide navigation, while the timestamped landing page
     preserves compatibility with the report archive.
 
     Returns the path to the generated HTML file, or None if no data.
@@ -813,6 +936,7 @@ def export_html_report(results, quiet=False):
     scan_time = now.strftime("%d %B %Y, %I:%M %p")
     filename = os.path.join(date_folder, f"StockScanner_Dashboard_{timestamp}.html")
     pages = {
+        "landing": os.path.join(date_folder, "landing.html"),
         "technical": os.path.join(date_folder, "technical.html"),
         "analysts": os.path.join(date_folder, "analysts.html"),
         "bought-selection": os.path.join(date_folder, "bought-selection.html"),
@@ -825,7 +949,7 @@ def export_html_report(results, quiet=False):
         with open(page_filename, "w", encoding="utf-8") as output:
             output.write(rendered_pages[page_key])
     with open(filename, "w", encoding="utf-8") as output:
-        output.write(rendered_pages["technical"])
+        output.write(rendered_pages["landing"])
 
     if not quiet:
         print()
