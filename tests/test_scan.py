@@ -1,4 +1,5 @@
-from datetime import date
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 import pytest
@@ -12,6 +13,11 @@ from stockscanner.analyst_data import (
 from stockscanner.config import MIN_PRICE
 from stockscanner.exceptions_dashboard import export_exceptions_dashboard
 from stockscanner.html_report import _generate_html
+from stockscanner.market_data import (
+    CACHE_DAYS,
+    completed_daily_data,
+    download_intraday_snapshot,
+)
 from stockscanner.ranking import rank_stocks, setup_priority
 from stockscanner.remove_exception import remove_exception, remove_exceptions
 from stockscanner.scan import process_stock
@@ -40,6 +46,10 @@ def test_score_stock_basic():
 
 def test_minimum_share_price_is_one_dollar():
     assert MIN_PRICE == 1.0
+
+
+def test_daily_cache_is_limited_to_one_day():
+    assert CACHE_DAYS == 1
 
 
 def test_generate_signal_neutral():
@@ -387,6 +397,7 @@ def test_scan_result_places_analyst_and_risk_columns_after_sector(monkeypatch):
     monkeypatch.setattr("stockscanner.scan.download_data", lambda symbol: history)
     monkeypatch.setattr("stockscanner.scan.calculate_indicators", lambda data: data)
     monkeypatch.setattr("stockscanner.scan.calculate_relative_strength", lambda symbol: 10)
+    monkeypatch.setattr("stockscanner.scan.download_intraday_snapshot", lambda symbol: None)
     monkeypatch.setattr("stockscanner.scan.score_stock", lambda data, strength: 90)
     monkeypatch.setattr("stockscanner.scan.generate_signal", lambda data: "Strong Uptrend")
     monkeypatch.setattr(
@@ -426,3 +437,116 @@ def test_scan_result_places_analyst_and_risk_columns_after_sector(monkeypatch):
         "Risk/Reward",
         "Priority",
     ]
+
+
+def test_completed_daily_data_drops_current_session_candle():
+    index = pd.to_datetime(["2026-08-11", "2026-08-12"]).tz_localize(
+        "America/New_York"
+    )
+    history = pd.DataFrame({"Close": [10, 11]}, index=index)
+    now = datetime(2026, 8, 12, 12, tzinfo=ZoneInfo("America/New_York"))
+
+    completed = completed_daily_data(history, now=now)
+
+    assert completed["Close"].tolist() == [10]
+
+
+def test_intraday_snapshot_uses_latest_current_session_quote(monkeypatch):
+    index = pd.to_datetime(
+        ["2026-08-12 09:00", "2026-08-12 10:15"]
+    ).tz_localize("America/New_York")
+    intraday = pd.DataFrame(
+        {"Close": [10.0, 10.5], "Volume": [100, 250]},
+        index=index,
+    )
+
+    class FakeTicker:
+        def history(self, **kwargs):
+            assert kwargs == {"period": "1d", "interval": "1m", "prepost": True}
+            return intraday
+
+    monkeypatch.setattr(
+        "stockscanner.market_data.yf.Ticker", lambda symbol: FakeTicker()
+    )
+    now = datetime(2026, 8, 12, 10, 16, tzinfo=ZoneInfo("America/New_York"))
+
+    snapshot = download_intraday_snapshot("ABC", now=now)
+
+    assert snapshot["price"] == 10.5
+    assert snapshot["volume"] == 350
+    assert snapshot["timestamp"].startswith("2026-08-12T10:15:00")
+
+
+def test_process_stock_overlays_intraday_price_after_daily_indicators(monkeypatch):
+    index = pd.date_range(
+        "2025-10-01",
+        periods=200,
+        freq="B",
+        tz="America/New_York",
+    )
+    history = pd.DataFrame(
+        {
+            "Close": [10.0] * 200,
+            "High": [11.0] * 200,
+            "Volume": [1_000_000] * 200,
+            "MA20": [9.5] * 200,
+            "MA50": [9.0] * 200,
+            "MA200": [8.0] * 200,
+            "RSI": [60.0] * 200,
+            "MACD": [1.0] * 200,
+            "MACD_SIGNAL": [0.5] * 200,
+            "AVG_VOLUME": [900_000] * 200,
+        },
+        index=index,
+    )
+    observed = {}
+    monkeypatch.setattr("stockscanner.scan.download_data", lambda symbol: history)
+    monkeypatch.setattr("stockscanner.scan.completed_daily_data", lambda data: data)
+    monkeypatch.setattr("stockscanner.scan.calculate_indicators", lambda data: data)
+    monkeypatch.setattr(
+        "stockscanner.scan.download_intraday_snapshot",
+        lambda symbol: {
+            "price": 12.5,
+            "volume": 1_500_000,
+            "timestamp": "2026-08-12T10:15:00-04:00",
+        },
+    )
+    monkeypatch.setattr("stockscanner.scan.calculate_relative_strength", lambda symbol: 10)
+    monkeypatch.setattr(
+        "stockscanner.scan.score_stock",
+        lambda data, strength: observed.setdefault(
+            "score_input", (data["Close"].iloc[-1], data["Volume"].iloc[-1])
+        )
+        and 90,
+    )
+    monkeypatch.setattr("stockscanner.scan.generate_signal", lambda data: "Strong Uptrend")
+    monkeypatch.setattr(
+        "stockscanner.scan.generate_trade_plan",
+        lambda data, available_cash, risk_percent: {
+            "Trend": "Strong Uptrend",
+            "Entry": 10,
+            "Stop": 9,
+            "Target1": 11,
+            "Target2": 12,
+            "Target3": 13,
+            "RR": 2,
+            "Shares": 25,
+            "Investment": 250,
+        },
+    )
+    monkeypatch.setattr(
+        "stockscanner.scan.get_analyst_data",
+        lambda symbol, current_price: {
+            "Analyst Rating": "Buy",
+            "Target Upside": 20,
+        },
+    )
+
+    result = process_stock(
+        {"Symbol": "ABC", "Market": "NYSE", "Sector": "Technology"},
+        quiet=True,
+    )
+
+    assert observed["score_input"] == (12.5, 1_500_000)
+    assert result["Current Price"] == 12.5
+    assert result["Price As Of"] == "2026-08-12T10:15:00-04:00"
