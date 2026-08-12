@@ -75,6 +75,7 @@ CURRENCY_COLUMNS = {
     "Entry", "Stop Loss", "Target 1", "Target 2", "Target 3", "Investment",
 }
 DECIMAL_COLUMNS = {"RSI", "MACD", "Relative Strength", "Risk/Reward"}
+PERCENT_COLUMNS = {"Target Upside"}
 INTEGER_COLUMNS = {"Rank", "Score", "Suggested Shares", "Average Volume", "Average Dollar Volume"}
 
 
@@ -86,6 +87,8 @@ def _format_cell(column, value):
         return _format_currency(value)
     if column in DECIMAL_COLUMNS:
         return _format_number(value)
+    if column in PERCENT_COLUMNS:
+        return f"{_format_number(value)}%"
     if column in INTEGER_COLUMNS:
         return _format_integer(value)
     return _escape_html(value)

@@ -3,6 +3,7 @@ from datetime import datetime
 
 import pandas as pd
 
+from stockscanner.analyst_data import analyst_rating_priority
 from stockscanner.ranking import setup_priority
 from openpyxl import load_workbook
 from openpyxl.chart import BarChart, Reference
@@ -78,6 +79,7 @@ def apply_number_formats(worksheet):
         "Relative Strength",
         "Risk/Reward",
     }
+    percentage_columns = {"Target Upside"}
     integer_columns = {
         "Rank",
         "Score",
@@ -94,6 +96,11 @@ def apply_number_formats(worksheet):
         if column_number:
             for row_number in range(2, worksheet.max_row + 1):
                 worksheet.cell(row=row_number, column=column_number).number_format = '0.00'
+    for heading in percentage_columns:
+        column_number = headers.get(heading)
+        if column_number:
+            for row_number in range(2, worksheet.max_row + 1):
+                worksheet.cell(row=row_number, column=column_number).number_format = '0.00"%"'
     for heading in integer_columns:
         column_number = headers.get(heading)
         if column_number:
@@ -155,6 +162,7 @@ def prepare_results_dataframe(results):
         "RSI",
         "MACD",
         "Relative Strength",
+        "Target Upside",
         "Score",
         "Entry",
         "Stop Loss",
@@ -179,9 +187,22 @@ def prepare_results_dataframe(results):
         for column in ["Risk/Reward", "Relative Strength"]
         if column in df.columns
     )
+    if "Analyst Rating" in df.columns:
+        df["_analyst_priority"] = df["Analyst Rating"].map(analyst_rating_priority)
+        sort_columns.append("_analyst_priority")
+    if "Target Upside" in df.columns:
+        df["_target_upside_priority"] = df["Target Upside"].fillna(float("-inf"))
+        sort_columns.append("_target_upside_priority")
     if sort_columns:
         df = df.sort_values(by=sort_columns, ascending=[False] * len(sort_columns))
-    df = df.drop(columns=["_setup_priority"], errors="ignore")
+    df = df.drop(
+        columns=[
+            "_setup_priority",
+            "_analyst_priority",
+            "_target_upside_priority",
+        ],
+        errors="ignore",
+    )
     df = df.reset_index(drop=True)
     if "Rank" in df.columns:
         df = df.drop(columns=["Rank"])
