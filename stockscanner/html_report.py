@@ -140,7 +140,6 @@ INTEGER_COLUMNS = {
     "Rank", "Score", "Suggested Shares", "Average Volume",
     "Average Dollar Volume", "Support Tests", "Resistance Tests",
 }
-
 PAGE_CONFIGS = {
     "technical": {
         "title": "Technical Analysis Page",
