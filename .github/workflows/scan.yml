@@ -116,11 +116,14 @@ jobs:
           python -m stockscanner.exceptions_dashboard
           touch .nojekyll
           touch reports/.nojekyll
-          # Use the latest Dashboard HTML as the site's index page
-          LATEST_DASHBOARD=$(find reports/ -name "StockScanner_Dashboard_*.html" -type f | sort -r | head -1)
-          if [ -n "$LATEST_DASHBOARD" ]; then
-            cp "$LATEST_DASHBOARD" index.html
-            echo "Deployed dashboard: $LATEST_DASHBOARD -> index.html"
+          # Publish the latest linked report pages at stable site paths
+          LATEST_TECHNICAL=$(find reports/ -name "technical.html" -type f | sort -r | head -1)
+          if [ -n "$LATEST_TECHNICAL" ]; then
+            LATEST_FOLDER=$(dirname "$LATEST_TECHNICAL")
+            cp "$LATEST_FOLDER/technical.html" index.html
+            cp "$LATEST_FOLDER/analysts.html" analysts.html
+            cp "$LATEST_FOLDER/bought-selection.html" bought-selection.html
+            echo "Deployed linked dashboards from: $LATEST_FOLDER"
           else
             cat <<'EOF' > index.html
           <!DOCTYPE html>
@@ -143,7 +146,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add index.html exceptions.html .nojekyll reports/
+          git add index.html analysts.html bought-selection.html exceptions.html .nojekyll reports/
           if git diff --cached --quiet; then
             echo "No report changes to commit."
           else

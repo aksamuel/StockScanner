@@ -6,6 +6,8 @@ import pandas as pd
 from stockscanner.analyst_data import analyst_rating_priority
 from stockscanner.ranking import setup_priority
 from openpyxl import load_workbook
+from openpyxl.cell.rich_text import CellRichText, TextBlock
+from openpyxl.cell.text import InlineFont
 from openpyxl.chart import BarChart, Reference
 from openpyxl.formatting.rule import CellIsRule, FormulaRule
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
@@ -26,6 +28,16 @@ YELLOW_FILL = PatternFill("solid", fgColor="FFF2CC")
 ORANGE_FILL = PatternFill("solid", fgColor="FCE4D6")
 RED_FILL = PatternFill("solid", fgColor="FFC7CE")
 BLUE_FILL = PatternFill("solid", fgColor="DDEBF7")
+RSI_OVERBOUGHT_FILL = PatternFill("solid", fgColor="4FB52A")
+RSI_UPPER_FILL = PatternFill("solid", fgColor="D8EDCC")
+RSI_NEUTRAL_FILL = PatternFill("solid", fgColor="BFE7F5")
+RSI_LOWER_FILL = PatternFill("solid", fgColor="F8DDCC")
+RSI_OVERSOLD_FILL = PatternFill("solid", fgColor="F47732")
+RS_STRONG_FILL = PatternFill("solid", fgColor="4FB52A")
+RS_UPPER_FILL = PatternFill("solid", fgColor="D8EDCC")
+RS_NEUTRAL_FILL = PatternFill("solid", fgColor="BFE7F5")
+RS_LOWER_FILL = PatternFill("solid", fgColor="F8DDCC")
+RS_WEAK_FILL = PatternFill("solid", fgColor="F47732")
 THIN_BORDER = Border(
     left=Side(style="thin", color="D9E1F2"),
     right=Side(style="thin", color="D9E1F2"),
@@ -162,6 +174,82 @@ def apply_score_colors(worksheet):
     worksheet.conditional_formatting.add(score_range, CellIsRule(operator="lessThan", formula=["50"], fill=RED_FILL))
 
 
+def apply_current_price_rsi_colors(worksheet):
+    headers = {cell.value: cell.column for cell in worksheet[1] if cell.value is not None}
+    current_price_column = headers.get("Current Price")
+    rsi_column = headers.get("RSI")
+    if not current_price_column or not rsi_column:
+        return
+
+    for row_number in range(2, worksheet.max_row + 1):
+        rsi = worksheet.cell(row=row_number, column=rsi_column).value
+        try:
+            rsi = float(rsi)
+        except (TypeError, ValueError):
+            continue
+        if rsi >= 70:
+            fill = RSI_OVERBOUGHT_FILL
+        elif rsi > 50:
+            fill = RSI_UPPER_FILL
+        elif rsi == 50:
+            fill = RSI_NEUTRAL_FILL
+        elif rsi > 30:
+            fill = RSI_LOWER_FILL
+        else:
+            fill = RSI_OVERSOLD_FILL
+        worksheet.cell(row=row_number, column=current_price_column).fill = fill
+
+
+def apply_symbol_relative_strength_colors(worksheet):
+    headers = {cell.value: cell.column for cell in worksheet[1] if cell.value is not None}
+    symbol_column = headers.get("Symbol")
+    relative_strength_column = headers.get("Relative Strength")
+    if not symbol_column or not relative_strength_column:
+        return
+
+    for row_number in range(2, worksheet.max_row + 1):
+        relative_strength = worksheet.cell(
+            row=row_number, column=relative_strength_column
+        ).value
+        try:
+            relative_strength = float(relative_strength)
+        except (TypeError, ValueError):
+            continue
+        if relative_strength > 80:
+            fill = RS_STRONG_FILL
+        elif relative_strength > 60:
+            fill = RS_UPPER_FILL
+        elif relative_strength > 40:
+            fill = RS_NEUTRAL_FILL
+        elif relative_strength > 20:
+            fill = RS_LOWER_FILL
+        else:
+            fill = RS_WEAK_FILL
+        worksheet.cell(row=row_number, column=symbol_column).fill = fill
+
+
+def display_current_price_under_symbol(worksheet):
+    headers = {cell.value: cell.column for cell in worksheet[1] if cell.value is not None}
+    symbol_column = headers.get("Symbol")
+    current_price_column = headers.get("Current Price")
+    if not symbol_column or not current_price_column:
+        return
+
+    for row_number in range(2, worksheet.max_row + 1):
+        symbol_cell = worksheet.cell(row=row_number, column=symbol_column)
+        current_price = worksheet.cell(row=row_number, column=current_price_column).value
+        try:
+            price_text = f"(${float(current_price):,.2f})"
+        except (TypeError, ValueError):
+            continue
+        symbol_cell.value = CellRichText(
+            TextBlock(InlineFont(b=True, sz=11), str(symbol_cell.value)),
+            TextBlock(InlineFont(sz=9), f"\n{price_text}"),
+        )
+        symbol_cell.alignment = Alignment(vertical="center", wrap_text=True)
+        worksheet.row_dimensions[row_number].height = 30
+
+
 def prepare_results_dataframe(results):
     df = pd.DataFrame(results)
     if df.empty:
@@ -217,6 +305,7 @@ def prepare_results_dataframe(results):
         df = df.sort_values(by=sort_columns, ascending=[False] * len(sort_columns))
     df = df.drop(
         columns=[
+            "Price As Of",
             "_setup_priority",
             "_analyst_priority",
             "_target_upside_priority",
@@ -263,8 +352,6 @@ def create_dashboard_sheet(workbook, dataframe):
     title_cell.font = TITLE_FONT
     title_cell.alignment = Alignment(horizontal="center", vertical="center")
     scan_time = datetime.now().strftime("%d %B %Y, %I:%M %p")
-    worksheet["A4"] = "Scan timestamp"
-    worksheet["B4"] = scan_time
     total_stocks = len(dataframe)
     average_score = dataframe["Score"].mean() if "Score" in dataframe.columns else 0
     highest_score = dataframe["Score"].max() if "Score" in dataframe.columns else 0
@@ -299,6 +386,10 @@ def create_dashboard_sheet(workbook, dataframe):
     worksheet["D6"].font = HEADER_FONT
     worksheet["E6"].fill = HEADER_FILL
     worksheet["E6"].font = HEADER_FONT
+    worksheet["G3"] = "Page refreshed as of"
+    worksheet["H3"] = scan_time
+    worksheet["G3"].font = Font(bold=True, color="1F4E78")
+    worksheet["H3"].font = Font(italic=True, color="475569")
     chart_categories = ["Strong Buy", "Buy", "Accumulate", "Hold", "Watch", "Avoid"]
     chart_values = [summary_rows[1][1], summary_rows[2][1], summary_rows[3][1], summary_rows[4][1], summary_rows[5][1], summary_rows[6][1]]
     for row_number, (category, count) in enumerate(zip(chart_categories, chart_values), start=chart_start_row):
@@ -346,6 +437,9 @@ def export_excel_workbook(filename, dataframe):
         apply_number_formats(worksheet)
         apply_recommendation_colors(worksheet)
         apply_score_colors(worksheet)
+        apply_current_price_rsi_colors(worksheet)
+        apply_symbol_relative_strength_colors(worksheet)
+        display_current_price_under_symbol(worksheet)
         auto_fit_columns(worksheet)
 
     workbook.save(filename)

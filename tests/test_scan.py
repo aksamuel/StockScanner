@@ -1,10 +1,12 @@
 from datetime import date, datetime
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pandas as pd
 import pytest
+from openpyxl import load_workbook
 
-from stockscanner import report
+from stockscanner import html_report, report
 from stockscanner.add_exception import add_exceptions
 from stockscanner.analyst_data import (
     analyst_rating_priority,
@@ -115,7 +117,9 @@ def test_export_exceptions_dashboard(tmp_path):
     assert "ABC" in page
     assert "Bought &amp; held" in page
     assert "&lt;review&gt;" in page
-    assert "Back to Scanner Dashboard" in page
+    assert "Technical Analysis" in page
+    assert "Analysts Rating" in page
+    assert "Bought Selection" in page
     assert 'id="selectAll"' in page
     assert 'class="ticker-select"' in page
     assert 'id="deleteSelected"' in page
@@ -247,6 +251,201 @@ def test_scan_dashboard_supports_selecting_top_and_all_results():
     assert 'id="addExceptions"' in page
     assert "[Add Exceptions]" in page
     assert "25.00%" in page
+
+
+def test_current_price_cells_use_rsi_background_colors(tmp_path):
+    dataframe = report.prepare_results_dataframe(
+        [
+            {"Symbol": "HIGH", "Current Price": 10, "RSI": 70, "Score": 90},
+            {"Symbol": "UPPER", "Current Price": 11, "RSI": 60, "Score": 80},
+            {"Symbol": "NEUTRAL", "Current Price": 12, "RSI": 50, "Score": 70},
+            {"Symbol": "LOWER", "Current Price": 13, "RSI": 40, "Score": 60},
+            {"Symbol": "LOW", "Current Price": 14, "RSI": 30, "Score": 50},
+        ]
+    )
+
+    page = _generate_html(dataframe, "12 August 2026, 10:00 PM")
+    for css_class in [
+        "price-rsi-overbought",
+        "price-rsi-upper",
+        "price-rsi-neutral",
+        "price-rsi-lower",
+        "price-rsi-oversold",
+    ]:
+        assert page.count(f'class="{css_class}"') == 2
+
+    workbook_path = tmp_path / "rsi-colors.xlsx"
+    report.export_excel_workbook(workbook_path, dataframe)
+    worksheet = load_workbook(workbook_path)["Complete Scan"]
+    headers = {cell.value: cell.column for cell in worksheet[1]}
+    price_column = headers["Current Price"]
+    assert [
+        worksheet.cell(row=row_number, column=price_column).fill.fgColor.rgb
+        for row_number in range(2, 7)
+    ] == [
+        "004FB52A",
+        "00D8EDCC",
+        "00BFE7F5",
+        "00F8DDCC",
+        "00F47732",
+    ]
+
+
+def test_symbol_cells_use_relative_strength_background_colors(tmp_path):
+    dataframe = report.prepare_results_dataframe(
+        [
+            {"Symbol": "STRONG", "Relative Strength": 81, "Score": 90},
+            {"Symbol": "UPPER", "Relative Strength": 80, "Score": 80},
+            {"Symbol": "NEUTRAL", "Relative Strength": 60, "Score": 70},
+            {"Symbol": "LOWER", "Relative Strength": 40, "Score": 60},
+            {"Symbol": "WEAK", "Relative Strength": 20, "Score": 50},
+        ]
+    )
+
+    page = _generate_html(dataframe, "12 August 2026, 10:00 PM")
+    for css_class in [
+        "symbol-rs-strong",
+        "symbol-rs-upper",
+        "symbol-rs-neutral",
+        "symbol-rs-lower",
+        "symbol-rs-weak",
+    ]:
+        assert page.count(f'class="{css_class}"') == 2
+
+    workbook_path = tmp_path / "relative-strength-colors.xlsx"
+    report.export_excel_workbook(workbook_path, dataframe)
+    worksheet = load_workbook(workbook_path)["Complete Scan"]
+    headers = {cell.value: cell.column for cell in worksheet[1]}
+    symbol_column = headers["Symbol"]
+    assert [
+        worksheet.cell(row=row_number, column=symbol_column).fill.fgColor.rgb
+        for row_number in range(2, 7)
+    ] == [
+        "004FB52A",
+        "00D8EDCC",
+        "00BFE7F5",
+        "00F8DDCC",
+        "00F47732",
+    ]
+
+
+def test_reports_replace_price_as_of_column_with_refresh_time_near_graph():
+    dataframe = report.prepare_results_dataframe(
+        [
+            {
+                "Symbol": "ABC",
+                "Price As Of": "2026-08-12T15:15:00-04:00",
+                "Score": 90,
+            }
+        ]
+    )
+
+    assert "Price As Of" not in dataframe.columns
+    page = _generate_html(dataframe, "12 August 2026, 10:00 PM")
+    marker = "Page refreshed as of: 12 August 2026, 10:00 PM"
+    assert page.count(marker) == 1
+    assert page.index(marker) < page.index('<canvas id="recChart"')
+
+
+def test_current_price_is_displayed_below_symbol_in_smaller_text(tmp_path):
+    dataframe = report.prepare_results_dataframe(
+        [{"Symbol": "ABC", "Current Price": 123.45, "Score": 90}]
+    )
+
+    page = _generate_html(dataframe, "12 August 2026, 10:00 PM")
+    assert page.count(
+        '<span class="symbol-name">ABC</span>'
+        '<span class="symbol-price">($123.45)</span>'
+    ) == 2
+
+    workbook_path = tmp_path / "symbol-price.xlsx"
+    report.export_excel_workbook(workbook_path, dataframe)
+    worksheet = load_workbook(workbook_path, rich_text=True)["Complete Scan"]
+    headers = {str(cell.value): cell.column for cell in worksheet[1]}
+    symbol_cell = worksheet.cell(row=2, column=headers["Symbol"])
+    assert str(symbol_cell.value) == "ABC\n($123.45)"
+    assert symbol_cell.value[0].font.sz == 11
+    assert symbol_cell.value[1].font.sz == 9
+
+
+def test_three_report_pages_have_requested_columns_navigation_and_selection():
+    dataframe = report.prepare_results_dataframe(
+        [
+            {
+                "Symbol": "ABC",
+                "Sector": "Technology",
+                "Market": "NYSE",
+                "Current Price": 123.45,
+                "RSI": 55,
+                "Relative Strength": 70,
+                "Score": 90,
+                "Recommendation": "BUY",
+                "Signal": "Strong Uptrend",
+                "Trend": "Bullish",
+                "MACD": 1.2,
+                "Analyst Rating": "Buy",
+                "Target Upside": 20,
+                "Zone Status": "Between Zones",
+                "Suggested Shares": 10,
+                "Risk/Reward": 2,
+                "Investment": 1234.5,
+            }
+        ]
+    )
+
+    pages = {
+        key: _generate_html(dataframe, "12 August 2026, 10:00 PM", page_key=key)
+        for key in ["technical", "analysts", "bought-selection"]
+    }
+    for page in pages.values():
+        assert 'href="index.html">Technical Analysis</a>' in page
+        assert 'href="analysts.html">Analysts Rating</a>' in page
+        assert 'href="bought-selection.html">Bought Selection</a>' in page
+        assert 'href="exceptions.html">Exception List</a>' in page
+
+    technical_headers = pages["technical"].split("<thead><tr>", 1)[1].split(
+        "</tr></thead>", 1
+    )[0]
+    assert "<th>RSI</th>" in technical_headers
+    assert "<th>Recommendation</th>" in technical_headers
+    assert "<th>Analyst Rating</th>" not in technical_headers
+    assert 'id="sortTargetUpside"' in pages["technical"]
+    assert 'data-current-price="123.45"' in pages["technical"]
+    assert 'data-target-one=""' in pages["technical"]
+    assert "(leftTarget - leftPrice) / leftPrice" in pages["technical"]
+    assert "Temporarily ranked by Target 1 percentage upside" in pages["technical"]
+
+    analysts_headers = pages["analysts"].split("<thead><tr>", 1)[1].split(
+        "</tr></thead>", 1
+    )[0]
+    assert "<th>Analyst Rating</th>" in analysts_headers
+    assert "<th>Zone Status</th>" in analysts_headers
+    assert "<th>MACD</th>" not in analysts_headers
+
+    bought_headers = pages["bought-selection"].split("<thead><tr>", 1)[1].split(
+        "</tr></thead>", 1
+    )[0]
+    assert "<th>Suggested Shares</th>" in bought_headers
+    assert "<th>Investment</th>" in bought_headers
+    assert pages["technical"].count('class="exception-select"') == 0
+    assert pages["analysts"].count('class="exception-select"') == 0
+    assert pages["bought-selection"].count('class="exception-select"') == 2
+    assert '<button id="sortTargetUpside"' not in pages["analysts"]
+    assert '<button id="sortTargetUpside"' not in pages["bought-selection"]
+
+
+def test_html_export_creates_three_stable_linked_pages(tmp_path, monkeypatch):
+    monkeypatch.setattr(html_report, "REPORT_FOLDER", str(tmp_path))
+
+    archived_page = html_report.export_html_report(
+        [{"Symbol": "ABC", "Score": 90, "Current Price": 10}],
+        quiet=True,
+    )
+
+    date_folder = Path(archived_page).parent
+    assert (date_folder / "technical.html").exists()
+    assert (date_folder / "analysts.html").exists()
+    assert (date_folder / "bought-selection.html").exists()
 
 
 def test_setup_priority_orders_supported_entry_setups():
