@@ -46,6 +46,53 @@ def _score_class(score):
     return "score-poor"
 
 
+def _current_price_rsi_class(rsi):
+    """Return the Current Price colour class for the row's RSI."""
+    try:
+        value = float(rsi)
+    except (ValueError, TypeError):
+        return ""
+    if value >= 70:
+        return "price-rsi-overbought"
+    if value > 50:
+        return "price-rsi-upper"
+    if value == 50:
+        return "price-rsi-neutral"
+    if value > 30:
+        return "price-rsi-lower"
+    return "price-rsi-oversold"
+
+
+def _symbol_relative_strength_class(relative_strength):
+    """Return the Symbol colour class for the row's Relative Strength."""
+    try:
+        value = float(relative_strength)
+    except (ValueError, TypeError):
+        return ""
+    if value > 80:
+        return "symbol-rs-strong"
+    if value > 60:
+        return "symbol-rs-upper"
+    if value > 40:
+        return "symbol-rs-neutral"
+    if value > 20:
+        return "symbol-rs-lower"
+    return "symbol-rs-weak"
+
+
+def _format_symbol_with_price(symbol, current_price):
+    """Display the current price below the symbol."""
+    formatted_symbol = _escape_html(symbol)
+    try:
+        formatted_price = f"${float(current_price):,.2f}"
+    except (ValueError, TypeError):
+        return formatted_symbol
+    return (
+        f'<span class="symbol-name">{formatted_symbol}</span>'
+        f'<span class="symbol-price">({formatted_price})</span>'
+    )
+
+
 def _format_currency(value):
     """Format a number as currency."""
     try:
@@ -70,6 +117,14 @@ def _format_integer(value):
         return _escape_html(value)
 
 
+def _data_number(value):
+    """Format a numeric value for an HTML data attribute."""
+    try:
+        return str(float(value))
+    except (ValueError, TypeError):
+        return ""
+
+
 CURRENCY_COLUMNS = {
     "Current Price", "20 MA", "50 MA", "200 MA",
     "Support Low", "Support High", "Resistance Low", "Resistance High",
@@ -84,6 +139,41 @@ PERCENT_COLUMNS = {
 INTEGER_COLUMNS = {
     "Rank", "Score", "Suggested Shares", "Average Volume",
     "Average Dollar Volume", "Support Tests", "Resistance Tests",
+}
+PAGE_CONFIGS = {
+    "technical": {
+        "title": "Technical Analysis Page",
+        "columns": [
+            "Rank", "Symbol", "Sector", "RSI", "Score", "Recommendation",
+            "Signal", "Trend", "MACD", "Entry", "Target 1", "Target 2",
+            "Target 3", "20 MA", "50 MA", "200 MA", "Stop Loss",
+        ],
+        "accent": "#c6efce",
+        "selection": False,
+    },
+    "analysts": {
+        "title": "Analysts Rating Page",
+        "columns": [
+            "Rank", "Symbol", "Sector", "Analyst Rating", "Target Upside",
+            "Zone Status", "Support Low", "Support High", "Support Tests",
+            "Support Confidence", "Support Details", "Resistance Low",
+            "Resistance High", "Resistance Distance %", "Resistance Tests",
+            "Resistance Confidence", "Resistance Details", "Zone Tolerance",
+            "Zone Tolerance %",
+        ],
+        "accent": "#f4cccc",
+        "selection": False,
+    },
+    "bought-selection": {
+        "title": "Bought Selection Page",
+        "columns": [
+            "Symbol", "Sector", "Market", "Suggested Shares", "Risk/Reward",
+            "Priority", "Market Cap", "Average Volume",
+            "Average Dollar Volume", "Liquidity Status", "Investment",
+        ],
+        "accent": "#fff200",
+        "selection": True,
+    },
 }
 
 
@@ -130,55 +220,127 @@ def _build_summary(dataframe):
     }
 
 
-def _generate_html(dataframe, scan_time):
+def _generate_html(dataframe, scan_time, page_key=None):
     """Generate the complete HTML dashboard string."""
     summary = _build_summary(dataframe)
     top_df = dataframe.head(TOP_RESULTS)
+    config = PAGE_CONFIGS.get(page_key)
+    display_columns = (
+        [column for column in config["columns"] if column in dataframe.columns]
+        if config
+        else list(dataframe.columns)
+    )
+    page_title = config["title"] if config else "AI Stock Scanner Dashboard"
+    page_accent = config["accent"] if config else "#1f4e78"
+    selection_enabled = config["selection"] if config else True
 
     # Build table rows for top opportunities
     top_rows_html = []
     for _, row in top_df.iterrows():
         symbol = _escape_html(row.get("Symbol", ""))
-        cells = [
-            '<td class="select-column">'
-            f'<input class="exception-select" type="checkbox" value="{symbol}" '
-            f'aria-label="Select {symbol}"></td>'
-        ]
-        for col in top_df.columns:
+        cells = []
+        if selection_enabled:
+            cells.append(
+                '<td class="select-column">'
+                f'<input class="exception-select" type="checkbox" value="{symbol}" '
+                f'aria-label="Select {symbol}"></td>'
+            )
+        for col in display_columns:
             value = row[col]
-            formatted = _format_cell(col, value)
+            formatted = (
+                _format_symbol_with_price(value, row.get("Current Price"))
+                if col == "Symbol"
+                else _format_cell(col, value)
+            )
             css_class = ""
             if col == "Recommendation":
                 css_class = _recommendation_class(value)
             elif col == "Score":
                 css_class = _score_class(value)
+            elif col == "Current Price":
+                css_class = _current_price_rsi_class(row.get("RSI"))
+            elif col == "Symbol":
+                css_class = _symbol_relative_strength_class(
+                    row.get("Relative Strength")
+                )
             cells.append(f'<td class="{css_class}">{formatted}</td>')
-        top_rows_html.append(f"<tr>{''.join(cells)}</tr>")
+        top_rows_html.append(
+            '<tr '
+            f'data-current-price="{_data_number(row.get("Current Price"))}" '
+            f'data-target-one="{_data_number(row.get("Target 1"))}">'
+            f'{"".join(cells)}</tr>'
+        )
 
     # Build table rows for complete results
     all_rows_html = []
     for _, row in dataframe.iterrows():
         symbol = _escape_html(row.get("Symbol", ""))
-        cells = [
-            '<td class="select-column">'
-            f'<input class="exception-select" type="checkbox" value="{symbol}" '
-            f'aria-label="Select {symbol}"></td>'
-        ]
-        for col in dataframe.columns:
+        cells = []
+        if selection_enabled:
+            cells.append(
+                '<td class="select-column">'
+                f'<input class="exception-select" type="checkbox" value="{symbol}" '
+                f'aria-label="Select {symbol}"></td>'
+            )
+        for col in display_columns:
             value = row[col]
-            formatted = _format_cell(col, value)
+            formatted = (
+                _format_symbol_with_price(value, row.get("Current Price"))
+                if col == "Symbol"
+                else _format_cell(col, value)
+            )
             css_class = ""
             if col == "Recommendation":
                 css_class = _recommendation_class(value)
             elif col == "Score":
                 css_class = _score_class(value)
+            elif col == "Current Price":
+                css_class = _current_price_rsi_class(row.get("RSI"))
+            elif col == "Symbol":
+                css_class = _symbol_relative_strength_class(
+                    row.get("Relative Strength")
+                )
             cells.append(f'<td class="{css_class}">{formatted}</td>')
-        all_rows_html.append(f"<tr>{''.join(cells)}</tr>")
+        all_rows_html.append(
+            '<tr '
+            f'data-current-price="{_data_number(row.get("Current Price"))}" '
+            f'data-target-one="{_data_number(row.get("Target 1"))}">'
+            f'{"".join(cells)}</tr>'
+        )
 
-    top_headers = '<th class="select-column no-sort"><input class="select-all" type="checkbox" aria-label="Select all top results"></th>'
-    top_headers += "".join(f"<th>{_escape_html(c)}</th>" for c in top_df.columns)
-    all_headers = '<th class="select-column no-sort"><input class="select-all" type="checkbox" aria-label="Select all scan results"></th>'
-    all_headers += "".join(f"<th>{_escape_html(c)}</th>" for c in dataframe.columns)
+    selection_header_top = (
+        '<th class="select-column no-sort"><input class="select-all" '
+        'type="checkbox" aria-label="Select all top results"></th>'
+        if selection_enabled
+        else ""
+    )
+    selection_header_all = (
+        '<th class="select-column no-sort"><input class="select-all" '
+        'type="checkbox" aria-label="Select all scan results"></th>'
+        if selection_enabled
+        else ""
+    )
+    top_headers = selection_header_top + "".join(
+        f"<th>{_escape_html(column)}</th>" for column in display_columns
+    )
+    all_headers = selection_header_all + "".join(
+        f"<th>{_escape_html(column)}</th>" for column in display_columns
+    )
+    add_exceptions_button = (
+        '<button id="addExceptions" type="button" disabled>'
+        "Add Selected to Exceptions (0)</button>"
+        if selection_enabled
+        else '<button id="addExceptions" type="button" hidden disabled></button>'
+    )
+    target_sort_controls = (
+        '<div class="target-sort-controls">'
+        '<button id="sortTargetUpside" type="button">'
+        "Rank by Target 1 Upside</button>"
+        '<span id="targetSortStatus" aria-live="polite"></span>'
+        "</div>"
+        if page_key == "technical"
+        else ""
+    )
 
     # Chart data
     chart_labels = ["Strong Buy", "Buy", "Accumulate", "Hold", "Watch", "Avoid"]
@@ -250,6 +412,12 @@ header .subtitle {{ color: #90a4ae; text-align: center; margin-top: 4px; font-si
     max-width: 600px;
     margin: 0 auto 32px;
 }}
+.refresh-time {{
+    color: #90a4ae;
+    font-size: 0.8rem;
+    margin-bottom: 10px;
+    text-align: right;
+}}
 .table-wrapper {{
     overflow-x: auto;
     border-radius: 8px;
@@ -261,8 +429,8 @@ table {{
     font-size: 0.85rem;
 }}
 th {{
-    background: #1f4e78;
-    color: #fff;
+    background: {page_accent};
+    color: #172217;
     padding: 10px 12px;
     text-align: left;
     white-space: nowrap;
@@ -271,7 +439,7 @@ th {{
     position: sticky;
     top: 0;
 }}
-th:hover {{ background: #2a6090; }}
+th:hover {{ filter: brightness(0.92); }}
 th::after {{ content: ' ⇅'; opacity: 0.4; font-size: 0.7rem; }}
 th.no-sort::after {{ content: none; }}
 td {{
@@ -290,6 +458,18 @@ tr:hover {{ background: #1e3348; }}
 .score-good {{ background: #2e7d32 !important; color: #c8e6c9; }}
 .score-fair {{ background: #f9a825 !important; color: #1a1a1a; }}
 .score-poor {{ background: #b71c1c !important; color: #ffcdd2; }}
+.price-rsi-overbought {{ background: #4fb52a !important; color: #102000; font-weight: 600; }}
+.price-rsi-upper {{ background: #d8edcc !important; color: #172217; }}
+.price-rsi-neutral {{ background: #bfe7f5 !important; color: #10242d; }}
+.price-rsi-lower {{ background: #f8ddcc !important; color: #352015; }}
+.price-rsi-oversold {{ background: #f47732 !important; color: #2b1105; font-weight: 600; }}
+.symbol-rs-strong {{ background: #4fb52a !important; color: #102000; font-weight: 600; }}
+.symbol-rs-upper {{ background: #d8edcc !important; color: #172217; }}
+.symbol-rs-neutral {{ background: #bfe7f5 !important; color: #10242d; }}
+.symbol-rs-lower {{ background: #f8ddcc !important; color: #352015; }}
+.symbol-rs-weak {{ background: #f47732 !important; color: #2b1105; font-weight: 600; }}
+.symbol-name {{ display: block; font-weight: 600; }}
+.symbol-price {{ display: block; font-size: 0.78em; font-weight: 400; margin-top: -2px; }}
 .tabs {{
     display: flex;
     gap: 4px;
@@ -305,7 +485,7 @@ tr:hover {{ background: #1e3348; }}
     color: #90a4ae;
     font-size: 0.85rem;
 }}
-.tab.active {{ background: #1f4e78; color: #fff; }}
+.tab.active {{ background: {page_accent}; color: #172217; }}
 .tab-content {{ display: none; }}
 .tab-content.active {{ display: block; }}
 .filter-bar {{
@@ -335,6 +515,17 @@ tr:hover {{ background: #1e3348; }}
 }}
 #addExceptions:hover:not(:disabled) {{ background: #2e7d32; }}
 #addExceptions:disabled {{ cursor: not-allowed; opacity: 0.45; }}
+#sortTargetUpside {{
+    padding: 7px 14px;
+    color: #172217;
+    background: #c6efce;
+    border: 1px solid #70ad47;
+    border-radius: 5px;
+    cursor: pointer;
+}}
+#sortTargetUpside:hover {{ filter: brightness(0.92); }}
+.target-sort-controls {{ display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }}
+#targetSortStatus {{ color: #90a4ae; font-size: 0.8rem; }}
 .select-column {{ width: 48px; text-align: center; }}
 .select-column input {{ width: 18px; height: 18px; cursor: pointer; accent-color: #4caf50; }}
 footer {{
@@ -350,9 +541,13 @@ footer {{
 <body>
 <header>
     <div class="container">
-        <h1>AI Stock Scanner Dashboard</h1>
-        <div class="subtitle">Scan completed: {scan_time}</div>
-        <div class="dashboard-nav"><a href="exceptions.html">View Exception List</a></div>
+        <h1>{page_title}</h1>
+        <div class="dashboard-nav">
+            <a href="index.html">Technical Analysis</a>
+            <a href="analysts.html">Analysts Rating</a>
+            <a href="bought-selection.html">Bought Selection</a>
+            <a href="exceptions.html">Exception List</a>
+        </div>
     </div>
 </header>
 
@@ -371,12 +566,13 @@ footer {{
     <div class="section">
         <h2>Recommendation Breakdown</h2>
         <div class="chart-container">
+            <div class="refresh-time">Page refreshed as of: {scan_time}</div>
             <canvas id="recChart" height="200"></canvas>
         </div>
     </div>
 
     <div class="section">
-        <h2>Scan Results</h2>
+        <h2>{page_title}</h2>
         <div class="tabs">
             <div class="tab active" onclick="switchTab('top', this)">Top {TOP_RESULTS}</div>
             <div class="tab" onclick="switchTab('all', this)">All Results ({summary['total_stocks']})</div>
@@ -384,7 +580,8 @@ footer {{
 
         <div class="filter-bar">
             <input type="text" id="filterInput" placeholder="Filter by symbol or sector..." onkeyup="filterTable()">
-            <button id="addExceptions" type="button" disabled>Add Selected to Exceptions (0)</button>
+            {target_sort_controls}
+            {add_exceptions_button}
         </div>
 
         <div id="tab-top" class="tab-content active">
@@ -407,7 +604,7 @@ footer {{
 </div>
 
 <footer>
-    Generated by StockScanner &mdash; {scan_time}
+    Generated by StockScanner
     &nbsp;|&nbsp; <a href="https://github.com/aksamuel/StockScanner#readme" style="color: #4fc3f7;">Help &amp; FAQ</a>
 </footer>
 
@@ -457,6 +654,38 @@ function filterTable() {{
     rows.forEach(row => {{
         const text = row.textContent.toUpperCase();
         row.style.display = text.includes(filter) ? '' : 'none';
+    }});
+}}
+
+// Temporary display-only ranking by Target 1 percentage upside.
+const sortTargetUpside = document.getElementById('sortTargetUpside');
+if (sortTargetUpside) {{
+    sortTargetUpside.addEventListener('click', () => {{
+        document.querySelectorAll('.tab-content table').forEach(table => {{
+            const tbody = table.querySelector('tbody');
+            const rows = [...tbody.querySelectorAll('tr')];
+            rows.sort((left, right) => {{
+                const leftPrice = Number(left.dataset.currentPrice);
+                const leftTarget = Number(left.dataset.targetOne);
+                const rightPrice = Number(right.dataset.currentPrice);
+                const rightTarget = Number(right.dataset.targetOne);
+                const leftUpside = leftPrice > 0 && leftTarget > 0
+                    ? (leftTarget - leftPrice) / leftPrice
+                    : Number.NEGATIVE_INFINITY;
+                const rightUpside = rightPrice > 0 && rightTarget > 0
+                    ? (rightTarget - rightPrice) / rightPrice
+                    : Number.NEGATIVE_INFINITY;
+                return rightUpside - leftUpside;
+            }});
+            const rankIndex = [...table.querySelectorAll('thead th')]
+                .findIndex(header => header.textContent.trim() === 'Rank');
+            rows.forEach((row, index) => {{
+                tbody.appendChild(row);
+                if (rankIndex >= 0) row.children[rankIndex].textContent = index + 1;
+            }});
+        }});
+        document.getElementById('targetSortStatus').textContent =
+            'Temporarily ranked by Target 1 percentage upside using page-refresh prices.';
     }});
 }}
 
@@ -561,10 +790,11 @@ document.querySelectorAll('th:not(.no-sort)').forEach(th => {{
 
 
 def export_html_report(results, quiet=False):
-    """Export scan results as a self-contained HTML dashboard.
+    """Export scan results as three linked HTML dashboard pages.
 
-    The dashboard is a single HTML file with inline CSS and JS. Chart.js is
-    loaded from a CDN for the recommendation chart; the rest works offline.
+    Each page is self-contained except for Chart.js, which is loaded from a CDN.
+    Stable filenames provide navigation, while the timestamped technical page
+    preserves compatibility with the report archive.
 
     Returns the path to the generated HTML file, or None if no data.
     """
@@ -582,16 +812,26 @@ def export_html_report(results, quiet=False):
     timestamp = now.strftime("%Y-%m-%d_%H-%M-%S")
     scan_time = now.strftime("%d %B %Y, %I:%M %p")
     filename = os.path.join(date_folder, f"StockScanner_Dashboard_{timestamp}.html")
-
-    html_content = _generate_html(dataframe, scan_time)
-
-    with open(filename, "w", encoding="utf-8") as f:
-        f.write(html_content)
+    pages = {
+        "technical": os.path.join(date_folder, "technical.html"),
+        "analysts": os.path.join(date_folder, "analysts.html"),
+        "bought-selection": os.path.join(date_folder, "bought-selection.html"),
+    }
+    rendered_pages = {
+        page_key: _generate_html(dataframe, scan_time, page_key=page_key)
+        for page_key in pages
+    }
+    for page_key, page_filename in pages.items():
+        with open(page_filename, "w", encoding="utf-8") as output:
+            output.write(rendered_pages[page_key])
+    with open(filename, "w", encoding="utf-8") as output:
+        output.write(rendered_pages["technical"])
 
     if not quiet:
         print()
         print("=" * 80)
-        print("HTML Dashboard created successfully")
-        print(filename)
+        print("Linked HTML dashboards created successfully")
+        for page_filename in pages.values():
+            print(page_filename)
         print("=" * 80)
     return filename

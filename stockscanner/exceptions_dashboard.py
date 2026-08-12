@@ -151,7 +151,11 @@ footer {{ margin-top: 30px; color: #607d8b; font-size: 0.8rem; text-align: cente
     <div class="container">
         <h1>Stock Exception List</h1>
         <div class="subtitle">Updated: {html.escape(generated_at)}</div>
-        <div class="nav"><a href="index.html">Back to Scanner Dashboard</a></div>
+        <div class="nav">
+            <a href="index.html">Technical Analysis</a>
+            <a href="analysts.html">Analysts Rating</a>
+            <a href="bought-selection.html">Bought Selection</a>
+        </div>
     </div>
 </header>
 <main class="container">
