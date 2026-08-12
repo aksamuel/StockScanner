@@ -4,12 +4,17 @@ import pandas as pd
 import pytest
 
 from stockscanner import report
-from stockscanner.config import MIN_PRICE
 from stockscanner.add_exception import add_exceptions
+from stockscanner.analyst_data import (
+    analyst_rating_priority,
+    get_analyst_data,
+)
+from stockscanner.config import MIN_PRICE
 from stockscanner.exceptions_dashboard import export_exceptions_dashboard
 from stockscanner.html_report import _generate_html
 from stockscanner.ranking import rank_stocks, setup_priority
 from stockscanner.remove_exception import remove_exception, remove_exceptions
+from stockscanner.scan import process_stock
 from stockscanner.scoring import score_stock
 from stockscanner.signals import generate_signal
 
@@ -208,8 +213,20 @@ def test_exception_updates_sort_symbols_alphabetically(tmp_path):
 def test_scan_dashboard_supports_selecting_top_and_all_results():
     dataframe = pd.DataFrame(
         [
-            {"Symbol": "ABC", "Score": 90, "Recommendation": "BUY"},
-            {"Symbol": "XYZ", "Score": 80, "Recommendation": "WATCH"},
+            {
+                "Symbol": "ABC",
+                "Score": 90,
+                "Recommendation": "BUY",
+                "Analyst Rating": "Buy",
+                "Target Upside": 25,
+            },
+            {
+                "Symbol": "XYZ",
+                "Score": 80,
+                "Recommendation": "WATCH",
+                "Analyst Rating": "Hold",
+                "Target Upside": None,
+            },
         ]
     )
 
@@ -219,6 +236,7 @@ def test_scan_dashboard_supports_selecting_top_and_all_results():
     assert page.count('class="select-all"') == 2
     assert 'id="addExceptions"' in page
     assert "[Add Exceptions]" in page
+    assert "25.00%" in page
 
 
 def test_setup_priority_orders_supported_entry_setups():
@@ -274,3 +292,137 @@ def test_setup_priority_is_secondary_to_score(monkeypatch):
 
     assert ranked["Symbol"].tolist() == expected
     assert prepared["Symbol"].tolist() == expected
+
+
+def test_analyst_data_calculates_target_upside_and_uses_cache(tmp_path, monkeypatch):
+    calls = []
+
+    class FakeTicker:
+        def get_info(self):
+            calls.append("requested")
+            return {
+                "recommendationKey": "buy",
+                "targetMeanPrice": 125,
+            }
+
+    monkeypatch.setattr(
+        "stockscanner.analyst_data.yf.Ticker", lambda symbol: FakeTicker()
+    )
+
+    first = get_analyst_data("ABC", 100, cache_directory=str(tmp_path))
+    second = get_analyst_data("ABC", 100, cache_directory=str(tmp_path))
+
+    assert first == {"Analyst Rating": "Buy", "Target Upside": 25.0}
+    assert second == first
+    assert calls == ["requested"]
+
+
+def test_analyst_data_only_breaks_complete_technical_ties(monkeypatch):
+    monkeypatch.setattr("stockscanner.ranking.load_exceptions", lambda: set())
+    results = [
+        {
+            "Symbol": "BETTER_TECHNICAL",
+            "Score": 90,
+            "Signal": "Strong Uptrend",
+            "Risk/Reward": 2,
+            "Relative Strength": 20,
+            "Analyst Rating": "Hold",
+            "Target Upside": 5,
+        },
+        {
+            "Symbol": "STRONG_BUY",
+            "Score": 90,
+            "Signal": "Strong Uptrend",
+            "Risk/Reward": 1,
+            "Relative Strength": 20,
+            "Analyst Rating": "Strong Buy",
+            "Target Upside": 30,
+        },
+        {
+            "Symbol": "BUY_HIGH_TARGET",
+            "Score": 90,
+            "Signal": "Strong Uptrend",
+            "Risk/Reward": 1,
+            "Relative Strength": 20,
+            "Analyst Rating": "Buy",
+            "Target Upside": 25,
+        },
+        {
+            "Symbol": "BUY_LOW_TARGET",
+            "Score": 90,
+            "Signal": "Strong Uptrend",
+            "Risk/Reward": 1,
+            "Relative Strength": 20,
+            "Analyst Rating": "Buy",
+            "Target Upside": 10,
+        },
+    ]
+
+    ranked = rank_stocks(results)
+
+    assert ranked["Symbol"].tolist() == [
+        "BETTER_TECHNICAL",
+        "STRONG_BUY",
+        "BUY_HIGH_TARGET",
+        "BUY_LOW_TARGET",
+    ]
+    assert analyst_rating_priority("Strong Buy") > analyst_rating_priority("Buy")
+
+
+def test_scan_result_places_analyst_and_risk_columns_after_sector(monkeypatch):
+    history = pd.DataFrame(
+        {
+            "Close": [10.0] * 200,
+            "High": [11.0] * 200,
+            "Volume": [1_000_000] * 200,
+            "MA20": [9.5] * 200,
+            "MA50": [9.0] * 200,
+            "MA200": [8.0] * 200,
+            "RSI": [60.0] * 200,
+            "MACD": [1.0] * 200,
+            "MACD_SIGNAL": [0.5] * 200,
+            "AVG_VOLUME": [900_000] * 200,
+        }
+    )
+    monkeypatch.setattr("stockscanner.scan.download_data", lambda symbol: history)
+    monkeypatch.setattr("stockscanner.scan.calculate_indicators", lambda data: data)
+    monkeypatch.setattr("stockscanner.scan.calculate_relative_strength", lambda symbol: 10)
+    monkeypatch.setattr("stockscanner.scan.score_stock", lambda data, strength: 90)
+    monkeypatch.setattr("stockscanner.scan.generate_signal", lambda data: "Strong Uptrend")
+    monkeypatch.setattr(
+        "stockscanner.scan.generate_trade_plan",
+        lambda data, available_cash, risk_percent: {
+            "Trend": "Strong Uptrend",
+            "Entry": 10,
+            "Stop": 9,
+            "Target1": 11,
+            "Target2": 12,
+            "Target3": 13,
+            "RR": 2,
+            "Shares": 25,
+            "Investment": 250,
+        },
+    )
+    monkeypatch.setattr(
+        "stockscanner.scan.get_analyst_data",
+        lambda symbol, current_price: {
+            "Analyst Rating": "Buy",
+            "Target Upside": 20,
+        },
+    )
+
+    result = process_stock(
+        {"Symbol": "ABC", "Market": "NYSE", "Sector": "Technology"},
+        quiet=True,
+    )
+    columns = list(result)
+
+    sector_index = columns.index("Sector")
+    assert columns[sector_index : sector_index + 6] == [
+        "Sector",
+        "Analyst Rating",
+        "Target Upside",
+        "Suggested Shares",
+        "Risk/Reward",
+        "Priority",
+    ]

@@ -1,4 +1,4 @@
-# StockScanner v2.3.3
+# StockScanner v2.4.0
 
 [![Stock Scanner](https://github.com/aksamuel/StockScanner/actions/workflows/scan.yml/badge.svg)](https://github.com/aksamuel/StockScanner/actions/workflows/scan.yml)
 
@@ -234,6 +234,12 @@ Features:
 - The Top 20 and All Results tables support selecting up to 50 tickers and submitting one authorized request to exclude them for 30 days
 
 Screening requires a share price of at least **$1.00** and average daily dollar volume of at least **$5 million**.
+
+Analyst consensus and mean target upside are displayed as confirmation data.
+They only break ties after Score, setup quality, Risk/Reward, and Relative
+Strength; they do not change the technical score. Yahoo Finance analyst targets
+are generally longer-horizon estimates, while the scanner's technical factors
+remain the short-term selection method.
 
 ## Folder layout
 

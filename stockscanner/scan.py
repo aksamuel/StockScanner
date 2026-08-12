@@ -16,6 +16,7 @@ from stockscanner.trade_plan import generate_trade_plan
 from stockscanner.report import export_report, export_batch_reports
 from stockscanner.html_report import export_html_report
 from stockscanner.ranking import rank_stocks
+from stockscanner.analyst_data import get_analyst_data
 from stockscanner.signals import generate_signal
 from stockscanner.relative_strength import calculate_relative_strength
 
@@ -114,6 +115,16 @@ def process_stock(row, quiet=False, available_cash=1000, risk_percent=1):
             print(f"Trade Plan Error: {error}")
         return None
 
+    try:
+        analyst_data = get_analyst_data(symbol, current_price)
+    except Exception as error:
+        if not quiet:
+            print(f"Analyst Data Error: {error}")
+        analyst_data = {
+            "Analyst Rating": "Unavailable",
+            "Target Upside": None,
+        }
+
     market_cap = row.get("Market Cap", 0)
     try:
         market_cap = float(market_cap) if market_cap else 0
@@ -124,6 +135,10 @@ def process_stock(row, quiet=False, available_cash=1000, risk_percent=1):
         "Symbol": symbol,
         "Market": market,
         "Sector": sector,
+        "Analyst Rating": analyst_data["Analyst Rating"],
+        "Target Upside": analyst_data["Target Upside"],
+        "Suggested Shares": int(plan["Shares"]),
+        "Risk/Reward": round(float(plan["RR"]), 2),
         "Priority": priority,
         "Market Cap": market_cap,
         "Current Price": round(current_price, 2),
@@ -145,8 +160,6 @@ def process_stock(row, quiet=False, available_cash=1000, risk_percent=1):
         "Target 1": round(float(plan["Target1"]), 2),
         "Target 2": round(float(plan["Target2"]), 2),
         "Target 3": round(float(plan["Target3"]), 2),
-        "Risk/Reward": round(float(plan["RR"]), 2),
-        "Suggested Shares": int(plan["Shares"]),
         "Investment": round(float(plan["Investment"]), 2),
     }
 
