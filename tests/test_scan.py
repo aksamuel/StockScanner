@@ -2,6 +2,7 @@ import pandas as pd
 import pytest
 
 from stockscanner import report
+from stockscanner.config import MIN_PRICE
 from stockscanner.add_exception import add_exceptions
 from stockscanner.exceptions_dashboard import export_exceptions_dashboard
 from stockscanner.html_report import _generate_html
@@ -28,6 +29,10 @@ def test_score_stock_basic():
     ])
     score = score_stock(df, relative_strength=25)
     assert score >= 50
+
+
+def test_minimum_share_price_is_one_dollar():
+    assert MIN_PRICE == 1.0
 
 
 def test_generate_signal_neutral():
