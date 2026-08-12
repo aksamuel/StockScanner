@@ -513,6 +513,19 @@ def test_process_stock_overlays_intraday_price_after_daily_indicators(monkeypatc
     )
     monkeypatch.setattr("stockscanner.scan.calculate_relative_strength", lambda symbol: 10)
     monkeypatch.setattr(
+        "stockscanner.scan.analyze_support_resistance",
+        lambda data, current_price: observed.setdefault(
+            "zone_input", (data["Close"].iloc[-1], current_price)
+        )
+        and {
+            "Zone Status": "Between Zones",
+            "Support Low": 9,
+            "Support High": 10,
+            "Resistance Low": 13,
+            "Resistance High": 14,
+        },
+    )
+    monkeypatch.setattr(
         "stockscanner.scan.score_stock",
         lambda data, strength: observed.setdefault(
             "score_input", (data["Close"].iloc[-1], data["Volume"].iloc[-1])
@@ -548,5 +561,7 @@ def test_process_stock_overlays_intraday_price_after_daily_indicators(monkeypatc
     )
 
     assert observed["score_input"] == (12.5, 1_500_000)
+    assert observed["zone_input"] == (10.0, 12.5)
     assert result["Current Price"] == 12.5
+    assert result["Zone Status"] == "Between Zones"
     assert result["Price As Of"] == "2026-08-12T10:15:00-04:00"

@@ -1,4 +1,4 @@
-# StockScanner v2.4.1
+# StockScanner v2.5.0
 
 [![Stock Scanner](https://github.com/aksamuel/StockScanner/actions/workflows/scan.yml/badge.svg)](https://github.com/aksamuel/StockScanner/actions/workflows/scan.yml)
 
@@ -213,6 +213,21 @@ available_cash = portfolio * (position_size / 100)
 ```cmd
 .venv\Scripts\python.exe -m stockscanner.cli --universe --parallel --workers 20 --html --portfolio 100000 --position-size 5 --risk 1
 ```
+
+## Support and Resistance Zones
+
+Each scan reports informational support and resistance zones without changing
+the technical score or ranking. Zones cluster repeated swing highs/lows, MA20,
+MA50, MA200, and recent breakout or breakdown levels. The cluster tolerance is
+half of 14-day ATR, with a 1% price fallback when ATR is unavailable. Repeated
+tests and volume-confirmed breaks increase the displayed confidence, and broken
+resistance/support is identified as role-reversed support/resistance.
+
+Levels and indicators use completed daily candles only. A current intraday
+price, when available, is used only to label price as At Support, At Resistance,
+Between Zones, Breakout Above Resistance, or Breakdown Below Support. Reports
+include each zone's bounds, distance, test count, confidence, sources, and
+tolerance; unavailable history is shown explicitly.
 
 ## HTML Dashboard
 
