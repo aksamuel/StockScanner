@@ -1,3 +1,5 @@
+from datetime import date
+
 import pandas as pd
 import pytest
 
@@ -138,21 +140,25 @@ def test_remove_exceptions_removes_multiple_tickers_atomically(tmp_path):
     assert exception_list.read_text(encoding="utf-8") == original
 
 
-def test_add_exceptions_adds_permanent_rows_atomically(tmp_path):
+def test_add_exceptions_adds_thirty_day_rows_atomically(tmp_path):
     exception_list = tmp_path / "exceptions.csv"
     original = "Symbol,Date From,Date To,Reason\nABC,,,Existing\n"
     exception_list.write_text(original, encoding="utf-8")
 
-    added_count = add_exceptions(["def", "GHI"], str(exception_list))
+    added_count = add_exceptions(
+        ["def", "GHI"], str(exception_list), date_from=date(2026, 8, 12)
+    )
     updated = exception_list.read_text(encoding="utf-8")
 
     assert added_count == 2
-    assert "DEF,,,Added from scanner dashboard" in updated
-    assert "GHI,,,Added from scanner dashboard" in updated
+    assert "DEF,12/Aug/2026,11/Sep/2026,Added from scanner dashboard" in updated
+    assert "GHI,12/Aug/2026,11/Sep/2026,Added from scanner dashboard" in updated
     assert updated.index("ABC") < updated.index("DEF") < updated.index("GHI")
 
     with pytest.raises(ValueError, match="ABC"):
-        add_exceptions(["JKL", "ABC"], str(exception_list))
+        add_exceptions(
+            ["JKL", "ABC"], str(exception_list), date_from=date(2026, 8, 12)
+        )
     assert "JKL" not in exception_list.read_text(encoding="utf-8")
 
 
@@ -167,7 +173,7 @@ def test_exception_updates_sort_symbols_alphabetically(tmp_path):
     )
 
     remove_exceptions(["DEF"], str(exception_list))
-    add_exceptions(["mno"], str(exception_list))
+    add_exceptions(["mno"], str(exception_list), date_from=date(2026, 8, 12))
     symbols = pd.read_csv(exception_list)["Symbol"].tolist()
 
     assert symbols == ["ABC", "MNO", "XYZ"]

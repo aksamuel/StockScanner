@@ -449,7 +449,7 @@ function filterTable() {{
     }});
 }}
 
-// Add selected scan results to the permanent exception list
+// Add selected scan results to the 30-day exception list
 const exceptionSelections = [...document.querySelectorAll('.exception-select')];
 const addExceptions = document.getElementById('addExceptions');
 
@@ -501,11 +501,11 @@ addExceptions.addEventListener('click', () => {{
         alert('Select no more than 50 tickers per request.');
         return;
     }}
-    if (!symbols.length || !confirm(`Add ${{symbols.length}} selected ticker(s) to the permanent exception list?`)) return;
+    if (!symbols.length || !confirm(`Add ${{symbols.length}} selected ticker(s) to the exception list for 30 days?`)) return;
 
     const countLabel = symbols.length === 1 ? '1 ticker' : `${{symbols.length}} tickers`;
     const body = [
-        'Please add these tickers to the permanent StockScanner exception list:',
+        'Please add these tickers to the StockScanner exception list for 30 days:',
         '',
         ...symbols.map(symbol => `- **${{symbol}}**`),
         '',
