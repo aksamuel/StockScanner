@@ -14,7 +14,7 @@ from stockscanner.analyst_data import (
 )
 from stockscanner.config import MIN_PRICE
 from stockscanner.exceptions_dashboard import export_exceptions_dashboard
-from stockscanner.html_report import _generate_html
+from stockscanner.html_report import _format_new_york_time, _generate_html
 from stockscanner.market_data import (
     CACHE_DAYS,
     completed_daily_data,
@@ -351,6 +351,8 @@ def test_reports_replace_price_as_of_column_with_refresh_time_near_graph():
     assert page.count(marker) == 1
     assert page.index(marker) < page.index('<canvas id="recChart"')
     assert "Temporary sorting uses prices captured during this scanner run." in page
+    assert "Temporary manual run: Not run in this browser." in page
+    assert "stockscannerTemporaryRunNewYork" in page
 
 
 def test_current_price_is_displayed_below_symbol_in_smaller_text(tmp_path):
@@ -372,6 +374,12 @@ def test_current_price_is_displayed_below_symbol_in_smaller_text(tmp_path):
     assert str(symbol_cell.value) == "ABC\n($123.45)"
     assert symbol_cell.value[0].font.sz == 11
     assert symbol_cell.value[1].font.sz == 9
+
+
+def test_scan_time_is_formatted_in_new_york_time():
+    utc_time = datetime(2026, 8, 13, 15, 21, tzinfo=ZoneInfo("UTC"))
+
+    assert _format_new_york_time(utc_time) == "13 August 2026, 11:21 AM EDT"
 
 
 def test_three_report_pages_have_requested_columns_navigation_and_selection():
@@ -420,7 +428,8 @@ def test_three_report_pages_have_requested_columns_navigation_and_selection():
     assert 'data-current-price="123.45"' in pages["technical"]
     assert 'data-target-one=""' in pages["technical"]
     assert "(leftTarget - leftPrice) / leftPrice" in pages["technical"]
-    assert "Temporarily ranked by Target 1 percentage upside" in pages["technical"]
+    assert "Temporarily ranked at" in pages["technical"]
+    assert "using scan-time prices" in pages["technical"]
 
     analysts_headers = pages["analysts"].split("<thead><tr>", 1)[1].split(
         "</tr></thead>", 1
@@ -498,16 +507,76 @@ def test_analyst_page_sorts_nearest_support_first_and_missing_support_last():
     assert top_table.index(">FAR</span>") < top_table.index(">MISSING</span>")
 
 
-def test_technical_page_sorts_symbol_colors_from_green_to_orange():
+def test_technical_page_uses_requested_multi_factor_sort_hierarchy():
     dataframe = report.prepare_results_dataframe(
         [
-            {"Symbol": "GREEN", "Relative Strength": 6, "Score": 90},
-            {"Symbol": "MISSING", "Relative Strength": None, "Score": 80},
-            {"Symbol": "BLUE", "Relative Strength": 0, "Score": 70},
-            {"Symbol": "ORANGE", "Relative Strength": -6, "Score": 60},
-            {"Symbol": "GREENHIGHER", "Relative Strength": 20, "Score": 55},
-            {"Symbol": "LIGHTGREEN", "Relative Strength": 5, "Score": 50},
-            {"Symbol": "PEACH", "Relative Strength": -5, "Score": 40},
+            {
+                "Symbol": "LARGEST_GAP",
+                "Current Price": 100,
+                "Target 1": 130,
+                "Relative Strength": -5,
+                "Recommendation": "AVOID",
+                "Signal": "Neutral",
+                "Trend": "Breakout",
+                "Score": 90,
+            },
+            {
+                "Symbol": "HIGHER_RS",
+                "Current Price": 100,
+                "Target 1": 120,
+                "Relative Strength": 10,
+                "Recommendation": "BUY",
+                "Signal": "Pullback to 20 MA",
+                "Trend": "Healthy Pullback",
+                "Score": 80,
+            },
+            {
+                "Symbol": "STRONGER_REC",
+                "Current Price": 100,
+                "Target 1": 120,
+                "Relative Strength": 5,
+                "Recommendation": "STRONG BUY",
+                "Signal": "Pullback to 20 MA",
+                "Trend": "Healthy Pullback",
+                "Score": 70,
+            },
+            {
+                "Symbol": "STRONGER_SIGNAL",
+                "Current Price": 100,
+                "Target 1": 120,
+                "Relative Strength": 5,
+                "Recommendation": "BUY",
+                "Signal": "Strong Uptrend",
+                "Trend": "Healthy Pullback",
+                "Score": 60,
+            },
+            {
+                "Symbol": "STRONGER_TREND",
+                "Current Price": 100,
+                "Target 1": 120,
+                "Relative Strength": 5,
+                "Recommendation": "BUY",
+                "Signal": "Pullback to 20 MA",
+                "Trend": "Strong Uptrend",
+                "Score": 50,
+            },
+            {
+                "Symbol": "BASE",
+                "Current Price": 100,
+                "Target 1": 120,
+                "Relative Strength": 5,
+                "Recommendation": "BUY",
+                "Signal": "Pullback to 20 MA",
+                "Trend": "Healthy Pullback",
+                "Score": 40,
+            },
+            {
+                "Symbol": "MISSING",
+                "Current Price": 100,
+                "Target 1": None,
+                "Relative Strength": None,
+                "Score": 30,
+            },
         ]
     )
 
@@ -518,16 +587,16 @@ def test_technical_page_sorts_symbol_colors_from_green_to_orange():
     )
     top_table = page.split('<table id="topTable">', 1)[1].split("</table>", 1)[0]
     ordered_symbols = [
-        "GREENHIGHER",
-        "GREEN",
-        "LIGHTGREEN",
-        "BLUE",
-        "PEACH",
-        "ORANGE",
+        "LARGEST_GAP",
+        "HIGHER_RS",
+        "STRONGER_REC",
+        "STRONGER_SIGNAL",
+        "STRONGER_TREND",
+        "BASE",
         "MISSING",
     ]
 
-    positions = [top_table.index(f">{symbol}</td>") for symbol in ordered_symbols]
+    positions = [top_table.index(f">{symbol}</span>") for symbol in ordered_symbols]
     assert positions == sorted(positions)
 
 

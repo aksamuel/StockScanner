@@ -2,10 +2,24 @@
 
 import os
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 
+from .ranking import setup_priority
 from .report import REPORT_FOLDER, TOP_RESULTS, prepare_results_dataframe
+
+NEW_YORK = ZoneInfo("America/New_York")
+
+
+def _format_new_york_time(moment=None):
+    """Format a timestamp in New York local time with its DST abbreviation."""
+    moment = moment or datetime.now(NEW_YORK)
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=NEW_YORK)
+    else:
+        moment = moment.astimezone(NEW_YORK)
+    return moment.strftime("%d %B %Y, %I:%M %p %Z")
 
 
 def _escape_html(text):
@@ -300,27 +314,81 @@ def _sort_analysts_by_support_proximity(dataframe):
     return sorted_data
 
 
-def _sort_technical_by_symbol_color(dataframe):
-    """Sort the Technical page from green through orange Symbol bands."""
+def _recommendation_priority(recommendation):
+    normalized = str(recommendation).upper()
+    if "STRONG BUY" in normalized:
+        return 6
+    if "BUY" in normalized:
+        return 5
+    if "ACCUMULATE" in normalized:
+        return 4
+    if "HOLD" in normalized:
+        return 3
+    if "WATCH" in normalized:
+        return 2
+    if "AVOID" in normalized:
+        return 1
+    return 0
+
+
+def _trend_priority(trend):
+    normalized = str(trend).casefold()
+    if "strong uptrend" in normalized:
+        return 3
+    if "healthy pullback" in normalized:
+        return 2
+    if "breakout" in normalized:
+        return 1
+    return 0
+
+
+def _sort_technical_by_hierarchy(dataframe):
+    """Sort the Technical page by the requested display-only hierarchy."""
     sorted_data = dataframe.copy()
+    current_price = (
+        pd.to_numeric(sorted_data["Current Price"], errors="coerce")
+        if "Current Price" in sorted_data.columns
+        else pd.Series(float("nan"), index=sorted_data.index)
+    )
+    target_one = (
+        pd.to_numeric(sorted_data["Target 1"], errors="coerce")
+        if "Target 1" in sorted_data.columns
+        else pd.Series(float("nan"), index=sorted_data.index)
+    )
     relative_strength = (
         pd.to_numeric(sorted_data["Relative Strength"], errors="coerce")
         if "Relative Strength" in sorted_data.columns
         else pd.Series(float("nan"), index=sorted_data.index)
     )
-    color_priority = pd.Series(5, index=sorted_data.index)
-    color_priority.loc[relative_strength > 5] = 0
-    color_priority.loc[(relative_strength > 0) & (relative_strength <= 5)] = 1
-    color_priority.loc[relative_strength == 0] = 2
-    color_priority.loc[(relative_strength >= -5) & (relative_strength < 0)] = 3
-    color_priority.loc[relative_strength < -5] = 4
-    sorted_data["_symbol_color_priority"] = color_priority
-    sorted_data["_relative_strength_order"] = relative_strength.fillna(float("inf"))
+    sorted_data["_target_gap"] = (target_one - current_price).fillna(float("-inf"))
+    sorted_data["_relative_strength_order"] = relative_strength.fillna(float("-inf"))
+    sorted_data["_recommendation_priority"] = (
+        sorted_data["Recommendation"].map(_recommendation_priority)
+        if "Recommendation" in sorted_data.columns
+        else 0
+    )
+    sorted_data["_signal_priority"] = (
+        sorted_data["Signal"].map(setup_priority)
+        if "Signal" in sorted_data.columns
+        else 0
+    )
+    sorted_data["_trend_priority"] = (
+        sorted_data["Trend"].map(_trend_priority)
+        if "Trend" in sorted_data.columns
+        else 0
+    )
+    sort_columns = [
+        "_target_gap",
+        "_relative_strength_order",
+        "_recommendation_priority",
+        "_signal_priority",
+        "_trend_priority",
+    ]
     sorted_data = sorted_data.sort_values(
-        ["_symbol_color_priority", "_relative_strength_order"],
-        ascending=[True, False],
+        sort_columns,
+        ascending=[False] * len(sort_columns),
         kind="stable",
-    ).drop(columns=["_symbol_color_priority", "_relative_strength_order"])
+    ).drop(columns=sort_columns)
     sorted_data = sorted_data.reset_index(drop=True)
     if "Rank" in sorted_data.columns:
         sorted_data["Rank"] = range(1, len(sorted_data) + 1)
@@ -332,7 +400,7 @@ def _generate_html(dataframe, scan_time, page_key=None):
     if page_key == "analysts":
         dataframe = _sort_analysts_by_support_proximity(dataframe)
     elif page_key == "technical":
-        dataframe = _sort_technical_by_symbol_color(dataframe)
+        dataframe = _sort_technical_by_hierarchy(dataframe)
     summary = _build_summary(dataframe)
     top_df = dataframe.head(TOP_RESULTS)
     config = PAGE_CONFIGS.get(page_key)
@@ -484,6 +552,9 @@ def _generate_html(dataframe, scan_time, page_key=None):
         <h2>Recommendation Breakdown</h2>
         <div class="chart-container">
             <div class="refresh-time">Scan completed: {scan_time}</div>
+            <div class="refresh-time" id="temporaryRunTime">
+                Temporary manual run: Not run in this browser.
+            </div>
             <div class="price-notice">Temporary sorting uses prices captured during this scanner run.</div>
             <canvas id="recChart" height="200"></canvas>
         </div>
@@ -757,6 +828,11 @@ footer {{
 <script>
 // Chart
 document.addEventListener('DOMContentLoaded', function() {{
+    const temporaryRunTime = document.getElementById('temporaryRunTime');
+    const storedTemporaryRun = localStorage.getItem('stockscannerTemporaryRunNewYork');
+    if (temporaryRunTime && storedTemporaryRun) {{
+        temporaryRunTime.textContent = `Temporary manual run: ${{storedTemporaryRun}}`;
+    }}
     const ctx = document.getElementById('recChart');
     if (ctx && typeof Chart !== 'undefined') {{
         new Chart(ctx, {{
@@ -829,8 +905,20 @@ if (sortTargetUpside) {{
                 if (rankIndex >= 0) row.children[rankIndex].textContent = index + 1;
             }});
         }});
+        const temporaryRunNewYork = new Intl.DateTimeFormat('en-US', {{
+            timeZone: 'America/New_York',
+            year: 'numeric',
+            month: 'long',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+            hour12: true,
+            timeZoneName: 'short',
+        }}).format(new Date());
+        localStorage.setItem('stockscannerTemporaryRunNewYork', temporaryRunNewYork);
         document.getElementById('targetSortStatus').textContent =
-            'Temporarily ranked by Target 1 percentage upside using page-refresh prices.';
+            `Temporarily ranked at ${{temporaryRunNewYork}} using scan-time prices.`;
     }});
 }}
 
@@ -949,13 +1037,13 @@ def export_html_report(results, quiet=False):
             print("No data available for HTML export.")
         return None
 
-    now = datetime.now()
+    now = datetime.now(NEW_YORK)
     scan_date = now.strftime("%Y-%m-%d")
     date_folder = os.path.join(REPORT_FOLDER, scan_date)
     os.makedirs(date_folder, exist_ok=True)
 
     timestamp = now.strftime("%Y-%m-%d_%H-%M-%S")
-    scan_time = now.strftime("%d %B %Y, %I:%M %p")
+    scan_time = _format_new_york_time(now)
     filename = os.path.join(date_folder, f"StockScanner_Dashboard_{timestamp}.html")
     pages = {
         "landing": os.path.join(date_folder, "landing.html"),
