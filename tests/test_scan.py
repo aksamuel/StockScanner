@@ -121,6 +121,10 @@ def test_export_exceptions_dashboard(tmp_path):
     assert "Technical Analysis" in page
     assert "Analysts Rating" in page
     assert "Bought Selection" in page
+    assert (
+        '<span class="nav-current" aria-current="page">Exception List</span>'
+        in page
+    )
     assert 'id="selectAll"' in page
     assert 'class="ticker-select"' in page
     assert 'id="deleteSelected"' in page
@@ -350,9 +354,11 @@ def test_reports_replace_price_as_of_column_with_refresh_time_near_graph():
     marker = "Scan completed: 12 August 2026, 10:00 PM"
     assert page.count(marker) == 1
     assert page.index(marker) < page.index('<canvas id="recChart"')
-    assert "Temporary sorting uses prices captured during this scanner run." in page
-    assert "Temporary manual run: Not run in this browser." in page
-    assert "stockscannerTemporaryRunNewYork" in page
+    assert (
+        "Manual Yahoo refreshes run securely on GitHub Actions and redeploy these pages."
+        in page
+    )
+    assert "stockscannerTemporaryRunNewYork" not in page
 
 
 def test_current_price_is_displayed_below_symbol_in_smaller_text(tmp_path):
@@ -411,11 +417,20 @@ def test_three_report_pages_have_requested_columns_navigation_and_selection():
         key: _generate_html(dataframe, "12 August 2026, 10:00 PM", page_key=key)
         for key in ["landing", "technical", "analysts", "bought-selection"]
     }
-    for page in pages.values():
-        assert 'href="index.html">KPI Dashboard</a>' in page
-        assert 'href="technical.html">Technical Analysis</a>' in page
-        assert 'href="analysts.html">Analysts Rating</a>' in page
-        assert 'href="bought-selection.html">Bought Selection</a>' in page
+    navigation = {
+        "landing": ("index.html", "KPI Dashboard"),
+        "technical": ("technical.html", "Technical Analysis"),
+        "analysts": ("analysts.html", "Analysts Rating"),
+        "bought-selection": ("bought-selection.html", "Bought Selection"),
+    }
+    for key, page in pages.items():
+        current_href, current_label = navigation[key]
+        assert (
+            f'<span class="nav-current" aria-current="page">{current_label}</span>'
+            in page
+        )
+        assert f'href="{current_href}">{current_label}</a>' not in page
+        assert page.count('class="nav-current" aria-current="page"') == 1
         assert 'href="exceptions.html">Exception List</a>' in page
 
     technical_headers = pages["technical"].split("<thead><tr>", 1)[1].split(
@@ -424,12 +439,19 @@ def test_three_report_pages_have_requested_columns_navigation_and_selection():
     assert "<th>RSI</th>" in technical_headers
     assert "<th>Recommendation</th>" in technical_headers
     assert "<th>Analyst Rating</th>" not in technical_headers
-    assert 'id="sortTargetUpside"' in pages["technical"]
+    assert technical_headers.rfind("<th>RSI</th>") < technical_headers.rfind(
+        "<th>MACD</th>"
+    )
+    assert technical_headers.rstrip().endswith("<th>MACD</th>")
+    assert 'id="requestYahooRefresh"' in pages["technical"]
+    assert (
+        'href="https://github.com/aksamuel/StockScanner/actions/workflows/scan.yml"'
+        in pages["technical"]
+    )
     assert 'data-current-price="123.45"' in pages["technical"]
     assert 'data-target-one=""' in pages["technical"]
-    assert "(leftTarget - leftPrice) / leftPrice" in pages["technical"]
-    assert "Temporarily ranked at" in pages["technical"]
-    assert "using scan-time prices" in pages["technical"]
+    assert "Open Actions and choose Run workflow." in pages["technical"]
+    assert "left.dataset.scannerRank" not in pages["technical"]
 
     analysts_headers = pages["analysts"].split("<thead><tr>", 1)[1].split(
         "</tr></thead>", 1
@@ -446,8 +468,8 @@ def test_three_report_pages_have_requested_columns_navigation_and_selection():
     assert pages["technical"].count('class="exception-select"') == 0
     assert pages["analysts"].count('class="exception-select"') == 0
     assert pages["bought-selection"].count('class="exception-select"') == 2
-    assert '<button id="sortTargetUpside"' not in pages["analysts"]
-    assert '<button id="sortTargetUpside"' not in pages["bought-selection"]
+    assert 'id="requestYahooRefresh"' not in pages["analysts"]
+    assert 'id="requestYahooRefresh"' not in pages["bought-selection"]
     assert "Recommendation Breakdown" in pages["landing"]
     assert '<canvas id="recChart"' in pages["landing"]
     assert '<table id="topTable">' not in pages["landing"]
@@ -603,12 +625,65 @@ def test_technical_page_uses_requested_multi_factor_sort_hierarchy():
         "HIGHER_RS",
         "LARGER_TIE_GAP",
         "BASE",
-        "LARGEST_GAP",
         "MISSING",
     ]
 
     positions = [top_table.index(f">{symbol}</span>") for symbol in ordered_symbols]
     assert positions == sorted(positions)
+    assert ">LARGEST_GAP</span>" not in page
+
+
+def test_technical_target_one_shows_direction_from_current_price():
+    dataframe = report.prepare_results_dataframe(
+        [
+            {"Symbol": "UP", "Current Price": 100, "Target 1": 110, "Score": 90},
+            {"Symbol": "DOWN", "Current Price": 100, "Target 1": 90, "Score": 80},
+            {"Symbol": "EQUAL", "Current Price": 100, "Target 1": 100, "Score": 70},
+        ]
+    )
+
+    page = _generate_html(
+        dataframe,
+        "13 August 2026, 12:00 PM EDT",
+        page_key="technical",
+    )
+
+    assert page.count('class="target-arrow-up" title="Above current price"') == 2
+    assert page.count('class="target-arrow-down" title="Below current price"') == 2
+    assert page.count("$100.00") >= 2
+
+
+def test_analyst_price_levels_show_direction_from_current_price():
+    dataframe = report.prepare_results_dataframe(
+        [
+            {
+                "Symbol": "LEVELS",
+                "Current Price": 100,
+                "Support Low": 90,
+                "Support High": 110,
+                "Resistance Low": 95,
+                "Resistance High": 105,
+                "Score": 90,
+            }
+        ]
+    )
+
+    page = _generate_html(
+        dataframe,
+        "13 August 2026, 02:00 PM EDT",
+        page_key="analysts",
+    )
+
+    for value in ("$90.00", "$95.00"):
+        assert page.count(
+            f'{value} <span class="target-arrow-down" '
+            'title="Below current price">&#8595;</span>'
+        ) == 2
+    for value in ("$105.00", "$110.00"):
+        assert page.count(
+            f'{value} <span class="target-arrow-up" '
+            'title="Above current price">&#8593;</span>'
+        ) == 2
 
 
 def test_html_export_creates_three_stable_linked_pages(tmp_path, monkeypatch):

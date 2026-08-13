@@ -87,13 +87,21 @@ header {{
 h1 {{ margin: 0; color: #4fc3f7; font-size: 1.8rem; }}
 .subtitle {{ color: #90a4ae; margin-top: 4px; font-size: 0.9rem; }}
 .nav {{ margin-top: 14px; }}
-.nav a {{
+.nav a,
+.nav .nav-current {{
     display: inline-block;
     padding: 7px 14px;
     color: #4fc3f7;
     border: 1px solid #1f4e78;
     border-radius: 6px;
     text-decoration: none;
+}}
+.nav .nav-current {{
+    color: #607d8b;
+    background: #162534;
+    border-color: #263d50;
+    cursor: not-allowed;
+    opacity: 0.65;
 }}
 .summary {{
     display: inline-block;
@@ -156,6 +164,7 @@ footer {{ margin-top: 30px; color: #607d8b; font-size: 0.8rem; text-align: cente
             <a href="technical.html">Technical Analysis</a>
             <a href="analysts.html">Analysts Rating</a>
             <a href="bought-selection.html">Bought Selection</a>
+            <span class="nav-current" aria-current="page">Exception List</span>
         </div>
     </div>
 </header>

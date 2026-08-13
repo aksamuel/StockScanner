@@ -159,6 +159,21 @@ def _format_currency(value):
         return _escape_html(value)
 
 
+def _format_price_level_with_direction(price_level, current_price):
+    """Format a price level with its direction relative to Current Price."""
+    formatted_level = _format_currency(price_level)
+    try:
+        price_level = float(price_level)
+        current_price = float(current_price)
+    except (ValueError, TypeError):
+        return formatted_level
+    if price_level > current_price:
+        return f'{formatted_level} <span class="target-arrow-up" title="Above current price">&#8593;</span>'
+    if price_level < current_price:
+        return f'{formatted_level} <span class="target-arrow-down" title="Below current price">&#8595;</span>'
+    return formatted_level
+
+
 def _format_number(value, decimals=2):
     """Format a number with specified decimal places."""
     try:
@@ -208,9 +223,9 @@ PAGE_CONFIGS = {
     "technical": {
         "title": "Technical Analysis Page",
         "columns": [
-            "Rank", "Symbol", "Sector", "RSI", "Score", "Recommendation",
-            "Signal", "Trend", "MACD", "Entry", "Target 1", "Target 2",
-            "Target 3", "20 MA", "50 MA", "200 MA", "Stop Loss",
+            "Rank", "Symbol", "Sector", "Score", "Recommendation", "Signal",
+            "Trend", "Entry", "Target 1", "Target 2", "Target 3", "20 MA",
+            "50 MA", "200 MA", "Stop Loss", "RSI", "MACD",
         ],
         "accent": "#c6efce",
         "selection": False,
@@ -239,6 +254,26 @@ PAGE_CONFIGS = {
         "selection": True,
     },
 }
+NAV_ITEMS = (
+    ("landing", "index.html", "KPI Dashboard"),
+    ("technical", "technical.html", "Technical Analysis"),
+    ("analysts", "analysts.html", "Analysts Rating"),
+    ("bought-selection", "bought-selection.html", "Bought Selection"),
+    ("exceptions", "exceptions.html", "Exception List"),
+)
+
+
+def _navigation_html(page_key):
+    """Build navigation with the current page presented as disabled."""
+    items = []
+    for key, href, label in NAV_ITEMS:
+        if key == page_key:
+            items.append(
+                f'<span class="nav-current" aria-current="page">{label}</span>'
+            )
+        else:
+            items.append(f'<a href="{href}">{label}</a>')
+    return "\n            ".join(items)
 
 
 def _format_cell(column, value):
@@ -345,6 +380,11 @@ def _trend_priority(trend):
 def _sort_technical_by_hierarchy(dataframe):
     """Sort the Technical page by the requested display-only hierarchy."""
     sorted_data = dataframe.copy()
+    sorted_data["_scanner_rank"] = (
+        pd.to_numeric(sorted_data["Rank"], errors="coerce")
+        if "Rank" in sorted_data.columns
+        else pd.Series(float("nan"), index=sorted_data.index)
+    )
     current_price = (
         pd.to_numeric(sorted_data["Current Price"], errors="coerce")
         if "Current Price" in sorted_data.columns
@@ -388,7 +428,8 @@ def _sort_technical_by_hierarchy(dataframe):
         sort_columns,
         ascending=[False] * len(sort_columns),
         kind="stable",
-    ).drop(columns=sort_columns)
+    )
+    sorted_data = sorted_data.loc[~relative_strength.lt(0)].drop(columns=sort_columns)
     sorted_data = sorted_data.reset_index(drop=True)
     if "Rank" in sorted_data.columns:
         sorted_data["Rank"] = range(1, len(sorted_data) + 1)
@@ -412,6 +453,7 @@ def _generate_html(dataframe, scan_time, page_key=None):
     page_title = config["title"] if config else "AI Stock Scanner Dashboard"
     page_accent = config["accent"] if config else "#1f4e78"
     selection_enabled = config["selection"] if config else True
+    navigation_html = _navigation_html(page_key)
 
     # Build table rows for top opportunities
     top_rows_html = []
@@ -429,6 +471,22 @@ def _generate_html(dataframe, scan_time, page_key=None):
             formatted = (
                 _format_symbol_with_price(value, row.get("Current Price"))
                 if col == "Symbol"
+                else _format_price_level_with_direction(
+                    value, row.get("Current Price")
+                )
+                if (
+                    (col == "Target 1" and page_key == "technical")
+                    or (
+                        page_key == "analysts"
+                        and col
+                        in {
+                            "Support Low",
+                            "Support High",
+                            "Resistance Low",
+                            "Resistance High",
+                        }
+                    )
+                )
                 else _format_cell(col, value)
             )
             css_class = ""
@@ -450,7 +508,8 @@ def _generate_html(dataframe, scan_time, page_key=None):
         top_rows_html.append(
             '<tr '
             f'data-current-price="{_data_number(row.get("Current Price"))}" '
-            f'data-target-one="{_data_number(row.get("Target 1"))}">'
+            f'data-target-one="{_data_number(row.get("Target 1"))}" '
+            f'data-scanner-rank="{_data_number(row.get("_scanner_rank"))}">'
             f'{"".join(cells)}</tr>'
         )
 
@@ -470,6 +529,22 @@ def _generate_html(dataframe, scan_time, page_key=None):
             formatted = (
                 _format_symbol_with_price(value, row.get("Current Price"))
                 if col == "Symbol"
+                else _format_price_level_with_direction(
+                    value, row.get("Current Price")
+                )
+                if (
+                    (col == "Target 1" and page_key == "technical")
+                    or (
+                        page_key == "analysts"
+                        and col
+                        in {
+                            "Support Low",
+                            "Support High",
+                            "Resistance Low",
+                            "Resistance High",
+                        }
+                    )
+                )
                 else _format_cell(col, value)
             )
             css_class = ""
@@ -491,7 +566,8 @@ def _generate_html(dataframe, scan_time, page_key=None):
         all_rows_html.append(
             '<tr '
             f'data-current-price="{_data_number(row.get("Current Price"))}" '
-            f'data-target-one="{_data_number(row.get("Target 1"))}">'
+            f'data-target-one="{_data_number(row.get("Target 1"))}" '
+            f'data-scanner-rank="{_data_number(row.get("_scanner_rank"))}">'
             f'{"".join(cells)}</tr>'
         )
 
@@ -521,9 +597,12 @@ def _generate_html(dataframe, scan_time, page_key=None):
     )
     target_sort_controls = (
         '<div class="target-sort-controls">'
-        '<button id="sortTargetUpside" type="button">'
-        "Rank by Target 1 Upside</button>"
-        '<span id="targetSortStatus" aria-live="polite"></span>'
+        '<a id="requestYahooRefresh" '
+        'href="https://github.com/aksamuel/StockScanner/actions/workflows/scan.yml" '
+        'target="_blank" rel="noopener noreferrer">'
+        "Request Latest Yahoo Prices</a>"
+        '<span id="targetSortStatus">Open Actions and choose Run workflow. '
+        "The server refreshes Yahoo prices and redeploys the default scanner order.</span>"
         "</div>"
         if page_key == "technical"
         else ""
@@ -552,10 +631,7 @@ def _generate_html(dataframe, scan_time, page_key=None):
         <h2>Recommendation Breakdown</h2>
         <div class="chart-container">
             <div class="refresh-time">Scan completed: {scan_time}</div>
-            <div class="refresh-time" id="temporaryRunTime">
-                Temporary manual run: Not run in this browser.
-            </div>
-            <div class="price-notice">Temporary sorting uses prices captured during this scanner run.</div>
+            <div class="price-notice">Manual Yahoo refreshes run securely on GitHub Actions and redeploy these pages.</div>
             <canvas id="recChart" height="200"></canvas>
         </div>
     </div>
@@ -624,13 +700,21 @@ header {{
 header h1 {{ color: #4fc3f7; font-size: 1.8rem; text-align: center; }}
 header .subtitle {{ color: #90a4ae; text-align: center; margin-top: 4px; font-size: 0.9rem; }}
 .dashboard-nav {{ margin-top: 14px; text-align: center; }}
-.dashboard-nav a {{
+.dashboard-nav a,
+.dashboard-nav .nav-current {{
     display: inline-block;
     padding: 7px 14px;
     color: #4fc3f7;
     border: 1px solid #1f4e78;
     border-radius: 6px;
     text-decoration: none;
+}}
+.dashboard-nav .nav-current {{
+    color: #607d8b;
+    background: #162534;
+    border-color: #263d50;
+    cursor: not-allowed;
+    opacity: 0.65;
 }}
 .cards {{
     display: grid;
@@ -732,6 +816,8 @@ tr:hover {{ background: #1e3348; }}
 .symbol-support-below-five {{ background: #4fb52a !important; color: #102000; font-weight: 600; }}
 .symbol-name {{ display: block; font-weight: 600; }}
 .symbol-price {{ display: block; font-size: 0.78em; font-weight: 400; margin-top: -2px; }}
+.target-arrow-up {{ color: #66bb6a; font-size: 1.1em; font-weight: 700; }}
+.target-arrow-down {{ color: #ef5350; font-size: 1.1em; font-weight: 700; }}
 .tabs {{
     display: flex;
     gap: 4px;
@@ -777,15 +863,17 @@ tr:hover {{ background: #1e3348; }}
 }}
 #addExceptions:hover:not(:disabled) {{ background: #2e7d32; }}
 #addExceptions:disabled {{ cursor: not-allowed; opacity: 0.45; }}
-#sortTargetUpside {{
+#requestYahooRefresh {{
     padding: 7px 14px;
     color: #172217;
     background: #c6efce;
     border: 1px solid #70ad47;
     border-radius: 5px;
     cursor: pointer;
+    display: inline-block;
+    text-decoration: none;
 }}
-#sortTargetUpside:hover {{ filter: brightness(0.92); }}
+#requestYahooRefresh:hover {{ filter: brightness(0.92); }}
 .target-sort-controls {{ display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }}
 #targetSortStatus {{ color: #90a4ae; font-size: 0.8rem; }}
 .select-column {{ width: 48px; text-align: center; }}
@@ -805,11 +893,7 @@ footer {{
     <div class="container">
         <h1>{page_title}</h1>
         <div class="dashboard-nav">
-            <a href="index.html">KPI Dashboard</a>
-            <a href="technical.html">Technical Analysis</a>
-            <a href="analysts.html">Analysts Rating</a>
-            <a href="bought-selection.html">Bought Selection</a>
-            <a href="exceptions.html">Exception List</a>
+            {navigation_html}
         </div>
     </div>
 </header>
@@ -828,11 +912,6 @@ footer {{
 <script>
 // Chart
 document.addEventListener('DOMContentLoaded', function() {{
-    const temporaryRunTime = document.getElementById('temporaryRunTime');
-    const storedTemporaryRun = localStorage.getItem('stockscannerTemporaryRunNewYork');
-    if (temporaryRunTime && storedTemporaryRun) {{
-        temporaryRunTime.textContent = `Temporary manual run: ${{storedTemporaryRun}}`;
-    }}
     const ctx = document.getElementById('recChart');
     if (ctx && typeof Chart !== 'undefined') {{
         new Chart(ctx, {{
@@ -875,50 +954,6 @@ function filterTable() {{
     rows.forEach(row => {{
         const text = row.textContent.toUpperCase();
         row.style.display = text.includes(filter) ? '' : 'none';
-    }});
-}}
-
-// Temporary display-only ranking by Target 1 percentage upside.
-const sortTargetUpside = document.getElementById('sortTargetUpside');
-if (sortTargetUpside) {{
-    sortTargetUpside.addEventListener('click', () => {{
-        document.querySelectorAll('.tab-content table').forEach(table => {{
-            const tbody = table.querySelector('tbody');
-            const rows = [...tbody.querySelectorAll('tr')];
-            rows.sort((left, right) => {{
-                const leftPrice = Number(left.dataset.currentPrice);
-                const leftTarget = Number(left.dataset.targetOne);
-                const rightPrice = Number(right.dataset.currentPrice);
-                const rightTarget = Number(right.dataset.targetOne);
-                const leftUpside = leftPrice > 0 && leftTarget > 0
-                    ? (leftTarget - leftPrice) / leftPrice
-                    : Number.NEGATIVE_INFINITY;
-                const rightUpside = rightPrice > 0 && rightTarget > 0
-                    ? (rightTarget - rightPrice) / rightPrice
-                    : Number.NEGATIVE_INFINITY;
-                return rightUpside - leftUpside;
-            }});
-            const rankIndex = [...table.querySelectorAll('thead th')]
-                .findIndex(header => header.textContent.trim() === 'Rank');
-            rows.forEach((row, index) => {{
-                tbody.appendChild(row);
-                if (rankIndex >= 0) row.children[rankIndex].textContent = index + 1;
-            }});
-        }});
-        const temporaryRunNewYork = new Intl.DateTimeFormat('en-US', {{
-            timeZone: 'America/New_York',
-            year: 'numeric',
-            month: 'long',
-            day: '2-digit',
-            hour: '2-digit',
-            minute: '2-digit',
-            second: '2-digit',
-            hour12: true,
-            timeZoneName: 'short',
-        }}).format(new Date());
-        localStorage.setItem('stockscannerTemporaryRunNewYork', temporaryRunNewYork);
-        document.getElementById('targetSortStatus').textContent =
-            `Temporarily ranked at ${{temporaryRunNewYork}} using scan-time prices.`;
     }});
 }}
 
