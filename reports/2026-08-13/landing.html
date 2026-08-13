@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>StockScanner Dashboard - 13 August 2026, 03:21 PM</title>
+<title>StockScanner Dashboard - 13 August 2026, 03:27 PM</title>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body {
@@ -215,20 +215,20 @@ footer {
 <div class="container">
     
     <div class="cards">
-        <div class="card"><div class="value">365</div><div class="label">Stocks Scanned</div></div>
-        <div class="card"><div class="value" style="color:#4caf50">77</div><div class="label">Strong Buy</div></div>
-        <div class="card"><div class="value" style="color:#66bb6a">77</div><div class="label">Buy</div></div>
-        <div class="card"><div class="value" style="color:#fdd835">27</div><div class="label">Accumulate</div></div>
-        <div class="card"><div class="value" style="color:#ffa726">75</div><div class="label">Watch</div></div>
-        <div class="card"><div class="value" style="color:#ef5350">72</div><div class="label">Avoid</div></div>
-        <div class="card"><div class="value">63.18</div><div class="label">Avg Score</div></div>
+        <div class="card"><div class="value">639</div><div class="label">Stocks Scanned</div></div>
+        <div class="card"><div class="value" style="color:#4caf50">134</div><div class="label">Strong Buy</div></div>
+        <div class="card"><div class="value" style="color:#66bb6a">109</div><div class="label">Buy</div></div>
+        <div class="card"><div class="value" style="color:#fdd835">42</div><div class="label">Accumulate</div></div>
+        <div class="card"><div class="value" style="color:#ffa726">130</div><div class="label">Watch</div></div>
+        <div class="card"><div class="value" style="color:#ef5350">161</div><div class="label">Avoid</div></div>
+        <div class="card"><div class="value">60.0</div><div class="label">Avg Score</div></div>
         <div class="card"><div class="value">100</div><div class="label">Best Score</div></div>
     </div>
 
     <div class="section">
         <h2>Recommendation Breakdown</h2>
         <div class="chart-container">
-            <div class="refresh-time">Scan completed: 13 August 2026, 03:21 PM</div>
+            <div class="refresh-time">Scan completed: 13 August 2026, 03:27 PM</div>
             <div class="price-notice">Temporary sorting uses prices captured during this scanner run.</div>
             <canvas id="recChart" height="200"></canvas>
         </div>
@@ -254,7 +254,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 labels: ['Strong Buy', 'Buy', 'Accumulate', 'Hold', 'Watch', 'Avoid'],
                 datasets: [{
                     label: 'Stocks',
-                    data: [77, 77, 27, 37, 75, 72],
+                    data: [134, 109, 42, 63, 130, 161],
                     backgroundColor: ['#1b5e20','#4caf50','#fdd835','#ff9800','#e65100','#b71c1c'],
                     borderWidth: 0,
                     borderRadius: 4,
