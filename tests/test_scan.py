@@ -305,11 +305,11 @@ def test_symbol_cells_use_relative_strength_background_colors(tmp_path):
 
     page = _generate_html(dataframe, "12 August 2026, 10:00 PM")
     for css_class in [
-        "symbol-rs-strong",
-        "symbol-rs-upper",
-        "symbol-rs-neutral",
-        "symbol-rs-lower",
         "symbol-rs-weak",
+        "symbol-rs-lower",
+        "symbol-rs-neutral",
+        "symbol-rs-upper",
+        "symbol-rs-strong",
     ]:
         assert page.count(f'class="{css_class}"') == 2
 
@@ -322,11 +322,11 @@ def test_symbol_cells_use_relative_strength_background_colors(tmp_path):
         worksheet.cell(row=row_number, column=symbol_column).fill.fgColor.rgb
         for row_number in range(2, 7)
     ] == [
-        "004FB52A",
-        "00D8EDCC",
-        "00BFE7F5",
-        "00F8DDCC",
         "00F47732",
+        "00F8DDCC",
+        "00BFE7F5",
+        "00D8EDCC",
+        "004FB52A",
     ]
 
 

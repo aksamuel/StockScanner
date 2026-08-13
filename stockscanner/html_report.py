@@ -70,14 +70,36 @@ def _symbol_relative_strength_class(relative_strength):
     except (ValueError, TypeError):
         return ""
     if value > 5:
-        return "symbol-rs-strong"
+        return "symbol-rs-weak"
     if value > 0:
-        return "symbol-rs-upper"
+        return "symbol-rs-lower"
     if value == 0:
         return "symbol-rs-neutral"
     if value >= -5:
-        return "symbol-rs-lower"
-    return "symbol-rs-weak"
+        return "symbol-rs-upper"
+    return "symbol-rs-strong"
+
+
+def _analyst_support_gap_class(current_price, support_low):
+    """Return the Analyst-page Symbol colour from price versus support."""
+    try:
+        current_price = float(current_price)
+        support_low = float(support_low)
+    except (ValueError, TypeError):
+        return ""
+    if current_price <= 0:
+        return ""
+
+    gap_percent = (current_price - support_low) / current_price * 100
+    if gap_percent > 5:
+        return "symbol-support-above-five"
+    if gap_percent > 0:
+        return "symbol-support-above-zero"
+    if gap_percent == 0:
+        return "symbol-support-zero"
+    if gap_percent >= -5:
+        return "symbol-support-below-zero"
+    return "symbol-support-below-five"
 
 
 def _analyst_support_gap_class(current_price, support_low):
