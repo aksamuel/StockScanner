@@ -571,6 +571,16 @@ def test_technical_page_uses_requested_multi_factor_sort_hierarchy():
                 "Score": 40,
             },
             {
+                "Symbol": "LARGER_TIE_GAP",
+                "Current Price": 100,
+                "Target 1": 125,
+                "Relative Strength": 5,
+                "Recommendation": "BUY",
+                "Signal": "Pullback to 20 MA",
+                "Trend": "Healthy Pullback",
+                "Score": 35,
+            },
+            {
                 "Symbol": "MISSING",
                 "Current Price": 100,
                 "Target 1": None,
@@ -587,12 +597,13 @@ def test_technical_page_uses_requested_multi_factor_sort_hierarchy():
     )
     top_table = page.split('<table id="topTable">', 1)[1].split("</table>", 1)[0]
     ordered_symbols = [
-        "LARGEST_GAP",
-        "HIGHER_RS",
         "STRONGER_REC",
         "STRONGER_SIGNAL",
         "STRONGER_TREND",
+        "HIGHER_RS",
+        "LARGER_TIE_GAP",
         "BASE",
+        "LARGEST_GAP",
         "MISSING",
     ]
 

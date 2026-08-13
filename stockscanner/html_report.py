@@ -378,11 +378,11 @@ def _sort_technical_by_hierarchy(dataframe):
         else 0
     )
     sort_columns = [
-        "_target_gap",
-        "_relative_strength_order",
         "_recommendation_priority",
         "_signal_priority",
         "_trend_priority",
+        "_relative_strength_order",
+        "_target_gap",
     ]
     sorted_data = sorted_data.sort_values(
         sort_columns,
