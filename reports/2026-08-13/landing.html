@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>StockScanner Dashboard - 13 August 2026, 12:20 PM EDT</title>
+<title>StockScanner Dashboard - 13 August 2026, 02:12 PM EDT</title>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body {
@@ -22,13 +22,21 @@ header {
 header h1 { color: #4fc3f7; font-size: 1.8rem; text-align: center; }
 header .subtitle { color: #90a4ae; text-align: center; margin-top: 4px; font-size: 0.9rem; }
 .dashboard-nav { margin-top: 14px; text-align: center; }
-.dashboard-nav a {
+.dashboard-nav a,
+.dashboard-nav .nav-current {
     display: inline-block;
     padding: 7px 14px;
     color: #4fc3f7;
     border: 1px solid #1f4e78;
     border-radius: 6px;
     text-decoration: none;
+}
+.dashboard-nav .nav-current {
+    color: #607d8b;
+    background: #162534;
+    border-color: #263d50;
+    cursor: not-allowed;
+    opacity: 0.65;
 }
 .cards {
     display: grid;
@@ -130,6 +138,8 @@ tr:hover { background: #1e3348; }
 .symbol-support-below-five { background: #4fb52a !important; color: #102000; font-weight: 600; }
 .symbol-name { display: block; font-weight: 600; }
 .symbol-price { display: block; font-size: 0.78em; font-weight: 400; margin-top: -2px; }
+.target-arrow-up { color: #66bb6a; font-size: 1.1em; font-weight: 700; }
+.target-arrow-down { color: #ef5350; font-size: 1.1em; font-weight: 700; }
 .tabs {
     display: flex;
     gap: 4px;
@@ -175,15 +185,17 @@ tr:hover { background: #1e3348; }
 }
 #addExceptions:hover:not(:disabled) { background: #2e7d32; }
 #addExceptions:disabled { cursor: not-allowed; opacity: 0.45; }
-#sortTargetUpside {
+#requestYahooRefresh {
     padding: 7px 14px;
     color: #172217;
     background: #c6efce;
     border: 1px solid #70ad47;
     border-radius: 5px;
     cursor: pointer;
+    display: inline-block;
+    text-decoration: none;
 }
-#sortTargetUpside:hover { filter: brightness(0.92); }
+#requestYahooRefresh:hover { filter: brightness(0.92); }
 .target-sort-controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 #targetSortStatus { color: #90a4ae; font-size: 0.8rem; }
 .select-column { width: 48px; text-align: center; }
@@ -203,7 +215,7 @@ footer {
     <div class="container">
         <h1>StockScanner KPI Dashboard</h1>
         <div class="dashboard-nav">
-            <a href="index.html">KPI Dashboard</a>
+            <span class="nav-current" aria-current="page">KPI Dashboard</span>
             <a href="technical.html">Technical Analysis</a>
             <a href="analysts.html">Analysts Rating</a>
             <a href="bought-selection.html">Bought Selection</a>
@@ -215,24 +227,21 @@ footer {
 <div class="container">
     
     <div class="cards">
-        <div class="card"><div class="value">781</div><div class="label">Stocks Scanned</div></div>
-        <div class="card"><div class="value" style="color:#4caf50">159</div><div class="label">Strong Buy</div></div>
-        <div class="card"><div class="value" style="color:#66bb6a">118</div><div class="label">Buy</div></div>
-        <div class="card"><div class="value" style="color:#fdd835">52</div><div class="label">Accumulate</div></div>
-        <div class="card"><div class="value" style="color:#ffa726">169</div><div class="label">Watch</div></div>
-        <div class="card"><div class="value" style="color:#ef5350">196</div><div class="label">Avoid</div></div>
-        <div class="card"><div class="value">59.42</div><div class="label">Avg Score</div></div>
+        <div class="card"><div class="value">335</div><div class="label">Stocks Scanned</div></div>
+        <div class="card"><div class="value" style="color:#4caf50">75</div><div class="label">Strong Buy</div></div>
+        <div class="card"><div class="value" style="color:#66bb6a">69</div><div class="label">Buy</div></div>
+        <div class="card"><div class="value" style="color:#fdd835">25</div><div class="label">Accumulate</div></div>
+        <div class="card"><div class="value" style="color:#ffa726">71</div><div class="label">Watch</div></div>
+        <div class="card"><div class="value" style="color:#ef5350">63</div><div class="label">Avoid</div></div>
+        <div class="card"><div class="value">63.89</div><div class="label">Avg Score</div></div>
         <div class="card"><div class="value">100</div><div class="label">Best Score</div></div>
     </div>
 
     <div class="section">
         <h2>Recommendation Breakdown</h2>
         <div class="chart-container">
-            <div class="refresh-time">Scan completed: 13 August 2026, 12:20 PM EDT</div>
-            <div class="refresh-time" id="temporaryRunTime">
-                Temporary manual run: Not run in this browser.
-            </div>
-            <div class="price-notice">Temporary sorting uses prices captured during this scanner run.</div>
+            <div class="refresh-time">Scan completed: 13 August 2026, 02:12 PM EDT</div>
+            <div class="price-notice">Manual Yahoo refreshes run securely on GitHub Actions and redeploy these pages.</div>
             <canvas id="recChart" height="200"></canvas>
         </div>
     </div>
@@ -249,11 +258,6 @@ footer {
 <script>
 // Chart
 document.addEventListener('DOMContentLoaded', function() {
-    const temporaryRunTime = document.getElementById('temporaryRunTime');
-    const storedTemporaryRun = localStorage.getItem('stockscannerTemporaryRunNewYork');
-    if (temporaryRunTime && storedTemporaryRun) {
-        temporaryRunTime.textContent = `Temporary manual run: ${storedTemporaryRun}`;
-    }
     const ctx = document.getElementById('recChart');
     if (ctx && typeof Chart !== 'undefined') {
         new Chart(ctx, {
@@ -262,7 +266,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 labels: ['Strong Buy', 'Buy', 'Accumulate', 'Hold', 'Watch', 'Avoid'],
                 datasets: [{
                     label: 'Stocks',
-                    data: [159, 118, 52, 87, 169, 196],
+                    data: [75, 69, 25, 32, 71, 63],
                     backgroundColor: ['#1b5e20','#4caf50','#fdd835','#ff9800','#e65100','#b71c1c'],
                     borderWidth: 0,
                     borderRadius: 4,
@@ -296,50 +300,6 @@ function filterTable() {
     rows.forEach(row => {
         const text = row.textContent.toUpperCase();
         row.style.display = text.includes(filter) ? '' : 'none';
-    });
-}
-
-// Temporary display-only ranking by Target 1 percentage upside.
-const sortTargetUpside = document.getElementById('sortTargetUpside');
-if (sortTargetUpside) {
-    sortTargetUpside.addEventListener('click', () => {
-        document.querySelectorAll('.tab-content table').forEach(table => {
-            const tbody = table.querySelector('tbody');
-            const rows = [...tbody.querySelectorAll('tr')];
-            rows.sort((left, right) => {
-                const leftPrice = Number(left.dataset.currentPrice);
-                const leftTarget = Number(left.dataset.targetOne);
-                const rightPrice = Number(right.dataset.currentPrice);
-                const rightTarget = Number(right.dataset.targetOne);
-                const leftUpside = leftPrice > 0 && leftTarget > 0
-                    ? (leftTarget - leftPrice) / leftPrice
-                    : Number.NEGATIVE_INFINITY;
-                const rightUpside = rightPrice > 0 && rightTarget > 0
-                    ? (rightTarget - rightPrice) / rightPrice
-                    : Number.NEGATIVE_INFINITY;
-                return rightUpside - leftUpside;
-            });
-            const rankIndex = [...table.querySelectorAll('thead th')]
-                .findIndex(header => header.textContent.trim() === 'Rank');
-            rows.forEach((row, index) => {
-                tbody.appendChild(row);
-                if (rankIndex >= 0) row.children[rankIndex].textContent = index + 1;
-            });
-        });
-        const temporaryRunNewYork = new Intl.DateTimeFormat('en-US', {
-            timeZone: 'America/New_York',
-            year: 'numeric',
-            month: 'long',
-            day: '2-digit',
-            hour: '2-digit',
-            minute: '2-digit',
-            second: '2-digit',
-            hour12: true,
-            timeZoneName: 'short',
-        }).format(new Date());
-        localStorage.setItem('stockscannerTemporaryRunNewYork', temporaryRunNewYork);
-        document.getElementById('targetSortStatus').textContent =
-            `Temporarily ranked at ${temporaryRunNewYork} using scan-time prices.`;
     });
 }
 
