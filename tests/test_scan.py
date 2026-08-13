@@ -631,6 +631,7 @@ def test_technical_page_uses_requested_multi_factor_sort_hierarchy():
     positions = [top_table.index(f">{symbol}</span>") for symbol in ordered_symbols]
     assert positions == sorted(positions)
     assert ">LARGEST_GAP</span>" not in page
+    assert ">LARGEST_GAP</span>" not in page
 
 
 def test_technical_target_one_shows_direction_from_current_price():
