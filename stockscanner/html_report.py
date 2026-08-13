@@ -70,14 +70,14 @@ def _symbol_relative_strength_class(relative_strength):
     except (ValueError, TypeError):
         return ""
     if value > 5:
-        return "symbol-rs-weak"
+        return "symbol-rs-strong"
     if value > 0:
-        return "symbol-rs-lower"
+        return "symbol-rs-upper"
     if value == 0:
         return "symbol-rs-neutral"
     if value >= -5:
-        return "symbol-rs-upper"
-    return "symbol-rs-strong"
+        return "symbol-rs-lower"
+    return "symbol-rs-weak"
 
 
 def _analyst_support_gap_class(current_price, support_low):
@@ -287,11 +287,11 @@ def _sort_technical_by_symbol_color(dataframe):
         else pd.Series(float("nan"), index=sorted_data.index)
     )
     color_priority = pd.Series(5, index=sorted_data.index)
-    color_priority.loc[relative_strength < -5] = 0
-    color_priority.loc[(relative_strength >= -5) & (relative_strength < 0)] = 1
+    color_priority.loc[relative_strength > 5] = 0
+    color_priority.loc[(relative_strength > 0) & (relative_strength <= 5)] = 1
     color_priority.loc[relative_strength == 0] = 2
-    color_priority.loc[(relative_strength > 0) & (relative_strength <= 5)] = 3
-    color_priority.loc[relative_strength > 5] = 4
+    color_priority.loc[(relative_strength >= -5) & (relative_strength < 0)] = 3
+    color_priority.loc[relative_strength < -5] = 4
     sorted_data["_symbol_color_priority"] = color_priority
     sorted_data["_relative_strength_order"] = relative_strength.fillna(float("inf"))
     sorted_data = sorted_data.sort_values(

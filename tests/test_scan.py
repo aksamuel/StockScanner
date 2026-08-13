@@ -305,11 +305,11 @@ def test_symbol_cells_use_relative_strength_background_colors(tmp_path):
 
     page = _generate_html(dataframe, "12 August 2026, 10:00 PM")
     for css_class in [
-        "symbol-rs-weak",
-        "symbol-rs-lower",
-        "symbol-rs-neutral",
-        "symbol-rs-upper",
         "symbol-rs-strong",
+        "symbol-rs-upper",
+        "symbol-rs-neutral",
+        "symbol-rs-lower",
+        "symbol-rs-weak",
     ]:
         assert page.count(f'class="{css_class}"') == 2
 
@@ -322,11 +322,11 @@ def test_symbol_cells_use_relative_strength_background_colors(tmp_path):
         worksheet.cell(row=row_number, column=symbol_column).fill.fgColor.rgb
         for row_number in range(2, 7)
     ] == [
-        "00F47732",
-        "00F8DDCC",
-        "00BFE7F5",
-        "00D8EDCC",
         "004FB52A",
+        "00D8EDCC",
+        "00BFE7F5",
+        "00F8DDCC",
+        "00F47732",
     ]
 
 
@@ -501,13 +501,13 @@ def test_analyst_page_sorts_nearest_support_first_and_missing_support_last():
 def test_technical_page_sorts_symbol_colors_from_green_to_orange():
     dataframe = report.prepare_results_dataframe(
         [
-            {"Symbol": "ORANGE", "Relative Strength": 6, "Score": 90},
+            {"Symbol": "GREEN", "Relative Strength": 6, "Score": 90},
             {"Symbol": "MISSING", "Relative Strength": None, "Score": 80},
             {"Symbol": "BLUE", "Relative Strength": 0, "Score": 70},
-            {"Symbol": "GREEN", "Relative Strength": -6, "Score": 60},
-            {"Symbol": "GREENLOWER", "Relative Strength": -20, "Score": 55},
-            {"Symbol": "PEACH", "Relative Strength": 5, "Score": 50},
-            {"Symbol": "LIGHTGREEN", "Relative Strength": -5, "Score": 40},
+            {"Symbol": "ORANGE", "Relative Strength": -6, "Score": 60},
+            {"Symbol": "GREENHIGHER", "Relative Strength": 20, "Score": 55},
+            {"Symbol": "LIGHTGREEN", "Relative Strength": 5, "Score": 50},
+            {"Symbol": "PEACH", "Relative Strength": -5, "Score": 40},
         ]
     )
 
@@ -518,8 +518,8 @@ def test_technical_page_sorts_symbol_colors_from_green_to_orange():
     )
     top_table = page.split('<table id="topTable">', 1)[1].split("</table>", 1)[0]
     ordered_symbols = [
+        "GREENHIGHER",
         "GREEN",
-        "GREENLOWER",
         "LIGHTGREEN",
         "BLUE",
         "PEACH",
