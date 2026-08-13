@@ -1,4 +1,4 @@
-# StockScanner v2.8.2
+# StockScanner v2.9.0
 
 [![Stock Scanner](https://github.com/aksamuel/StockScanner/actions/workflows/scan.yml/badge.svg)](https://github.com/aksamuel/StockScanner/actions/workflows/scan.yml)
 
@@ -116,6 +116,12 @@ The repository root `index.html` redirects to `reports/index.html` so the site n
 ## Scheduled scan (GitHub Actions)
 
 The scanner runs automatically at **9:00 AM New York time** on NYSE trading days (Mon-Fri) via GitHub Actions. It performs a full universe scan with default position sizing and deploys the HTML dashboard to GitHub Pages.
+
+During weekday NYSE regular hours, a separate hourly workflow runs
+`python -m stockscanner.price_snapshot`. It refreshes only the symbols in
+`prices.json`, preserves the prior value for any symbol Yahoo fails to return,
+and redeploys the static site. The Technical page's **Refresh Latest Prices**
+button fetches this public snapshot; it does not call Yahoo or GitHub APIs.
 
 You can also trigger a scan manually from the **GitHub mobile app** or the **Actions tab**:
 
