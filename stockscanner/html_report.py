@@ -102,6 +102,28 @@ def _analyst_support_gap_class(current_price, support_low):
     return "symbol-support-below-five"
 
 
+def _analyst_support_gap_class(current_price, support_low):
+    """Return the Analyst-page Symbol colour from price versus support."""
+    try:
+        current_price = float(current_price)
+        support_low = float(support_low)
+    except (ValueError, TypeError):
+        return ""
+    if current_price <= 0:
+        return ""
+
+    gap_percent = (current_price - support_low) / current_price * 100
+    if gap_percent > 5:
+        return "symbol-support-above-five"
+    if gap_percent > 0:
+        return "symbol-support-above-zero"
+    if gap_percent == 0:
+        return "symbol-support-zero"
+    if gap_percent >= -5:
+        return "symbol-support-below-zero"
+    return "symbol-support-below-five"
+
+
 def _format_symbol_with_price(symbol, current_price):
     """Display the current price below the symbol."""
     formatted_symbol = _escape_html(symbol)
@@ -287,16 +309,16 @@ def _sort_technical_by_symbol_color(dataframe):
         else pd.Series(float("nan"), index=sorted_data.index)
     )
     color_priority = pd.Series(5, index=sorted_data.index)
-    color_priority.loc[relative_strength < -5] = 0
-    color_priority.loc[(relative_strength >= -5) & (relative_strength < 0)] = 1
+    color_priority.loc[relative_strength > 5] = 0
+    color_priority.loc[(relative_strength > 0) & (relative_strength <= 5)] = 1
     color_priority.loc[relative_strength == 0] = 2
-    color_priority.loc[(relative_strength > 0) & (relative_strength <= 5)] = 3
-    color_priority.loc[relative_strength > 5] = 4
+    color_priority.loc[(relative_strength >= -5) & (relative_strength < 0)] = 3
+    color_priority.loc[relative_strength < -5] = 4
     sorted_data["_symbol_color_priority"] = color_priority
     sorted_data["_relative_strength_order"] = relative_strength.fillna(float("inf"))
     sorted_data = sorted_data.sort_values(
         ["_symbol_color_priority", "_relative_strength_order"],
-        ascending=[True, True],
+        ascending=[True, False],
         kind="stable",
     ).drop(columns=["_symbol_color_priority", "_relative_strength_order"])
     sorted_data = sorted_data.reset_index(drop=True)
