@@ -1,12 +1,15 @@
-# Stock Scanner CI Workflow — v2.8.1
+# Stock Scanner CI Workflow — v2.8.2
 # Runs the stock scanner at 9:00 AM New York time on NYSE trading days (Mon-Fri)
 # or on-demand via the GitHub mobile app / Actions tab.
 # Generates an HTML dashboard and deploys it to GitHub Pages.
 
 name: Stock Scanner
+run-name: >-
+  Stock Scanner (${{ github.event_name == 'workflow_dispatch'
+    && 'manual Yahoo refresh' || 'scheduled scan' }})
 
 on:
-  # Manual trigger with configurable inputs (button in GitHub mobile app)
+  # Manual server-side Yahoo refresh from the Actions page.
   workflow_dispatch:
     inputs:
       mode:
