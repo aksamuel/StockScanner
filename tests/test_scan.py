@@ -1,3 +1,4 @@
+import json
 from datetime import date, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -354,6 +355,11 @@ def test_reports_replace_price_as_of_column_with_refresh_time_near_graph():
     marker = "Scan completed: 12 August 2026, 10:00 PM"
     assert page.count(marker) == 1
     assert page.index(marker) < page.index('<canvas id="recChart"')
+    assert 'id="yahooPriceTime"' in page
+    assert 'id="backendRefreshTime"' in page
+    assert "Latest Yahoo price:" in page
+    assert "Backend price refresh:" in page
+    assert "loadDashboardSnapshotTimes();" in page
     assert (
         "Manual Yahoo refreshes run securely on GitHub Actions and redeploy these pages."
         in page
@@ -444,14 +450,18 @@ def test_three_report_pages_have_requested_columns_navigation_and_selection():
     )
     assert technical_headers.rstrip().endswith("<th>MACD</th>")
     assert 'id="requestYahooRefresh"' in pages["technical"]
-    assert (
-        'href="https://github.com/aksamuel/StockScanner/actions/workflows/scan.yml"'
-        in pages["technical"]
-    )
+    assert '<button id="requestYahooRefresh" type="button">' in pages["technical"]
     assert 'data-current-price="123.45"' in pages["technical"]
     assert 'data-target-one=""' in pages["technical"]
-    assert "Open Actions and choose Run workflow." in pages["technical"]
-    assert "left.dataset.scannerRank" not in pages["technical"]
+    assert "fetch(snapshotUrl(), { cache: 'no-store' })" in pages["technical"]
+    assert "loadRefreshButtonSnapshotTime();" in pages["technical"]
+    assert "Refresh Latest Prices · ${snapshot.price_timestamp_new_york}" in pages[
+        "technical"
+    ]
+    assert "row.dataset.currentPrice = price.toString()" in pages["technical"]
+    assert "left.dataset.scannerRank" in pages["technical"]
+    assert "renumberVisibleRanks" in pages["technical"]
+    assert "Could not load the latest price snapshot" in pages["technical"]
 
     analysts_headers = pages["analysts"].split("<thead><tr>", 1)[1].split(
         "</tr></thead>", 1
@@ -634,12 +644,21 @@ def test_technical_page_uses_requested_multi_factor_sort_hierarchy():
     assert ">LARGEST_GAP</span>" not in page
 
 
-def test_technical_target_one_shows_direction_from_current_price():
+def test_technical_price_levels_show_direction_from_current_price():
     dataframe = report.prepare_results_dataframe(
         [
-            {"Symbol": "UP", "Current Price": 100, "Target 1": 110, "Score": 90},
-            {"Symbol": "DOWN", "Current Price": 100, "Target 1": 90, "Score": 80},
-            {"Symbol": "EQUAL", "Current Price": 100, "Target 1": 100, "Score": 70},
+            {
+                "Symbol": "LEVELS",
+                "Current Price": 100,
+                "Target 1": 110,
+                "Target 2": 120,
+                "Target 3": 130,
+                "20 MA": 90,
+                "50 MA": 95,
+                "200 MA": 100,
+                "Stop Loss": 80,
+                "Score": 90,
+            },
         ]
     )
 
@@ -649,9 +668,11 @@ def test_technical_target_one_shows_direction_from_current_price():
         page_key="technical",
     )
 
-    assert page.count('class="target-arrow-up" title="Above current price"') == 2
-    assert page.count('class="target-arrow-down" title="Below current price"') == 2
-    assert page.count("$100.00") >= 2
+    assert page.count('class="target-arrow-up" title="Above current price"') == 6
+    assert page.count('class="target-arrow-down" title="Below current price"') == 6
+    for value in (80, 90, 95, 100, 110, 120, 130):
+        assert page.count(f'data-price-level="{float(value)}"') == 2
+    assert "row.querySelectorAll('[data-price-level]')" in page
 
 
 def test_analyst_price_levels_show_direction_from_current_price():
@@ -689,6 +710,8 @@ def test_analyst_price_levels_show_direction_from_current_price():
 
 def test_html_export_creates_three_stable_linked_pages(tmp_path, monkeypatch):
     monkeypatch.setattr(html_report, "REPORT_FOLDER", str(tmp_path))
+    snapshot_path = tmp_path / "prices.json"
+    monkeypatch.setattr(html_report, "PRICE_SNAPSHOT_PATH", snapshot_path)
 
     archived_page = html_report.export_html_report(
         [{"Symbol": "ABC", "Score": 90, "Current Price": 10}],
@@ -700,6 +723,29 @@ def test_html_export_creates_three_stable_linked_pages(tmp_path, monkeypatch):
     assert (date_folder / "technical.html").exists()
     assert (date_folder / "analysts.html").exists()
     assert (date_folder / "bought-selection.html").exists()
+    snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
+    assert snapshot["source"] == "full_scan"
+    assert snapshot["prices"] == {"ABC": 10.0}
+
+
+def test_html_export_survives_results_without_snapshot_prices(
+    tmp_path, monkeypatch, capsys
+):
+    monkeypatch.setattr(html_report, "REPORT_FOLDER", str(tmp_path))
+    monkeypatch.setattr(
+        html_report,
+        "PRICE_SNAPSHOT_PATH",
+        tmp_path / "prices.json",
+    )
+
+    archived_page = html_report.export_html_report(
+        [{"Symbol": "ABC", "Score": 90, "Current Price": None}],
+        quiet=True,
+    )
+
+    assert Path(archived_page).exists()
+    assert not (tmp_path / "prices.json").exists()
+    assert "Price snapshot was not updated" in capsys.readouterr().err
 
 
 def test_setup_priority_orders_supported_entry_setups():

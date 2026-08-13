@@ -1,0 +1,72 @@
+name: Hourly Price Snapshot
+
+on:
+  workflow_dispatch:
+  # Covers 09:35-16:35 New York in both EST and EDT. The Python script
+  # performs the authoritative 09:30-16:00 America/New_York runtime gate.
+  schedule:
+    - cron: "35 13-21 * * 1-5"
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+# Share the full scanner's Pages lock so report and snapshot deployments cannot
+# overlap or publish artifacts built from conflicting repository revisions.
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install -e .
+
+      - name: Refresh backend Yahoo price snapshot
+        run: python -m stockscanner.price_snapshot
+
+      - name: Commit snapshot only when changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add prices.json
+          if git diff --cached --quiet; then
+            echo "No in-session snapshot changes to commit."
+          else
+            git commit -m "Update hourly price snapshot"
+            git push
+          fi
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v3
+
+      - name: Upload site artifact for Pages
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: .
+
+  deploy:
+    needs: refresh
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

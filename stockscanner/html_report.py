@@ -1,15 +1,19 @@
 """Generate a self-contained static HTML dashboard from scan results."""
 
 import os
+import sys
 from datetime import datetime
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pandas as pd
 
+from .price_snapshot import SnapshotError, write_snapshot_from_results
 from .ranking import setup_priority
 from .report import REPORT_FOLDER, TOP_RESULTS, prepare_results_dataframe
 
 NEW_YORK = ZoneInfo("America/New_York")
+PRICE_SNAPSHOT_PATH = Path(__file__).resolve().parent.parent / "prices.json"
 
 
 def _format_new_york_time(moment=None):
@@ -212,6 +216,12 @@ PERCENT_COLUMNS = {
 INTEGER_COLUMNS = {
     "Rank", "Score", "Suggested Shares", "Average Volume",
     "Average Dollar Volume", "Support Tests", "Resistance Tests",
+}
+TECHNICAL_DIRECTION_COLUMNS = {
+    "Target 1", "Target 2", "Target 3", "20 MA", "50 MA", "200 MA", "Stop Loss",
+}
+ANALYST_DIRECTION_COLUMNS = {
+    "Support Low", "Support High", "Resistance Low", "Resistance High",
 }
 PAGE_CONFIGS = {
     "landing": {
@@ -468,25 +478,18 @@ def _generate_html(dataframe, scan_time, page_key=None):
             )
         for col in display_columns:
             value = row[col]
+            direction_column = (
+                page_key == "technical" and col in TECHNICAL_DIRECTION_COLUMNS
+            ) or (
+                page_key == "analysts" and col in ANALYST_DIRECTION_COLUMNS
+            )
             formatted = (
                 _format_symbol_with_price(value, row.get("Current Price"))
                 if col == "Symbol"
                 else _format_price_level_with_direction(
                     value, row.get("Current Price")
                 )
-                if (
-                    (col == "Target 1" and page_key == "technical")
-                    or (
-                        page_key == "analysts"
-                        and col
-                        in {
-                            "Support Low",
-                            "Support High",
-                            "Resistance Low",
-                            "Resistance High",
-                        }
-                    )
-                )
+                if direction_column
                 else _format_cell(col, value)
             )
             css_class = ""
@@ -504,7 +507,14 @@ def _generate_html(dataframe, scan_time, page_key=None):
                     if page_key == "analysts"
                     else _symbol_relative_strength_class(row.get("Relative Strength"))
                 )
-            cells.append(f'<td class="{css_class}">{formatted}</td>')
+            price_level = (
+                f' data-price-level="{_data_number(value)}"'
+                if direction_column
+                else ""
+            )
+            cells.append(
+                f'<td class="{css_class}"{price_level}>{formatted}</td>'
+            )
         top_rows_html.append(
             '<tr '
             f'data-current-price="{_data_number(row.get("Current Price"))}" '
@@ -526,25 +536,18 @@ def _generate_html(dataframe, scan_time, page_key=None):
             )
         for col in display_columns:
             value = row[col]
+            direction_column = (
+                page_key == "technical" and col in TECHNICAL_DIRECTION_COLUMNS
+            ) or (
+                page_key == "analysts" and col in ANALYST_DIRECTION_COLUMNS
+            )
             formatted = (
                 _format_symbol_with_price(value, row.get("Current Price"))
                 if col == "Symbol"
                 else _format_price_level_with_direction(
                     value, row.get("Current Price")
                 )
-                if (
-                    (col == "Target 1" and page_key == "technical")
-                    or (
-                        page_key == "analysts"
-                        and col
-                        in {
-                            "Support Low",
-                            "Support High",
-                            "Resistance Low",
-                            "Resistance High",
-                        }
-                    )
-                )
+                if direction_column
                 else _format_cell(col, value)
             )
             css_class = ""
@@ -562,7 +565,14 @@ def _generate_html(dataframe, scan_time, page_key=None):
                     if page_key == "analysts"
                     else _symbol_relative_strength_class(row.get("Relative Strength"))
                 )
-            cells.append(f'<td class="{css_class}">{formatted}</td>')
+            price_level = (
+                f' data-price-level="{_data_number(value)}"'
+                if direction_column
+                else ""
+            )
+            cells.append(
+                f'<td class="{css_class}"{price_level}>{formatted}</td>'
+            )
         all_rows_html.append(
             '<tr '
             f'data-current-price="{_data_number(row.get("Current Price"))}" '
@@ -597,12 +607,10 @@ def _generate_html(dataframe, scan_time, page_key=None):
     )
     target_sort_controls = (
         '<div class="target-sort-controls">'
-        '<a id="requestYahooRefresh" '
-        'href="https://github.com/aksamuel/StockScanner/actions/workflows/scan.yml" '
-        'target="_blank" rel="noopener noreferrer">'
-        "Request Latest Yahoo Prices</a>"
-        '<span id="targetSortStatus">Open Actions and choose Run workflow. '
-        "The server refreshes Yahoo prices and redeploys the default scanner order.</span>"
+        '<button id="requestYahooRefresh" type="button">'
+        "Refresh Latest Prices</button>"
+        '<span id="targetSortStatus" role="status" aria-live="polite">'
+        "Loads the latest backend Yahoo price snapshot.</span>"
         "</div>"
         if page_key == "technical"
         else ""
@@ -631,6 +639,12 @@ def _generate_html(dataframe, scan_time, page_key=None):
         <h2>Recommendation Breakdown</h2>
         <div class="chart-container">
             <div class="refresh-time">Scan completed: {scan_time}</div>
+            <div class="refresh-time" id="yahooPriceTime">
+                Latest Yahoo price: Loading snapshot time...
+            </div>
+            <div class="refresh-time" id="backendRefreshTime">
+                Backend price refresh: Loading snapshot time...
+            </div>
             <div class="price-notice">Manual Yahoo refreshes run securely on GitHub Actions and redeploy these pages.</div>
             <canvas id="recChart" height="200"></canvas>
         </div>
@@ -870,12 +884,13 @@ tr:hover {{ background: #1e3348; }}
     border: 1px solid #70ad47;
     border-radius: 5px;
     cursor: pointer;
-    display: inline-block;
-    text-decoration: none;
 }}
-#requestYahooRefresh:hover {{ filter: brightness(0.92); }}
+#requestYahooRefresh:hover:not(:disabled) {{ filter: brightness(0.92); }}
+#requestYahooRefresh:disabled {{ cursor: wait; opacity: 0.65; }}
 .target-sort-controls {{ display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }}
 #targetSortStatus {{ color: #90a4ae; font-size: 0.8rem; }}
+#targetSortStatus.refresh-error {{ color: #ef9a9a; }}
+#targetSortStatus.refresh-success {{ color: #a5d6a7; }}
 .select-column {{ width: 48px; text-align: center; }}
 .select-column input {{ width: 18px; height: 18px; cursor: pointer; accent-color: #4caf50; }}
 footer {{
@@ -912,6 +927,8 @@ footer {{
 <script>
 // Chart
 document.addEventListener('DOMContentLoaded', function() {{
+    loadDashboardSnapshotTimes();
+    loadRefreshButtonSnapshotTime();
     const ctx = document.getElementById('recChart');
     if (ctx && typeof Chart !== 'undefined') {{
         new Chart(ctx, {{
@@ -955,7 +972,179 @@ function filterTable() {{
         const text = row.textContent.toUpperCase();
         row.style.display = text.includes(filter) ? '' : 'none';
     }});
+    renumberVisibleRanks(activeTab.querySelector('table'));
 }}
+
+function columnIndex(table, label) {{
+    return [...table.querySelectorAll('thead th')]
+        .findIndex(th => th.textContent.trim() === label);
+}}
+
+function renumberVisibleRanks(table) {{
+    if (!table) return;
+    const rankIndex = columnIndex(table, 'Rank');
+    if (rankIndex < 0) return;
+    let visibleRank = 0;
+    table.querySelectorAll('tbody tr').forEach(row => {{
+        if (row.style.display !== 'none') {{
+            visibleRank += 1;
+            row.children[rankIndex].textContent = visibleRank;
+        }}
+    }});
+}}
+
+function restoreScannerOrder(table) {{
+    const tbody = table.querySelector('tbody');
+    const rows = [...tbody.querySelectorAll('tr')];
+    rows.sort((left, right) => {{
+        const leftRank = Number(left.dataset.scannerRank);
+        const rightRank = Number(right.dataset.scannerRank);
+        return (Number.isFinite(leftRank) ? leftRank : Number.MAX_SAFE_INTEGER)
+            - (Number.isFinite(rightRank) ? rightRank : Number.MAX_SAFE_INTEGER);
+    }});
+    rows.forEach(row => tbody.appendChild(row));
+    table.querySelectorAll('th').forEach(header => delete header.dataset.sort);
+    renumberVisibleRanks(table);
+}}
+
+function snapshotUrl() {{
+    const marker = '/reports/';
+    const path = window.location.pathname;
+    const basePath = path.includes(marker)
+        ? path.slice(0, path.indexOf(marker) + 1)
+        : path.slice(0, path.lastIndexOf('/') + 1);
+    const url = new URL(`${{basePath}}prices.json`, window.location.origin);
+    url.searchParams.set('refresh', Date.now().toString());
+    return url;
+}}
+
+async function loadDashboardSnapshotTimes() {{
+    const yahooPriceTime = document.getElementById('yahooPriceTime');
+    const backendRefreshTime = document.getElementById('backendRefreshTime');
+    if (!yahooPriceTime || !backendRefreshTime) return;
+    try {{
+        const response = await fetch(snapshotUrl(), {{ cache: 'no-store' }});
+        if (!response.ok) throw new Error(`HTTP ${{response.status}}`);
+        const snapshot = await response.json();
+        if (typeof snapshot.generated_at_new_york !== 'string') {{
+            throw new Error('snapshot schema is invalid');
+        }}
+        yahooPriceTime.textContent = snapshot.price_timestamp_new_york
+            ? `Latest Yahoo price: ${{snapshot.price_timestamp_new_york}}`
+            : 'Latest Yahoo price: Time unavailable';
+        backendRefreshTime.textContent =
+            `Backend price refresh: ${{snapshot.generated_at_new_york}}`;
+    }} catch (error) {{
+        yahooPriceTime.textContent = 'Latest Yahoo price: Unavailable';
+        backendRefreshTime.textContent =
+            `Backend price refresh: Unavailable (${{error.message}})`;
+    }}
+}}
+
+function setRefreshButtonTime(button, snapshot) {{
+    button.textContent = snapshot.price_timestamp_new_york
+        ? `Refresh Latest Prices · ${{snapshot.price_timestamp_new_york}}`
+        : 'Refresh Latest Prices · Time unavailable';
+}}
+
+async function loadRefreshButtonSnapshotTime() {{
+    const button = document.getElementById('requestYahooRefresh');
+    if (!button) return;
+    try {{
+        const response = await fetch(snapshotUrl(), {{ cache: 'no-store' }});
+        if (!response.ok) throw new Error(`HTTP ${{response.status}}`);
+        const snapshot = await response.json();
+        setRefreshButtonTime(button, snapshot);
+    }} catch (error) {{
+        button.textContent = 'Refresh Latest Prices · Time unavailable';
+    }}
+}}
+
+function updatePriceRow(row, price) {{
+    row.dataset.currentPrice = price.toString();
+    const symbolPrice = row.querySelector('.symbol-price');
+    if (symbolPrice) {{
+        symbolPrice.textContent = `($${{price.toLocaleString('en-US', {{
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+        }})}})`;
+    }}
+
+    const table = row.closest('table');
+    const currentPriceIndex = columnIndex(table, 'Current Price');
+    if (currentPriceIndex >= 0) {{
+        row.children[currentPriceIndex].textContent = price.toLocaleString('en-US', {{
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+        }});
+    }}
+
+    row.querySelectorAll('[data-price-level]').forEach(levelCell => {{
+        const level = Number(levelCell.dataset.priceLevel);
+        if (!Number.isFinite(level) || levelCell.dataset.priceLevel === '') return;
+        levelCell.textContent = `$${{level.toLocaleString('en-US', {{
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+        }})}}`;
+        if (level !== price) {{
+            const arrow = document.createElement('span');
+            const above = level > price;
+            arrow.className = above ? 'target-arrow-up' : 'target-arrow-down';
+            arrow.title = above ? 'Above current price' : 'Below current price';
+            arrow.textContent = above ? '↑' : '↓';
+            levelCell.append(' ', arrow);
+        }}
+    }});
+}}
+
+const yahooRefreshButton = document.getElementById('requestYahooRefresh');
+const yahooRefreshStatus = document.getElementById('targetSortStatus');
+if (yahooRefreshButton) yahooRefreshButton.addEventListener('click', async () => {{
+    yahooRefreshButton.disabled = true;
+    yahooRefreshStatus.className = '';
+    yahooRefreshStatus.textContent = 'Loading the latest backend price snapshot…';
+    try {{
+        const response = await fetch(snapshotUrl(), {{ cache: 'no-store' }});
+        if (!response.ok) throw new Error(`HTTP ${{response.status}}`);
+        const snapshot = await response.json();
+        if (
+            snapshot?.schema_version !== 1
+            || typeof snapshot.generated_at_new_york !== 'string'
+            || !snapshot.prices
+            || typeof snapshot.prices !== 'object'
+            || Array.isArray(snapshot.prices)
+        ) {{
+            throw new Error('snapshot schema is invalid');
+        }}
+        setRefreshButtonTime(yahooRefreshButton, snapshot);
+
+        let updatedRows = 0;
+        document.querySelectorAll('table tbody tr').forEach(row => {{
+            const symbol = row.querySelector('.symbol-name')?.textContent.trim();
+            const price = Number(snapshot.prices[symbol]);
+            if (symbol && Number.isFinite(price) && price > 0) {{
+                updatePriceRow(row, price);
+                updatedRows += 1;
+            }}
+        }});
+        document.querySelectorAll('table').forEach(restoreScannerOrder);
+        const failureCount = snapshot.failures
+            && typeof snapshot.failures === 'object'
+            ? Object.keys(snapshot.failures).length
+            : 0;
+        yahooRefreshStatus.className = 'refresh-success';
+        yahooRefreshStatus.textContent =
+            `Loaded ${{updatedRows}} displayed prices. Snapshot generated `
+            + `${{snapshot.generated_at_new_york}}`
+            + (failureCount ? `; ${{failureCount}} backend refresh failure(s) retained prior prices.` : '.');
+    }} catch (error) {{
+        yahooRefreshStatus.className = 'refresh-error';
+        yahooRefreshStatus.textContent =
+            `Could not load the latest price snapshot: ${{error.message}}`;
+    }} finally {{
+        yahooRefreshButton.disabled = false;
+    }}
+}});
 
 // Add selected scan results to the 30-day exception list
 const exceptionSelections = [...document.querySelectorAll('.exception-select')];
@@ -1079,6 +1268,14 @@ def export_html_report(results, quiet=False):
 
     timestamp = now.strftime("%Y-%m-%d_%H-%M-%S")
     scan_time = _format_new_york_time(now)
+    try:
+        write_snapshot_from_results(
+            results,
+            path=PRICE_SNAPSHOT_PATH,
+            generated_at=now,
+        )
+    except SnapshotError as exc:
+        print(f"Price snapshot was not updated: {exc}", file=sys.stderr)
     filename = os.path.join(date_folder, f"StockScanner_Dashboard_{timestamp}.html")
     pages = {
         "landing": os.path.join(date_folder, "landing.html"),
