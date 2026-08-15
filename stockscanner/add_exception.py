@@ -10,13 +10,23 @@ from .config import EXCEPTION_LIST
 from .exception_list import sort_exception_rows
 
 
-def add_exceptions(symbols, csv_path=EXCEPTION_LIST, date_from=None):
+def add_exceptions(
+    symbols,
+    csv_path=EXCEPTION_LIST,
+    date_from=None,
+    reason="Added from scanner dashboard",
+):
     """Atomically append 30-day exception rows and return the number added."""
     normalized_symbols = list(
         dict.fromkeys(symbol.strip().upper() for symbol in symbols if symbol.strip())
     )
     if not normalized_symbols:
         raise ValueError("At least one ticker symbol is required")
+    reason = str(reason or "").strip()
+    if not reason:
+        raise ValueError("An exception reason is required")
+    if len(reason) > 200 or "\n" in reason or "\r" in reason:
+        raise ValueError("Exception reason must be a single line of 200 characters or fewer")
 
     with open(csv_path, newline="", encoding="utf-8-sig") as csv_file:
         reader = csv.DictReader(csv_file)
@@ -49,7 +59,7 @@ def add_exceptions(symbols, csv_path=EXCEPTION_LIST, date_from=None):
                 "Symbol": symbol,
                 "Date From": formatted_start,
                 "Date To": formatted_end,
-                "Reason": "Added from scanner dashboard",
+                "Reason": reason,
             }
         )
     rows = sort_exception_rows(rows)
@@ -76,10 +86,19 @@ def main():
     parser = argparse.ArgumentParser(description="Add tickers to exceptions.csv")
     parser.add_argument("symbols", help="Comma-separated ticker symbols to add")
     parser.add_argument("--csv", default=EXCEPTION_LIST, help="Exception CSV path")
+    parser.add_argument(
+        "--reason",
+        default="Added from scanner dashboard",
+        help="Reason stored for each exception",
+    )
     args = parser.parse_args()
 
     try:
-        added_count = add_exceptions(args.symbols.split(","), args.csv)
+        added_count = add_exceptions(
+            args.symbols.split(","),
+            args.csv,
+            reason=args.reason,
+        )
     except ValueError as error:
         parser.error(str(error))
     print(f"Added {added_count} 30-day exception(s) to {args.csv}")

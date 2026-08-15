@@ -128,6 +128,13 @@ def test_export_exceptions_dashboard(tmp_path):
     )
     assert 'id="selectAll"' in page
     assert 'class="ticker-select"' in page
+    assert 'id="tickerSymbol"' in page
+    assert 'id="tickerReason"' in page
+    assert 'id="addTicker"' in page
+    assert "stockscanner-add-exceptions: ${symbol}" in page
+    assert "stockscanner-exception-reason-base64: ${encodedReason}" in page
+    assert "Enter a reason for adding this ticker." in page
+    assert 'title: "[Add Exceptions] 1 ticker"' in page
     assert 'id="deleteSelected"' in page
     assert "[Remove Exceptions]" in page
     assert page.index("ABC") < page.index("XYZ")
@@ -205,6 +212,18 @@ def test_add_exceptions_adds_thirty_day_rows_atomically(tmp_path):
     assert "DEF,12/Aug/2026,11/Sep/2026,Added from scanner dashboard" in updated
     assert "GHI,12/Aug/2026,11/Sep/2026,Added from scanner dashboard" in updated
     assert updated.index("ABC") < updated.index("DEF") < updated.index("GHI")
+
+    custom_list = tmp_path / "custom-exceptions.csv"
+    custom_list.write_text(original, encoding="utf-8")
+    add_exceptions(
+        ["SOC"],
+        str(custom_list),
+        date_from=date(2026, 8, 12),
+        reason="Bought shares",
+    )
+    assert "SOC,12/Aug/2026,11/Sep/2026,Bought shares" in custom_list.read_text(
+        encoding="utf-8"
+    )
 
     with pytest.raises(ValueError, match="ABC"):
         add_exceptions(
