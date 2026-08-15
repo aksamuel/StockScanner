@@ -1,4 +1,4 @@
-# Stock Scanner CI Workflow — v2.10.0
+# Stock Scanner CI Workflow — v2.10.1
 # Runs the stock scanner at 9:00 AM New York time on NYSE trading days (Mon-Fri)
 # or on-demand via the GitHub mobile app / Actions tab.
 # Generates an HTML dashboard and deploys it to GitHub Pages.
@@ -81,6 +81,19 @@ jobs:
         run: |
           pip install -r requirements.txt
           pip install -e .
+
+      - name: Prime KPI S&P 500 history
+        run: |
+          for attempt in 1 2 3; do
+            if python -c "from stockscanner.market_data import download_data; data = download_data('^GSPC', force=True, period='1y'); assert data is not None and not data.empty, 'S&P 500 history is unavailable'"; then
+              break
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              echo "Unable to cache S&P 500 history after 3 attempts." >&2
+              exit 1
+            fi
+            sleep 20
+          done
 
       - name: Run scanner (universe mode)
         if: github.event.inputs.mode == 'universe' || github.event_name == 'schedule'
