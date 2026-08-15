@@ -15,7 +15,11 @@ from stockscanner.analyst_data import (
 )
 from stockscanner.config import MIN_PRICE
 from stockscanner.exceptions_dashboard import export_exceptions_dashboard
-from stockscanner.html_report import _format_new_york_time, _generate_html
+from stockscanner.html_report import (
+    _build_kpi_chart_data,
+    _format_new_york_time,
+    _generate_html,
+)
 from stockscanner.market_data import (
     CACHE_DAYS,
     completed_daily_data,
@@ -370,10 +374,17 @@ def test_reports_replace_price_as_of_column_with_refresh_time_near_graph():
         dataframe,
         "12 August 2026, 10:00 PM",
         page_key="landing",
+        chart_data={
+            "labels": ["2026-08-10", "2026-08-11"],
+            "sp500": [100, 101],
+            "top20": [100, 102],
+            "constituents": ["ABC"],
+            "selected_count": 1,
+        },
     )
     marker = "Scan completed: 12 August 2026, 10:00 PM"
     assert page.count(marker) == 1
-    assert page.index(marker) < page.index('<canvas id="recChart"')
+    assert page.index(marker) < page.index('<canvas id="performanceChart"')
     assert 'id="yahooPriceTime"' in page
     assert 'id="backendRefreshTime"' in page
     assert "Latest Yahoo price:" in page
@@ -499,12 +510,15 @@ def test_three_report_pages_have_requested_columns_navigation_and_selection():
     assert pages["bought-selection"].count('class="exception-select"') == 2
     assert 'id="requestYahooRefresh"' not in pages["analysts"]
     assert 'id="requestYahooRefresh"' not in pages["bought-selection"]
-    assert "Recommendation Breakdown" in pages["landing"]
-    assert '<canvas id="recChart"' in pages["landing"]
+    assert "One-Year Performance: S&amp;P 500 vs Equal-Weight Top 20" in pages["landing"]
+    assert "Performance chart unavailable" in pages["landing"]
+    assert '<canvas id="performanceChart"' not in pages["landing"]
     assert '<table id="topTable">' not in pages["landing"]
     for page_key in ["technical", "analysts", "bought-selection"]:
-        assert "Recommendation Breakdown" not in pages[page_key]
-        assert '<canvas id="recChart"' not in pages[page_key]
+        assert "One-Year Performance" not in pages[page_key]
+        assert '<canvas id="performanceChart"' not in pages[page_key]
+        assert "performanceChart" not in pages[page_key]
+        assert "Equal-weight Top 20" not in pages[page_key]
         assert "Scan completed:" not in pages[page_key]
 
 
@@ -727,10 +741,136 @@ def test_analyst_price_levels_show_direction_from_current_price():
         ) == 2
 
 
+def test_kpi_chart_normalizes_and_equal_weights_at_common_start():
+    dates = pd.date_range("2026-01-02", periods=3, freq="D")
+    histories = {
+        "^GSPC": pd.DataFrame({"Close": [100, 110, 120]}, index=dates),
+        "AAA": pd.DataFrame({"Close": [10, 20, 30]}, index=dates),
+        "BBB": pd.DataFrame({"Close": [20, 20, 40]}, index=dates),
+    }
+
+    chart_data = _build_kpi_chart_data(
+        pd.DataFrame({"Symbol": ["AAA", "BBB", "AAA"]}),
+        history_loader=lambda symbol, period: histories[symbol],
+        now=datetime(2026, 1, 10, tzinfo=ZoneInfo("America/New_York")),
+    )
+
+    assert chart_data["labels"] == ["2026-01-02", "2026-01-03", "2026-01-04"]
+    assert chart_data["sp500"] == [100.0, 110.0, 120.0]
+    assert chart_data["top20"] == [100.0, 150.0, 250.0]
+    assert chart_data["constituents"] == ["AAA", "BBB"]
+    assert chart_data["selected_count"] == 2
+
+
+def test_kpi_chart_aligns_dates_and_skips_invalid_constituents(capsys):
+    histories = {
+        "^GSPC": pd.DataFrame(
+            {"Close": [100, 110, 120]},
+            index=pd.to_datetime(["2026-01-02", "2026-01-03", "2026-01-04"]),
+        ),
+        "AAA": pd.DataFrame(
+            {"Close": [10, 20, 30]},
+            index=pd.to_datetime(["2026-01-02", "2026-01-03", "2026-01-04"]),
+        ),
+        "LATE": pd.DataFrame(
+            {"Close": [40, 80]},
+            index=pd.to_datetime(["2026-01-03", "2026-01-04"]),
+        ),
+        "BAD": pd.DataFrame(
+            {"Close": ["not-a-price"]},
+            index=pd.to_datetime(["2026-01-03"]),
+        ),
+    }
+
+    chart_data = _build_kpi_chart_data(
+        pd.DataFrame({"Symbol": ["AAA", "BAD", "LATE"]}),
+        history_loader=lambda symbol, period: histories[symbol],
+        now=datetime(2026, 1, 10, tzinfo=ZoneInfo("America/New_York")),
+    )
+
+    assert chart_data["labels"] == ["2026-01-03", "2026-01-04"]
+    assert chart_data["sp500"] == [100.0, 109.0909]
+    assert chart_data["top20"] == [100.0, 175.0]
+    assert chart_data["constituents"] == ["AAA", "LATE"]
+    assert "KPI performance history unavailable for BAD" in capsys.readouterr().err
+
+
+def test_kpi_chart_renders_exactly_two_indexed_line_series():
+    dataframe = pd.DataFrame(
+        [
+            {
+                "Symbol": "AAA",
+                "Score": 90,
+                "Entry": 100,
+                "Current Price": 110,
+            }
+        ]
+    )
+    page = _generate_html(
+        dataframe,
+        "15 August 2026, 10:00 AM EDT",
+        page_key="landing",
+        chart_data={
+            "labels": ["2026-08-13", "2026-08-14"],
+            "sp500": [100.0, 101.0],
+            "top20": [100.0, 102.0],
+            "constituents": ["AAA"],
+            "selected_count": 1,
+        },
+    )
+
+    assert '<canvas id="performanceChart"' in page
+    assert "type: 'line'" in page
+    assert page.count("label: 'S&P 500'") == 1
+    assert page.count("label: 'Equal-weight Top 20'") == 1
+    assert "Indexed to 100" in page
+    assert "not raw dollars" in page
+    assert "Recommendation Breakdown" not in page
+    assert "recChart" not in page
+    assert "Top 20 Details: Suggested Entry vs Current Price" in page
+    assert 'id="top20DetailsTable"' in page
+    assert 'data-symbol="AAA" data-entry="100.0"' in page
+    assert '<td class="detail-current">$110.00</td>' in page
+    assert '<td class="detail-difference price-gain">+10.00</td>' in page
+    assert '<td class="detail-percent price-gain">+10.00%</td>' in page
+    assert "Entry is the scanner suggestion, not an actual purchase price." in page
+    assert "updateTop20Details(snapshot.prices)" in page
+
+
+def test_kpi_chart_renders_unavailable_message_without_javascript_data():
+    page = _generate_html(
+        pd.DataFrame([{"Symbol": "AAA", "Score": 90}]),
+        "15 August 2026, 10:00 AM EDT",
+        page_key="landing",
+        chart_data=None,
+    )
+
+    assert "Performance chart unavailable" in page
+    assert '<canvas id="performanceChart"' not in page
+    assert "const chartData = null;" in page
+
+
+def test_top_twenty_details_handles_missing_entry_without_false_change():
+    page = _generate_html(
+        pd.DataFrame(
+            [{"Symbol": "MISSING", "Score": 90, "Current Price": 50}]
+        ),
+        "15 August 2026, 10:00 AM EDT",
+        page_key="landing",
+        chart_data=None,
+    )
+
+    assert 'data-symbol="MISSING" data-entry=""' in page
+    assert '<td class="detail-entry">Unavailable</td>' in page
+    assert '<td class="detail-difference ">Unavailable</td>' in page
+    assert '<td class="detail-percent ">Unavailable</td>' in page
+
+
 def test_html_export_creates_three_stable_linked_pages(tmp_path, monkeypatch):
     monkeypatch.setattr(html_report, "REPORT_FOLDER", str(tmp_path))
     snapshot_path = tmp_path / "prices.json"
     monkeypatch.setattr(html_report, "PRICE_SNAPSHOT_PATH", snapshot_path)
+    monkeypatch.setattr(html_report, "_build_kpi_chart_data", lambda *args, **kwargs: None)
 
     archived_page = html_report.export_html_report(
         [{"Symbol": "ABC", "Score": 90, "Current Price": 10}],
@@ -756,6 +896,7 @@ def test_html_export_survives_results_without_snapshot_prices(
         "PRICE_SNAPSHOT_PATH",
         tmp_path / "prices.json",
     )
+    monkeypatch.setattr(html_report, "_build_kpi_chart_data", lambda *args, **kwargs: None)
 
     archived_page = html_report.export_html_report(
         [{"Symbol": "ABC", "Score": 90, "Current Price": None}],
