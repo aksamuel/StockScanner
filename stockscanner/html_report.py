@@ -1,5 +1,7 @@
 """Generate a self-contained static HTML dashboard from scan results."""
 
+import json
+import math
 import os
 import sys
 from datetime import datetime
@@ -7,7 +9,10 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pandas as pd
+from curl_cffi.requests.exceptions import RequestException
+from yfinance.exceptions import YFException
 
+from .market_data import completed_daily_data, download_data
 from .price_snapshot import SnapshotError, write_snapshot_from_results
 from .ranking import setup_priority
 from .report import REPORT_FOLDER, TOP_RESULTS, prepare_results_dataframe
@@ -200,6 +205,152 @@ def _data_number(value):
         return str(float(value))
     except (ValueError, TypeError):
         return ""
+
+
+def _optional_number(value):
+    """Return a finite float or None."""
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if math.isfinite(number) else None
+
+
+def _build_top_twenty_details(dataframe):
+    """Build suggested-entry comparison rows in default scanner order."""
+    details = []
+    if dataframe.empty or "Symbol" not in dataframe.columns:
+        return details
+    for _, row in dataframe.head(TOP_RESULTS).iterrows():
+        symbol = str(row.get("Symbol", "")).strip()
+        if not symbol:
+            continue
+        entry = _optional_number(row.get("Entry"))
+        current = _optional_number(row.get("Current Price"))
+        difference = (
+            current - entry
+            if entry is not None and entry > 0 and current is not None
+            else None
+        )
+        change_percent = (
+            difference / entry * 100
+            if difference is not None
+            else None
+        )
+        details.append(
+            {
+                "symbol": symbol,
+                "entry": entry,
+                "current": current,
+                "difference": difference,
+                "change_percent": change_percent,
+            }
+        )
+    return details
+
+
+def _completed_close_series(history, now=None):
+    """Return valid completed closes indexed by date."""
+    history = completed_daily_data(history, now=now)
+    if (
+        history is None
+        or not isinstance(history, pd.DataFrame)
+        or history.empty
+        or "Close" not in history.columns
+    ):
+        return None
+
+    dates = pd.to_datetime(history.index, errors="coerce", utc=True)
+    closes = pd.to_numeric(history["Close"], errors="coerce")
+    series = pd.Series(closes.to_numpy(), index=dates).dropna()
+    series = series[series > 0]
+    if series.empty:
+        return None
+    series.index = series.index.tz_convert(None).normalize()
+    return series.groupby(level=0).last().sort_index()
+
+
+def _build_kpi_chart_data(dataframe, history_loader=None, now=None):
+    """Build an indexed S&P 500 versus equal-weight Top 20 comparison."""
+    if dataframe.empty or "Symbol" not in dataframe.columns:
+        return None
+    history_loader = history_loader or download_data
+
+    selected_symbols = []
+    seen = set()
+    for value in dataframe["Symbol"].head(TOP_RESULTS):
+        if pd.isna(value):
+            continue
+        symbol = str(value).strip().upper()
+        if not symbol or symbol in seen:
+            continue
+        seen.add(symbol)
+        selected_symbols.append(symbol)
+
+    def load_close(symbol):
+        try:
+            history = history_loader(symbol, period="1y")
+        except (
+            OSError,
+            RequestException,
+            RuntimeError,
+            TypeError,
+            ValueError,
+            YFException,
+        ) as exc:
+            print(
+                f"KPI performance history unavailable for {symbol}: {exc}",
+                file=sys.stderr,
+            )
+            return None
+        close = _completed_close_series(history, now=now)
+        if close is None or len(close) < 2:
+            print(
+                f"KPI performance history unavailable for {symbol}: "
+                "fewer than two valid completed closes.",
+                file=sys.stderr,
+            )
+            return None
+        return close
+
+    benchmark = load_close("^GSPC")
+    if benchmark is None:
+        return None
+
+    aligned = benchmark.rename("S&P 500").to_frame()
+    included_symbols = []
+    for symbol in selected_symbols:
+        close = load_close(symbol)
+        if close is None:
+            continue
+        candidate = aligned.join(close.rename(symbol), how="inner")
+        if len(candidate) < 2:
+            print(
+                f"KPI performance history unavailable for {symbol}: "
+                "fewer than two dates overlap the benchmark and other constituents.",
+                file=sys.stderr,
+            )
+            continue
+        aligned = candidate
+        included_symbols.append(symbol)
+
+    if not included_symbols or len(aligned) < 2:
+        print(
+            "KPI performance chart unavailable: fewer than two aligned points "
+            "or no usable Top 20 histories.",
+            file=sys.stderr,
+        )
+        return None
+
+    normalized = aligned.divide(aligned.iloc[0]).multiply(100)
+    top_twenty = normalized[included_symbols].mean(axis=1)
+    return {
+        "labels": [timestamp.date().isoformat() for timestamp in normalized.index],
+        "sp500": normalized["S&P 500"].round(4).tolist(),
+        "top20": top_twenty.round(4).tolist(),
+        "constituents": included_symbols,
+        "selected_count": len(selected_symbols),
+    }
 
 
 CURRENCY_COLUMNS = {
@@ -446,7 +597,7 @@ def _sort_technical_by_hierarchy(dataframe):
     return sorted_data
 
 
-def _generate_html(dataframe, scan_time, page_key=None):
+def _generate_html(dataframe, scan_time, page_key=None, chart_data=None):
     """Generate the complete HTML dashboard string."""
     if page_key == "analysts":
         dataframe = _sort_analysts_by_support_proximity(dataframe)
@@ -464,6 +615,60 @@ def _generate_html(dataframe, scan_time, page_key=None):
     page_accent = config["accent"] if config else "#1f4e78"
     selection_enabled = config["selection"] if config else True
     navigation_html = _navigation_html(page_key)
+    top_twenty_details = _build_top_twenty_details(dataframe)
+    detail_rows = []
+    for detail in top_twenty_details:
+        difference = detail["difference"]
+        change_percent = detail["change_percent"]
+        change_class = (
+            "price-gain"
+            if difference is not None and difference > 0
+            else "price-loss"
+            if difference is not None and difference < 0
+            else ""
+        )
+        difference_text = (
+            f"{difference:+,.2f}"
+            if difference is not None
+            else "Unavailable"
+        )
+        percent_text = (
+            f"{change_percent:+,.2f}%"
+            if change_percent is not None
+            else "Unavailable"
+        )
+        entry_text = (
+            f"${detail['entry']:,.2f}"
+            if detail["entry"] is not None
+            else "Unavailable"
+        )
+        current_text = (
+            f"${detail['current']:,.2f}"
+            if detail["current"] is not None
+            else "Unavailable"
+        )
+        detail_rows.append(
+            f'<tr data-symbol="{_escape_html(detail["symbol"])}" '
+            f'data-entry="{_data_number(detail["entry"])}">'
+            f'<td>{_escape_html(detail["symbol"])}</td>'
+            f'<td class="detail-entry">{entry_text}</td>'
+            f'<td class="detail-current">{current_text}</td>'
+            f'<td class="detail-difference {change_class}">{difference_text}</td>'
+            f'<td class="detail-percent {change_class}">{percent_text}</td>'
+            "</tr>"
+        )
+    top_twenty_details_markup = (
+        '<details class="top20-drilldown">'
+        "<summary>Top 20 Details: Suggested Entry vs Current Price</summary>"
+        '<p class="chart-explanation">Entry is the scanner suggestion, not an '
+        "actual purchase price.</p>"
+        '<div class="table-wrapper"><table id="top20DetailsTable">'
+        "<thead><tr><th>Symbol</th><th>Suggested Entry</th>"
+        "<th>Current Price</th><th>Difference</th><th>Change %</th></tr></thead>"
+        f"<tbody>{''.join(detail_rows)}</tbody></table></div></details>"
+        if detail_rows
+        else ""
+    )
 
     # Build table rows for top opportunities
     top_rows_html = []
@@ -616,12 +821,95 @@ def _generate_html(dataframe, scan_time, page_key=None):
         else ""
     )
 
-    # Chart data
-    chart_labels = ["Strong Buy", "Buy", "Accumulate", "Hold", "Watch", "Avoid"]
-    chart_values = [
-        summary["strong_buy"], summary["buy"], summary["accumulate"],
-        summary["hold"], summary["watch"], summary["avoid"],
-    ]
+    chart_available = (
+        chart_data is not None
+        and len(chart_data.get("labels", [])) >= 2
+        and len(chart_data.get("labels", [])) == len(chart_data.get("sp500", []))
+        and len(chart_data.get("labels", [])) == len(chart_data.get("top20", []))
+    )
+    chart_markup = (
+        '<canvas id="performanceChart" height="200" '
+        'aria-label="One-year indexed performance comparison"></canvas>'
+        if chart_available
+        else (
+            '<p class="chart-unavailable" role="status">'
+            "Performance chart unavailable: at least two aligned completed "
+            "daily closes are required.</p>"
+        )
+    )
+    chart_constituent_copy = (
+        f"Equal-weight index uses {len(chart_data['constituents'])} of "
+        f"{chart_data['selected_count']} selected Top 20 symbols with usable "
+        "aligned history."
+        if chart_available
+        else ""
+    )
+    chart_json = json.dumps(chart_data if chart_available else None)
+    chart_library = (
+        '<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js">'
+        "</script>"
+        if page_key == "landing"
+        else ""
+    )
+    chart_initialization = (
+        f"""
+    const chartData = {chart_json};
+    const ctx = document.getElementById('performanceChart');
+    if (ctx && chartData && typeof Chart !== 'undefined') {{
+        new Chart(ctx, {{
+            type: 'line',
+            data: {{
+                labels: chartData.labels,
+                datasets: [
+                    {{
+                        label: 'S&P 500',
+                        data: chartData.sp500,
+                        borderColor: '#4fc3f7',
+                        backgroundColor: 'transparent',
+                        borderWidth: 2,
+                        pointRadius: 0,
+                        tension: 0.1
+                    }},
+                    {{
+                        label: 'Equal-weight Top 20',
+                        data: chartData.top20,
+                        borderColor: '#66bb6a',
+                        backgroundColor: 'transparent',
+                        borderWidth: 2,
+                        pointRadius: 0,
+                        tension: 0.1
+                    }}
+                ]
+            }},
+            options: {{
+                responsive: true,
+                interaction: {{ mode: 'index', intersect: false }},
+                plugins: {{
+                    legend: {{ labels: {{ color: '#e0e0e0' }} }},
+                    tooltip: {{
+                        callbacks: {{
+                            label: context => `${{context.dataset.label}}: ${{context.parsed.y.toFixed(2)}}`
+                        }}
+                    }}
+                }},
+                scales: {{
+                    y: {{
+                        title: {{ display: true, text: 'Indexed to 100', color: '#b0bec5' }},
+                        ticks: {{ color: '#90a4ae' }},
+                        grid: {{ color: '#263d50' }}
+                    }},
+                    x: {{
+                        ticks: {{ color: '#90a4ae', maxTicksLimit: 12 }},
+                        grid: {{ display: false }}
+                    }}
+                }}
+            }}
+        }});
+    }}
+"""
+        if page_key == "landing"
+        else ""
+    )
     dashboard_content = (
         f"""
     <div class="cards">
@@ -636,7 +924,7 @@ def _generate_html(dataframe, scan_time, page_key=None):
     </div>
 
     <div class="section">
-        <h2>Recommendation Breakdown</h2>
+        <h2>One-Year Performance: S&amp;P 500 vs Equal-Weight Top 20</h2>
         <div class="chart-container">
             <div class="refresh-time">Scan completed: {scan_time}</div>
             <div class="refresh-time" id="yahooPriceTime">
@@ -646,7 +934,10 @@ def _generate_html(dataframe, scan_time, page_key=None):
                 Backend price refresh: Loading snapshot time...
             </div>
             <div class="price-notice">Manual Yahoo refreshes run securely on GitHub Actions and redeploy these pages.</div>
-            <canvas id="recChart" height="200"></canvas>
+            <p class="chart-explanation">Completed daily closes, normalized to 100 on the first common date. Values are indexed performance, not raw dollars.</p>
+            <p class="chart-explanation">{chart_constituent_copy}</p>
+            {chart_markup}
+            {top_twenty_details_markup}
         </div>
     </div>
 """
@@ -773,6 +1064,25 @@ header .subtitle {{ color: #90a4ae; text-align: center; margin-top: 4px; font-si
     margin-bottom: 12px;
     text-align: right;
 }}
+.chart-explanation {{ color: #b0bec5; font-size: 0.85rem; margin: 4px 0; }}
+.chart-unavailable {{
+    color: #ffcc80;
+    margin-top: 20px;
+    padding: 18px;
+    text-align: center;
+    border: 1px solid #6d4c2f;
+    border-radius: 6px;
+}}
+.top20-drilldown {{ margin-top: 20px; }}
+.top20-drilldown summary {{
+    color: #4fc3f7;
+    cursor: pointer;
+    font-weight: 600;
+    padding: 10px 0;
+}}
+.top20-drilldown .table-wrapper {{ margin-top: 10px; }}
+.price-gain {{ color: #66bb6a; font-weight: 600; }}
+.price-loss {{ color: #ef5350; font-weight: 600; }}
 .table-wrapper {{
     overflow-x: auto;
     border-radius: 8px;
@@ -923,36 +1233,13 @@ footer {{
     &nbsp;|&nbsp; <a href="https://github.com/aksamuel/StockScanner#readme" style="color: #4fc3f7;">Help &amp; FAQ</a>
 </footer>
 
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+{chart_library}
 <script>
 // Chart
 document.addEventListener('DOMContentLoaded', function() {{
     loadDashboardSnapshotTimes();
     loadRefreshButtonSnapshotTime();
-    const ctx = document.getElementById('recChart');
-    if (ctx && typeof Chart !== 'undefined') {{
-        new Chart(ctx, {{
-            type: 'bar',
-            data: {{
-                labels: {chart_labels},
-                datasets: [{{
-                    label: 'Stocks',
-                    data: {chart_values},
-                    backgroundColor: ['#1b5e20','#4caf50','#fdd835','#ff9800','#e65100','#b71c1c'],
-                    borderWidth: 0,
-                    borderRadius: 4,
-                }}]
-            }},
-            options: {{
-                responsive: true,
-                plugins: {{ legend: {{ display: false }} }},
-                scales: {{
-                    y: {{ beginAtZero: true, ticks: {{ color: '#90a4ae' }}, grid: {{ color: '#263d50' }} }},
-                    x: {{ ticks: {{ color: '#90a4ae' }}, grid: {{ display: false }} }}
-                }}
-            }}
-        }});
-    }}
+    {chart_initialization}
 }});
 
 // Tabs
@@ -1034,11 +1321,49 @@ async function loadDashboardSnapshotTimes() {{
             : 'Latest Yahoo price: Time unavailable';
         backendRefreshTime.textContent =
             `Backend price refresh: ${{snapshot.generated_at_new_york}}`;
+        updateTop20Details(snapshot.prices);
     }} catch (error) {{
         yahooPriceTime.textContent = 'Latest Yahoo price: Unavailable';
         backendRefreshTime.textContent =
             `Backend price refresh: Unavailable (${{error.message}})`;
     }}
+}}
+
+function updateTop20Details(prices) {{
+    if (!prices || typeof prices !== 'object') return;
+    document.querySelectorAll('#top20DetailsTable tbody tr').forEach(row => {{
+        const current = Number(prices[row.dataset.symbol]);
+        if (!Number.isFinite(current) || current <= 0) return;
+        const entry = Number(row.dataset.entry);
+        row.querySelector('.detail-current').textContent =
+            `$${{current.toLocaleString('en-US', {{
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+            }})}}`;
+        if (!Number.isFinite(entry) || entry <= 0 || row.dataset.entry === '') return;
+        const difference = current - entry;
+        const changePercent = difference / entry * 100;
+        const changeClass = difference > 0
+            ? 'price-gain'
+            : difference < 0
+            ? 'price-loss'
+            : '';
+        const differenceCell = row.querySelector('.detail-difference');
+        const percentCell = row.querySelector('.detail-percent');
+        differenceCell.className = `detail-difference ${{changeClass}}`;
+        percentCell.className = `detail-percent ${{changeClass}}`;
+        const sign = difference > 0 ? '+' : '';
+        differenceCell.textContent =
+            `${{sign}}${{difference.toLocaleString('en-US', {{
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+            }})}}`;
+        percentCell.textContent =
+            `${{sign}}${{changePercent.toLocaleString('en-US', {{
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+            }})}}%`;
+    }});
 }}
 
 function setRefreshButtonTime(button, snapshot) {{
@@ -1283,8 +1608,14 @@ def export_html_report(results, quiet=False):
         "analysts": os.path.join(date_folder, "analysts.html"),
         "bought-selection": os.path.join(date_folder, "bought-selection.html"),
     }
+    chart_data = _build_kpi_chart_data(dataframe, now=now)
     rendered_pages = {
-        page_key: _generate_html(dataframe, scan_time, page_key=page_key)
+        page_key: _generate_html(
+            dataframe,
+            scan_time,
+            page_key=page_key,
+            chart_data=chart_data if page_key == "landing" else None,
+        )
         for page_key in pages
     }
     for page_key, page_filename in pages.items():
