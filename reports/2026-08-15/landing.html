@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>StockScanner Dashboard - 15 August 2026, 02:53 AM EDT</title>
+<title>StockScanner Dashboard - 15 August 2026, 03:18 AM EDT</title>
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body {
@@ -81,6 +81,25 @@ header .subtitle { color: #90a4ae; text-align: center; margin-top: 4px; font-siz
     margin-bottom: 12px;
     text-align: right;
 }
+.chart-explanation { color: #b0bec5; font-size: 0.85rem; margin: 4px 0; }
+.chart-unavailable {
+    color: #ffcc80;
+    margin-top: 20px;
+    padding: 18px;
+    text-align: center;
+    border: 1px solid #6d4c2f;
+    border-radius: 6px;
+}
+.top20-drilldown { margin-top: 20px; }
+.top20-drilldown summary {
+    color: #4fc3f7;
+    cursor: pointer;
+    font-weight: 600;
+    padding: 10px 0;
+}
+.top20-drilldown .table-wrapper { margin-top: 10px; }
+.price-gain { color: #66bb6a; font-weight: 600; }
+.price-loss { color: #ef5350; font-weight: 600; }
 .table-wrapper {
     overflow-x: auto;
     border-radius: 8px;
@@ -228,20 +247,20 @@ footer {
 <div class="container">
     
     <div class="cards">
-        <div class="card"><div class="value">455</div><div class="label">Stocks Scanned</div></div>
-        <div class="card"><div class="value" style="color:#4caf50">110</div><div class="label">Strong Buy</div></div>
-        <div class="card"><div class="value" style="color:#66bb6a">83</div><div class="label">Buy</div></div>
-        <div class="card"><div class="value" style="color:#fdd835">48</div><div class="label">Accumulate</div></div>
-        <div class="card"><div class="value" style="color:#ffa726">86</div><div class="label">Watch</div></div>
-        <div class="card"><div class="value" style="color:#ef5350">86</div><div class="label">Avoid</div></div>
-        <div class="card"><div class="value">64.7</div><div class="label">Avg Score</div></div>
+        <div class="card"><div class="value">320</div><div class="label">Stocks Scanned</div></div>
+        <div class="card"><div class="value" style="color:#4caf50">82</div><div class="label">Strong Buy</div></div>
+        <div class="card"><div class="value" style="color:#66bb6a">69</div><div class="label">Buy</div></div>
+        <div class="card"><div class="value" style="color:#fdd835">30</div><div class="label">Accumulate</div></div>
+        <div class="card"><div class="value" style="color:#ffa726">62</div><div class="label">Watch</div></div>
+        <div class="card"><div class="value" style="color:#ef5350">50</div><div class="label">Avoid</div></div>
+        <div class="card"><div class="value">67.42</div><div class="label">Avg Score</div></div>
         <div class="card"><div class="value">100</div><div class="label">Best Score</div></div>
     </div>
 
     <div class="section">
-        <h2>Recommendation Breakdown</h2>
+        <h2>One-Year Performance: S&amp;P 500 vs Equal-Weight Top 20</h2>
         <div class="chart-container">
-            <div class="refresh-time">Scan completed: 15 August 2026, 02:53 AM EDT</div>
+            <div class="refresh-time">Scan completed: 15 August 2026, 03:18 AM EDT</div>
             <div class="refresh-time" id="yahooPriceTime">
                 Latest Yahoo price: Loading snapshot time...
             </div>
@@ -249,7 +268,10 @@ footer {
                 Backend price refresh: Loading snapshot time...
             </div>
             <div class="price-notice">Manual Yahoo refreshes run securely on GitHub Actions and redeploy these pages.</div>
-            <canvas id="recChart" height="200"></canvas>
+            <p class="chart-explanation">Completed daily closes, normalized to 100 on the first common date. Values are indexed performance, not raw dollars.</p>
+            <p class="chart-explanation"></p>
+            <p class="chart-unavailable" role="status">Performance chart unavailable: at least two aligned completed daily closes are required.</p>
+            <details class="top20-drilldown"><summary>Top 20 Details: Suggested Entry vs Current Price</summary><p class="chart-explanation">Entry is the scanner suggestion, not an actual purchase price.</p><div class="table-wrapper"><table id="top20DetailsTable"><thead><tr><th>Symbol</th><th>Suggested Entry</th><th>Current Price</th><th>Difference</th><th>Change %</th></tr></thead><tbody><tr data-symbol="TWLO" data-entry="209.26"><td>TWLO</td><td class="detail-entry">$209.26</td><td class="detail-current">$238.20</td><td class="detail-difference price-gain">+28.94</td><td class="detail-percent price-gain">+13.83%</td></tr><tr data-symbol="EPD" data-entry="38.02"><td>EPD</td><td class="detail-entry">$38.02</td><td class="detail-current">$38.90</td><td class="detail-difference price-gain">+0.88</td><td class="detail-percent price-gain">+2.31%</td></tr><tr data-symbol="HEI" data-entry="358.43"><td>HEI</td><td class="detail-entry">$358.43</td><td class="detail-current">$374.67</td><td class="detail-difference price-gain">+16.24</td><td class="detail-percent price-gain">+4.53%</td></tr><tr data-symbol="AME" data-entry="246.55"><td>AME</td><td class="detail-entry">$246.55</td><td class="detail-current">$254.79</td><td class="detail-difference price-gain">+8.24</td><td class="detail-percent price-gain">+3.34%</td></tr><tr data-symbol="CQP" data-entry="65.02"><td>CQP</td><td class="detail-entry">$65.02</td><td class="detail-current">$69.05</td><td class="detail-difference price-gain">+4.03</td><td class="detail-percent price-gain">+6.20%</td></tr><tr data-symbol="DELL" data-entry="436.1"><td>DELL</td><td class="detail-entry">$436.10</td><td class="detail-current">$490.81</td><td class="detail-difference price-gain">+54.71</td><td class="detail-percent price-gain">+12.55%</td></tr><tr data-symbol="SAN" data-entry="14.18"><td>SAN</td><td class="detail-entry">$14.18</td><td class="detail-current">$14.76</td><td class="detail-difference price-gain">+0.58</td><td class="detail-percent price-gain">+4.09%</td></tr><tr data-symbol="STT" data-entry="185.11"><td>STT</td><td class="detail-entry">$185.11</td><td class="detail-current">$191.74</td><td class="detail-difference price-gain">+6.63</td><td class="detail-percent price-gain">+3.58%</td></tr><tr data-symbol="BNY" data-entry="158.38"><td>BNY</td><td class="detail-entry">$158.38</td><td class="detail-current">$163.24</td><td class="detail-difference price-gain">+4.86</td><td class="detail-percent price-gain">+3.07%</td></tr><tr data-symbol="CVX" data-entry="192.66"><td>CVX</td><td class="detail-entry">$192.66</td><td class="detail-current">$200.00</td><td class="detail-difference price-gain">+7.34</td><td class="detail-percent price-gain">+3.81%</td></tr><tr data-symbol="HPE" data-entry="50.79"><td>HPE</td><td class="detail-entry">$50.79</td><td class="detail-current">$58.71</td><td class="detail-difference price-gain">+7.92</td><td class="detail-percent price-gain">+15.59%</td></tr><tr data-symbol="CNQ" data-entry="46.24"><td>CNQ</td><td class="detail-entry">$46.24</td><td class="detail-current">$47.97</td><td class="detail-difference price-gain">+1.73</td><td class="detail-percent price-gain">+3.74%</td></tr><tr data-symbol="CVE" data-entry="29.2"><td>CVE</td><td class="detail-entry">$29.20</td><td class="detail-current">$31.01</td><td class="detail-difference price-gain">+1.81</td><td class="detail-percent price-gain">+6.20%</td></tr><tr data-symbol="BBVA" data-entry="27.32"><td>BBVA</td><td class="detail-entry">$27.32</td><td class="detail-current">$28.70</td><td class="detail-difference price-gain">+1.38</td><td class="detail-percent price-gain">+5.05%</td></tr><tr data-symbol="NET" data-entry="286.9"><td>NET</td><td class="detail-entry">$286.90</td><td class="detail-current">$315.78</td><td class="detail-difference price-gain">+28.88</td><td class="detail-percent price-gain">+10.07%</td></tr><tr data-symbol="P" data-entry="85.83"><td>P</td><td class="detail-entry">$85.83</td><td class="detail-current">$118.16</td><td class="detail-difference price-gain">+32.33</td><td class="detail-percent price-gain">+37.67%</td></tr><tr data-symbol="TGT" data-entry="144.91"><td>TGT</td><td class="detail-entry">$144.91</td><td class="detail-current">$154.48</td><td class="detail-difference price-gain">+9.57</td><td class="detail-percent price-gain">+6.60%</td></tr><tr data-symbol="PSX" data-entry="211.36"><td>PSX</td><td class="detail-entry">$211.36</td><td class="detail-current">$233.61</td><td class="detail-difference price-gain">+22.25</td><td class="detail-percent price-gain">+10.53%</td></tr><tr data-symbol="TD" data-entry="120.77"><td>TD</td><td class="detail-entry">$120.77</td><td class="detail-current">$124.36</td><td class="detail-difference price-gain">+3.59</td><td class="detail-percent price-gain">+2.97%</td></tr><tr data-symbol="RY" data-entry="210.54"><td>RY</td><td class="detail-entry">$210.54</td><td class="detail-current">$216.56</td><td class="detail-difference price-gain">+6.02</td><td class="detail-percent price-gain">+2.86%</td></tr></tbody></table></div></details>
         </div>
     </div>
 
@@ -267,30 +289,61 @@ footer {
 document.addEventListener('DOMContentLoaded', function() {
     loadDashboardSnapshotTimes();
     loadRefreshButtonSnapshotTime();
-    const ctx = document.getElementById('recChart');
-    if (ctx && typeof Chart !== 'undefined') {
+    
+    const chartData = null;
+    const ctx = document.getElementById('performanceChart');
+    if (ctx && chartData && typeof Chart !== 'undefined') {
         new Chart(ctx, {
-            type: 'bar',
+            type: 'line',
             data: {
-                labels: ['Strong Buy', 'Buy', 'Accumulate', 'Hold', 'Watch', 'Avoid'],
-                datasets: [{
-                    label: 'Stocks',
-                    data: [110, 83, 48, 42, 86, 86],
-                    backgroundColor: ['#1b5e20','#4caf50','#fdd835','#ff9800','#e65100','#b71c1c'],
-                    borderWidth: 0,
-                    borderRadius: 4,
-                }]
+                labels: chartData.labels,
+                datasets: [
+                    {
+                        label: 'S&P 500',
+                        data: chartData.sp500,
+                        borderColor: '#4fc3f7',
+                        backgroundColor: 'transparent',
+                        borderWidth: 2,
+                        pointRadius: 0,
+                        tension: 0.1
+                    },
+                    {
+                        label: 'Equal-weight Top 20',
+                        data: chartData.top20,
+                        borderColor: '#66bb6a',
+                        backgroundColor: 'transparent',
+                        borderWidth: 2,
+                        pointRadius: 0,
+                        tension: 0.1
+                    }
+                ]
             },
             options: {
                 responsive: true,
-                plugins: { legend: { display: false } },
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: { labels: { color: '#e0e0e0' } },
+                    tooltip: {
+                        callbacks: {
+                            label: context => `${context.dataset.label}: ${context.parsed.y.toFixed(2)}`
+                        }
+                    }
+                },
                 scales: {
-                    y: { beginAtZero: true, ticks: { color: '#90a4ae' }, grid: { color: '#263d50' } },
-                    x: { ticks: { color: '#90a4ae' }, grid: { display: false } }
+                    y: {
+                        title: { display: true, text: 'Indexed to 100', color: '#b0bec5' },
+                        ticks: { color: '#90a4ae' },
+                        grid: { color: '#263d50' }
+                    },
+                    x: {
+                        ticks: { color: '#90a4ae', maxTicksLimit: 12 },
+                        grid: { display: false }
+                    }
                 }
             }
         });
     }
+
 });
 
 // Tabs
@@ -372,11 +425,49 @@ async function loadDashboardSnapshotTimes() {
             : 'Latest Yahoo price: Time unavailable';
         backendRefreshTime.textContent =
             `Backend price refresh: ${snapshot.generated_at_new_york}`;
+        updateTop20Details(snapshot.prices);
     } catch (error) {
         yahooPriceTime.textContent = 'Latest Yahoo price: Unavailable';
         backendRefreshTime.textContent =
             `Backend price refresh: Unavailable (${error.message})`;
     }
+}
+
+function updateTop20Details(prices) {
+    if (!prices || typeof prices !== 'object') return;
+    document.querySelectorAll('#top20DetailsTable tbody tr').forEach(row => {
+        const current = Number(prices[row.dataset.symbol]);
+        if (!Number.isFinite(current) || current <= 0) return;
+        const entry = Number(row.dataset.entry);
+        row.querySelector('.detail-current').textContent =
+            `$${current.toLocaleString('en-US', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+            })}`;
+        if (!Number.isFinite(entry) || entry <= 0 || row.dataset.entry === '') return;
+        const difference = current - entry;
+        const changePercent = difference / entry * 100;
+        const changeClass = difference > 0
+            ? 'price-gain'
+            : difference < 0
+            ? 'price-loss'
+            : '';
+        const differenceCell = row.querySelector('.detail-difference');
+        const percentCell = row.querySelector('.detail-percent');
+        differenceCell.className = `detail-difference ${changeClass}`;
+        percentCell.className = `detail-percent ${changeClass}`;
+        const sign = difference > 0 ? '+' : '';
+        differenceCell.textContent =
+            `${sign}${difference.toLocaleString('en-US', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+            })}`;
+        percentCell.textContent =
+            `${sign}${changePercent.toLocaleString('en-US', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+            })}%`;
+    });
 }
 
 function setRefreshButtonTime(button, snapshot) {
