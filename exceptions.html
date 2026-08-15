@@ -57,6 +57,33 @@ h1 { margin: 0; color: #4fc3f7; font-size: 1.8rem; }
     border: 1px solid #365069;
     border-radius: 6px;
 }
+.add-ticker {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+#tickerSymbol,
+#tickerReason {
+    width: 150px;
+    padding: 9px 12px;
+    color: #e0e0e0;
+    background: #162534;
+    border: 1px solid #365069;
+    border-radius: 6px;
+}
+#tickerSymbol {
+    text-transform: uppercase;
+}
+#tickerReason { width: min(100%, 320px); }
+#addTicker {
+    padding: 9px 14px;
+    color: #fff;
+    background: #1b5e20;
+    border: 1px solid #66bb6a;
+    border-radius: 5px;
+    cursor: pointer;
+}
+#addTicker:hover { background: #2e7d32; }
 .table-wrap { overflow-x: auto; border: 1px solid #263d50; border-radius: 8px; }
 table { width: 100%; border-collapse: collapse; background: #1a2a3a; }
 th, td { padding: 11px 14px; border-bottom: 1px solid #263d50; text-align: left; }
@@ -95,7 +122,7 @@ footer { margin-top: 30px; color: #607d8b; font-size: 0.8rem; text-align: center
 <header>
     <div class="container">
         <h1>Stock Exception List</h1>
-        <div class="subtitle">Updated: 14 August 2026, 02:16 PM</div>
+        <div class="subtitle">Updated: 15 August 2026, 06:44 AM</div>
         <div class="nav">
             <a href="index.html">KPI Dashboard</a>
             <a href="technical.html">Technical Analysis</a>
@@ -109,6 +136,13 @@ footer { margin-top: 30px; color: #607d8b; font-size: 0.8rem; text-align: center
     <div class="summary"><strong>32</strong><br>Listed exceptions</div>
     <div class="controls">
         <input id="filter" type="search" placeholder="Filter exceptions..." aria-label="Filter exceptions">
+        <div class="add-ticker">
+            <input id="tickerSymbol" type="text" maxlength="15"
+                placeholder="Ticker symbol" aria-label="Ticker symbol">
+            <input id="tickerReason" type="text" maxlength="200"
+                placeholder="Reason" aria-label="Exception reason">
+            <button id="addTicker" type="button">Add Ticker</button>
+        </div>
         <button id="deleteSelected" type="button" disabled>Delete Selected (0)</button>
     </div>
     <div class="table-wrap">
@@ -158,6 +192,54 @@ const empty = document.getElementById("empty");
 const selectAll = document.getElementById("selectAll");
 const selections = [...document.querySelectorAll(".ticker-select")];
 const deleteSelected = document.getElementById("deleteSelected");
+const tickerSymbol = document.getElementById("tickerSymbol");
+const tickerReason = document.getElementById("tickerReason");
+const addTicker = document.getElementById("addTicker");
+
+function submitAddTicker() {
+    const symbol = tickerSymbol.value.trim().toUpperCase();
+    const reason = tickerReason.value.trim();
+    if (!/^[A-Z0-9][A-Z0-9.-]{0,14}$/.test(symbol)) {
+        alert("Enter a valid ticker symbol using letters, numbers, a dot, or a hyphen.");
+        tickerSymbol.focus();
+        return;
+    }
+    if (!reason) {
+        alert("Enter a reason for adding this ticker.");
+        tickerReason.focus();
+        return;
+    }
+    const reasonBytes = new TextEncoder().encode(reason);
+    const encodedReason = btoa(
+        Array.from(reasonBytes, byte => String.fromCharCode(byte)).join("")
+    );
+    const body = [
+        "Please add this ticker to the StockScanner exception list for 30 days:",
+        "",
+        `- **${symbol}**`,
+        `- **Reason:** ${reason}`,
+        "",
+        `<!-- stockscanner-add-exceptions: ${symbol} -->`,
+        `<!-- stockscanner-exception-reason-base64: ${encodedReason} -->`,
+    ].join("\n");
+    const query = new URLSearchParams({
+        title: "[Add Exceptions] 1 ticker",
+        body,
+    });
+    window.open(
+        `https://github.com/aksamuel/StockScanner/issues/new?${query}`,
+        "_blank",
+        "noopener",
+    );
+}
+
+addTicker.addEventListener("click", submitAddTicker);
+tickerSymbol.addEventListener("keydown", event => {
+    if (event.key === "Enter") submitAddTicker();
+});
+tickerReason.addEventListener("keydown", event => {
+    if (event.key === "Enter") submitAddTicker();
+});
 
 function updateSelection() {
     const count = selections.filter(checkbox => checkbox.checked).length;
