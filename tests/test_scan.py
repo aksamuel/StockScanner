@@ -803,6 +803,8 @@ def test_kpi_chart_renders_exactly_two_indexed_line_series():
                 "Score": 90,
                 "Entry": 100,
                 "Current Price": 110,
+                "Support Low": 95,
+                "Resistance Low": 120,
             }
         ]
     )
@@ -831,6 +833,9 @@ def test_kpi_chart_renders_exactly_two_indexed_line_series():
     assert 'id="top20DetailsTable"' in page
     assert 'data-symbol="AAA" data-entry="100.0"' in page
     assert '<td class="detail-current">$110.00</td>' in page
+    assert "<th>Support Low</th><th>Resistance Low</th>" in page
+    assert '<td class="detail-support-low">$95.00</td>' in page
+    assert '<td class="detail-resistance-low">$120.00</td>' in page
     assert '<td class="detail-difference price-gain">+10.00</td>' in page
     assert '<td class="detail-percent price-gain">+10.00%</td>' in page
     assert "Entry is the scanner suggestion, not an actual purchase price." in page
@@ -862,6 +867,8 @@ def test_top_twenty_details_handles_missing_entry_without_false_change():
 
     assert 'data-symbol="MISSING" data-entry=""' in page
     assert '<td class="detail-entry">Unavailable</td>' in page
+    assert '<td class="detail-support-low">Unavailable</td>' in page
+    assert '<td class="detail-resistance-low">Unavailable</td>' in page
     assert '<td class="detail-difference ">Unavailable</td>' in page
     assert '<td class="detail-percent ">Unavailable</td>' in page
 
