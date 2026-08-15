@@ -227,6 +227,8 @@ def _build_top_twenty_details(dataframe):
             continue
         entry = _optional_number(row.get("Entry"))
         current = _optional_number(row.get("Current Price"))
+        support_low = _optional_number(row.get("Support Low"))
+        resistance_low = _optional_number(row.get("Resistance Low"))
         difference = (
             current - entry
             if entry is not None and entry > 0 and current is not None
@@ -242,6 +244,8 @@ def _build_top_twenty_details(dataframe):
                 "symbol": symbol,
                 "entry": entry,
                 "current": current,
+                "support_low": support_low,
+                "resistance_low": resistance_low,
                 "difference": difference,
                 "change_percent": change_percent,
             }
@@ -647,12 +651,24 @@ def _generate_html(dataframe, scan_time, page_key=None, chart_data=None):
             if detail["current"] is not None
             else "Unavailable"
         )
+        support_low_text = (
+            f"${detail['support_low']:,.2f}"
+            if detail["support_low"] is not None
+            else "Unavailable"
+        )
+        resistance_low_text = (
+            f"${detail['resistance_low']:,.2f}"
+            if detail["resistance_low"] is not None
+            else "Unavailable"
+        )
         detail_rows.append(
             f'<tr data-symbol="{_escape_html(detail["symbol"])}" '
             f'data-entry="{_data_number(detail["entry"])}">'
             f'<td>{_escape_html(detail["symbol"])}</td>'
             f'<td class="detail-entry">{entry_text}</td>'
             f'<td class="detail-current">{current_text}</td>'
+            f'<td class="detail-support-low">{support_low_text}</td>'
+            f'<td class="detail-resistance-low">{resistance_low_text}</td>'
             f'<td class="detail-difference {change_class}">{difference_text}</td>'
             f'<td class="detail-percent {change_class}">{percent_text}</td>'
             "</tr>"
@@ -664,7 +680,8 @@ def _generate_html(dataframe, scan_time, page_key=None, chart_data=None):
         "actual purchase price.</p>"
         '<div class="table-wrapper"><table id="top20DetailsTable">'
         "<thead><tr><th>Symbol</th><th>Suggested Entry</th>"
-        "<th>Current Price</th><th>Difference</th><th>Change %</th></tr></thead>"
+        "<th>Current Price</th><th>Support Low</th><th>Resistance Low</th>"
+        "<th>Difference</th><th>Change %</th></tr></thead>"
         f"<tbody>{''.join(detail_rows)}</tbody></table></div></details>"
         if detail_rows
         else ""
