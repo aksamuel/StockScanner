@@ -1,4 +1,4 @@
-# StockScanner v2.10.2
+# StockScanner v2.10.3
 
 [![Stock Scanner](https://github.com/aksamuel/StockScanner/actions/workflows/scan.yml/badge.svg)](https://github.com/aksamuel/StockScanner/actions/workflows/scan.yml)
 

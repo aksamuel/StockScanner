@@ -217,11 +217,11 @@ def _optional_number(value):
 
 
 def _build_top_twenty_details(dataframe):
-    """Build suggested-entry comparison rows in default scanner order."""
+    """Build up to 20 qualifying detail rows in default scanner order."""
     details = []
     if dataframe.empty or "Symbol" not in dataframe.columns:
         return details
-    for _, row in dataframe.head(TOP_RESULTS).iterrows():
+    for _, row in dataframe.iterrows():
         symbol = str(row.get("Symbol", "")).strip()
         if not symbol:
             continue
@@ -229,6 +229,12 @@ def _build_top_twenty_details(dataframe):
         current = _optional_number(row.get("Current Price"))
         support_low = _optional_number(row.get("Support Low"))
         resistance_low = _optional_number(row.get("Resistance Low"))
+        if (
+            current is not None
+            and resistance_low is not None
+            and current >= resistance_low
+        ):
+            continue
         difference = (
             current - entry
             if entry is not None and entry > 0 and current is not None
@@ -250,6 +256,8 @@ def _build_top_twenty_details(dataframe):
                 "change_percent": change_percent,
             }
         )
+        if len(details) == TOP_RESULTS:
+            break
     return details
 
 
@@ -661,12 +669,32 @@ def _generate_html(dataframe, scan_time, page_key=None, chart_data=None):
             if detail["resistance_low"] is not None
             else "Unavailable"
         )
+        current_class = (
+            " below-support"
+            if (
+                detail["current"] is not None
+                and detail["support_low"] is not None
+                and detail["current"] < detail["support_low"]
+            )
+            else ""
+        )
+        entry_class = (
+            " entry-opportunity"
+            if (
+                detail["current"] is not None
+                and detail["entry"] is not None
+                and detail["current"] < detail["entry"]
+            )
+            else ""
+        )
         detail_rows.append(
             f'<tr data-symbol="{_escape_html(detail["symbol"])}" '
-            f'data-entry="{_data_number(detail["entry"])}">'
-            f'<td>{_escape_html(detail["symbol"])}</td>'
-            f'<td class="detail-entry">{entry_text}</td>'
-            f'<td class="detail-current">{current_text}</td>'
+            f'data-entry="{_data_number(detail["entry"])}" '
+            f'data-support-low="{_data_number(detail["support_low"])}" '
+            f'data-resistance-low="{_data_number(detail["resistance_low"])}">'
+            f'<td>{_escape_html(detail["symbol"])} '
+            f'<span class="detail-current{current_class}">({current_text})</span></td>'
+            f'<td class="detail-entry{entry_class}">{entry_text}</td>'
             f'<td class="detail-support-low">{support_low_text}</td>'
             f'<td class="detail-resistance-low">{resistance_low_text}</td>'
             f'<td class="detail-difference {change_class}">{difference_text}</td>'
@@ -675,12 +703,12 @@ def _generate_html(dataframe, scan_time, page_key=None, chart_data=None):
         )
     top_twenty_details_markup = (
         '<details class="top20-drilldown">'
-        "<summary>Top 20 Details: Suggested Entry vs Current Price</summary>"
+        "<summary>Top 20 Qualifying Stocks: Suggested Entry vs Current Price</summary>"
         '<p class="chart-explanation">Entry is the scanner suggestion, not an '
-        "actual purchase price.</p>"
+        "actual purchase price. Symbols at or above Resistance Low are excluded.</p>"
         '<div class="table-wrapper"><table id="top20DetailsTable">'
         "<thead><tr><th>Symbol</th><th>Suggested Entry</th>"
-        "<th>Current Price</th><th>Support Low</th><th>Resistance Low</th>"
+        "<th>Support Low</th><th>Resistance Low</th>"
         "<th>Difference</th><th>Change %</th></tr></thead>"
         f"<tbody>{''.join(detail_rows)}</tbody></table></div></details>"
         if detail_rows
@@ -1100,6 +1128,8 @@ header .subtitle {{ color: #90a4ae; text-align: center; margin-top: 4px; font-si
 .top20-drilldown .table-wrapper {{ margin-top: 10px; }}
 .price-gain {{ color: #66bb6a; font-weight: 600; }}
 .price-loss {{ color: #ef5350; font-weight: 600; }}
+.below-support {{ color: #66bb6a; font-weight: 600; }}
+.entry-opportunity {{ background: #1b5e20; color: #fff; font-weight: 600; }}
 .table-wrapper {{
     overflow-x: auto;
     border-radius: 8px;
@@ -1352,11 +1382,36 @@ function updateTop20Details(prices) {{
         const current = Number(prices[row.dataset.symbol]);
         if (!Number.isFinite(current) || current <= 0) return;
         const entry = Number(row.dataset.entry);
-        row.querySelector('.detail-current').textContent =
-            `$${{current.toLocaleString('en-US', {{
+        const supportLow = Number(row.dataset.supportLow);
+        const resistanceLow = Number(row.dataset.resistanceLow);
+        if (
+            row.dataset.resistanceLow !== ''
+            && Number.isFinite(resistanceLow)
+            && current >= resistanceLow
+        ) {{
+            row.remove();
+            return;
+        }}
+        const currentCell = row.querySelector('.detail-current');
+        const entryCell = row.querySelector('.detail-entry');
+        currentCell.textContent =
+            `($${{current.toLocaleString('en-US', {{
                 minimumFractionDigits: 2,
                 maximumFractionDigits: 2,
-            }})}}`;
+            }})}})`;
+        currentCell.classList.toggle(
+            'below-support',
+            row.dataset.supportLow !== ''
+                && Number.isFinite(supportLow)
+                && current < supportLow
+        );
+        entryCell.classList.toggle(
+            'entry-opportunity',
+            row.dataset.entry !== ''
+                && Number.isFinite(entry)
+                && entry > 0
+                && current < entry
+        );
         if (!Number.isFinite(entry) || entry <= 0 || row.dataset.entry === '') return;
         const difference = current - entry;
         const changePercent = difference / entry * 100;
