@@ -829,16 +829,26 @@ def test_kpi_chart_renders_exactly_two_indexed_line_series():
     assert "not raw dollars" in page
     assert "Recommendation Breakdown" not in page
     assert "recChart" not in page
-    assert "Top 20 Details: Suggested Entry vs Current Price" in page
+    assert "Top 20 Qualifying Stocks: Suggested Entry vs Current Price" in page
     assert 'id="top20DetailsTable"' in page
-    assert 'data-symbol="AAA" data-entry="100.0"' in page
-    assert '<td class="detail-current">$110.00</td>' in page
+    assert (
+        'data-symbol="AAA" data-entry="100.0" data-support-low="95.0" '
+        'data-resistance-low="120.0"'
+        in page
+    )
+    assert '<span class="detail-current">($110.00)</span>' in page
+    assert "<th>Current Price</th>" not in page
     assert "<th>Support Low</th><th>Resistance Low</th>" in page
     assert '<td class="detail-support-low">$95.00</td>' in page
     assert '<td class="detail-resistance-low">$120.00</td>' in page
     assert '<td class="detail-difference price-gain">+10.00</td>' in page
     assert '<td class="detail-percent price-gain">+10.00%</td>' in page
     assert "Entry is the scanner suggestion, not an actual purchase price." in page
+    assert "Symbols at or above Resistance Low are excluded." in page
+    assert "current >= resistanceLow" in page
+    assert "row.remove();" in page
+    assert "current < supportLow" in page
+    assert "current < entry" in page
     assert "updateTop20Details(snapshot.prices)" in page
 
 
@@ -865,12 +875,96 @@ def test_top_twenty_details_handles_missing_entry_without_false_change():
         chart_data=None,
     )
 
-    assert 'data-symbol="MISSING" data-entry=""' in page
+    assert (
+        'data-symbol="MISSING" data-entry="" data-support-low="" '
+        'data-resistance-low=""'
+        in page
+    )
     assert '<td class="detail-entry">Unavailable</td>' in page
     assert '<td class="detail-support-low">Unavailable</td>' in page
     assert '<td class="detail-resistance-low">Unavailable</td>' in page
     assert '<td class="detail-difference ">Unavailable</td>' in page
     assert '<td class="detail-percent ">Unavailable</td>' in page
+
+
+def test_top_twenty_details_excludes_prices_at_or_above_resistance_low():
+    details = html_report._build_top_twenty_details(
+        pd.DataFrame(
+            [
+                {
+                    "Symbol": "BELOW",
+                    "Current Price": 99,
+                    "Resistance Low": 100,
+                },
+                {
+                    "Symbol": "EQUAL",
+                    "Current Price": 100,
+                    "Resistance Low": 100,
+                },
+                {
+                    "Symbol": "ABOVE",
+                    "Current Price": 101,
+                    "Resistance Low": 100,
+                },
+                {
+                    "Symbol": "MISSING",
+                    "Current Price": 101,
+                    "Resistance Low": None,
+                },
+            ]
+        )
+    )
+
+    assert [detail["symbol"] for detail in details] == ["BELOW", "MISSING"]
+
+
+def test_top_twenty_details_backfills_from_full_ranked_scan():
+    rows = [
+        {
+            "Symbol": f"EXCLUDED{index}",
+            "Current Price": 100,
+            "Resistance Low": 100,
+        }
+        for index in range(15)
+    ]
+    rows.extend(
+        {
+            "Symbol": f"QUALIFIED{index}",
+            "Current Price": 99,
+            "Resistance Low": 100,
+        }
+        for index in range(25)
+    )
+
+    details = html_report._build_top_twenty_details(pd.DataFrame(rows))
+
+    assert len(details) == 20
+    assert details[0]["symbol"] == "QUALIFIED0"
+    assert details[-1]["symbol"] == "QUALIFIED19"
+
+
+def test_top_twenty_details_highlights_entry_and_below_support_opportunities():
+    page = _generate_html(
+        pd.DataFrame(
+            [
+                {
+                    "Symbol": "OPPORTUNITY",
+                    "Entry": 90,
+                    "Current Price": 80,
+                    "Support Low": 85,
+                    "Resistance Low": 100,
+                }
+            ]
+        ),
+        "15 August 2026, 10:00 AM EDT",
+        page_key="landing",
+        chart_data=None,
+    )
+
+    assert '<td class="detail-entry entry-opportunity">$90.00</td>' in page
+    assert '<span class="detail-current below-support">($80.00)</span>' in page
+    assert ".below-support { color: #66bb6a;" in page
+    assert ".entry-opportunity { background: #1b5e20;" in page
 
 
 def test_html_export_creates_three_stable_linked_pages(tmp_path, monkeypatch):
