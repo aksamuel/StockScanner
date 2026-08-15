@@ -69,7 +69,24 @@ jobs:
             echo "A request can add at most 50 tickers." >&2
             exit 1
           fi
+          mapfile -t REASON_MARKERS < <(grep -oE '<!-- stockscanner-exception-reason-base64: [A-Za-z0-9+/=]+ -->' <<< "$REQUEST_BODY")
+          if [[ "${#REASON_MARKERS[@]}" -gt 1 ]]; then
+            echo "The request can contain at most one reason marker." >&2
+            exit 1
+          fi
+          if [[ "${#REASON_MARKERS[@]}" -eq 1 ]]; then
+            REASON_BASE64="${REASON_MARKERS[0]#<!-- stockscanner-exception-reason-base64: }"
+            REASON_BASE64="${REASON_BASE64% -->}"
+            REASON="$(printf '%s' "$REASON_BASE64" | base64 --decode)"
+            if [[ -z "$REASON" || "${#REASON}" -gt 200 || "$REASON" == *$'\n'* || "$REASON" == *$'\r'* ]]; then
+              echo "The exception reason must be one line of 200 characters or fewer." >&2
+              exit 1
+            fi
+          else
+            REASON_BASE64="$(printf '%s' 'Added from scanner dashboard' | base64 -w 0)"
+          fi
           echo "symbols=$SYMBOLS" >> "$GITHUB_OUTPUT"
+          echo "reason_base64=$REASON_BASE64" >> "$GITHUB_OUTPUT"
 
       - name: Checkout repository
         uses: actions/checkout@v5
@@ -77,8 +94,13 @@ jobs:
           ref: main
 
       - name: Add tickers and regenerate dashboard
+        env:
+          REASON_BASE64: ${{ steps.request.outputs.reason_base64 }}
         run: |
-          python -m stockscanner.add_exception "${{ steps.request.outputs.symbols }}"
+          REASON="$(printf '%s' "$REASON_BASE64" | base64 --decode)"
+          python -m stockscanner.add_exception \
+            "${{ steps.request.outputs.symbols }}" \
+            --reason "$REASON"
           python -m stockscanner.exceptions_dashboard
 
       - name: Commit exception-list update

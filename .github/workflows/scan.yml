@@ -1,4 +1,4 @@
-# Stock Scanner CI Workflow — v2.9.0
+# Stock Scanner CI Workflow — v2.9.1
 # Runs the stock scanner at 9:00 AM New York time on NYSE trading days (Mon-Fri)
 # or on-demand via the GitHub mobile app / Actions tab.
 # Generates an HTML dashboard and deploys it to GitHub Pages.
