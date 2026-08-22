@@ -1,7 +1,7 @@
 [project]
 name = "stockscanner"
-version = "2.10.3"
-description = "StockScanner — NYSE stock scanner with interactive HTML dashboard, position sizing, and GitHub Pages deployment."
+version = "2.11.0"
+description = "StockScanner — NYSE stock scanner with interactive HTML dashboard, position sizing, GitHub Pages deployment, and ChatGPT AI integration."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
@@ -13,9 +13,11 @@ dependencies = [
   "numpy",
   "yfinance",
   "ta",
-  "openpyxl"
+  "openpyxl",
+  "openai>=1.0.0",
+  "python-dotenv>=0.19.0"
 ]
-keywords = ["stock", "scanner", "finance", "yfinance", "nyse", "dashboard", "position-sizing"]
+keywords = ["stock", "scanner", "finance", "yfinance", "nyse", "dashboard", "position-sizing", "chatgpt", "ai"]
 classifiers = [
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.11",
