@@ -13,3 +13,9 @@ EXCEPTION_LIST = "watchlists/exceptions.csv"
 MIN_PRICE = 1.0
 MIN_AVERAGE_DOLLAR_VOLUME = 5_000_000
 AVERAGE_VOLUME_DAYS = 20
+
+# ChatGPT AI Integration Settings
+CHATGPT_ENABLED = True  # Enable/disable AI features
+CHATGPT_MODEL = "gpt-4-turbo-preview"  # Default OpenAI model
+CHATGPT_TEMPERATURE = 0.7  # Sampling temperature (0-2)
+CHATGPT_MAX_TOKENS = 2000  # Max response length
