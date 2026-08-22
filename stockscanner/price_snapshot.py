@@ -278,9 +278,13 @@ def refresh_snapshot(
             "Yahoo returned no valid intraday prices; the prior snapshot was preserved"
         )
 
+    # In production, record when collection completed rather than when the
+    # potentially long series of Yahoo requests started. Tests and callers
+    # that inject ``now`` retain deterministic timestamps.
+    generated_at = local if now is not None else datetime.now(NEW_YORK)
     payload = _snapshot_payload(
         prices,
-        local,
+        generated_at,
         source="hourly_yahoo",
         failures=failures,
         price_timestamp=max(price_timestamps) if price_timestamps else None,
