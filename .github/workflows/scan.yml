@@ -9,6 +9,16 @@ run-name: >-
     && 'manual Yahoo refresh' || 'scheduled scan' }})
 
 on:
+  # Deploy Auth-related changes without waiting for a scheduled market scan.
+  push:
+    branches:
+      - main
+    paths:
+      - "auth.js"
+      - "login.html"
+      - "tools/inject_auth.py"
+      - ".github/workflows/scan.yml"
+
   # Manual server-side Yahoo refresh from the Actions page.
   workflow_dispatch:
     inputs:
@@ -129,7 +139,9 @@ jobs:
       - name: Deploy Dashboard as landing page
         if: ${{ always() }}
         run: |
-          python -m stockscanner.exceptions_dashboard
+          if [ "${{ github.event_name }}" != "push" ]; then
+            python -m stockscanner.exceptions_dashboard
+          fi
           touch .nojekyll
           touch reports/.nojekyll
           # Publish the latest linked report pages at stable site paths
