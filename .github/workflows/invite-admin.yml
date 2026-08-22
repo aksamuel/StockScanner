@@ -1,0 +1,41 @@
+name: Invite StockScanner Admin
+
+on:
+  workflow_dispatch:
+    inputs:
+      admin_email:
+        description: Email address to invite or promote as administrator
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: invite-stockscanner-admin
+  cancel-in-progress: false
+
+jobs:
+  invite:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+
+      - name: Install pinned Supabase client
+        run: npm install --no-save --ignore-scripts @supabase/supabase-js@2.112.3
+
+      - name: Invite or promote administrator
+        env:
+          ADMIN_EMAIL: ${{ inputs.admin_email }}
+          ADMIN_REDIRECT_URL: https://aksamuel.github.io/StockScanner/login.html
+          SUPABASE_URL: https://cszzbkssxxgwgafwuonc.supabase.co
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: node .github/scripts/invite-admin.mjs
