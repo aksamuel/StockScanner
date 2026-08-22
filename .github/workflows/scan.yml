@@ -158,6 +158,16 @@ jobs:
           EOF
           fi
 
+      - name: Apply Supabase Auth guard
+        if: ${{ always() }}
+        run: |
+          python tools/inject_auth.py \
+            index.html \
+            technical.html \
+            analysts.html \
+            bought-selection.html \
+            exceptions.html
+
       - name: Commit generated report pages
         if: ${{ always() }}
         run: |
