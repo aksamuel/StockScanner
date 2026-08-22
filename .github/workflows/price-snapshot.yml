@@ -21,6 +21,8 @@ concurrency:
 jobs:
   refresh:
     runs-on: ubuntu-latest
+    environment:
+      name: github-pages
     outputs:
       snapshot_changed: ${{ steps.commit.outputs.changed }}
     steps:
