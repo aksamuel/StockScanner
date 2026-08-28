@@ -1,4 +1,5 @@
 import argparse
+import os
 
 from .scan import scan_nyse, scan_watchlist
 
@@ -27,6 +28,12 @@ def parse_args():
         "--force-download",
         action="store_true",
         help="Force download of the latest NYSE ticker universe file."
+    )
+    parser.add_argument(
+        "--universe-source",
+        choices=("download", "supabase"),
+        default="download",
+        help="Load the NYSE universe from a live download or Supabase.",
     )
     parser.add_argument(
         "--parallel",
@@ -88,6 +95,9 @@ def main():
             export_to_excel=not args.no_report,
             limit=args.limit,
             force_download=args.force_download,
+            universe_source=args.universe_source,
+            supabase_url=os.environ.get("SUPABASE_URL", ""),
+            supabase_secret_key=os.environ.get("SUPABASE_SECRET_KEY", ""),
             parallel=args.parallel,
             max_workers=args.workers,
             batch_reports=args.batch_reports,

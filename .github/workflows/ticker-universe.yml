@@ -1,0 +1,49 @@
+name: Daily NYSE Ticker Universe
+
+on:
+  workflow_dispatch:
+  # GitHub cron is UTC-only. Running at both candidate UTC hours and applying
+  # New York/date guards in Python produces one refresh at 08:00 through DST.
+  schedule:
+    - cron: "0 12,13 * * 1-5"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: "nyse-ticker-universe"
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install -e ".[dev]"
+
+      - name: Test ticker-universe storage
+        run: pytest -q tests/test_ticker_universe_store.py
+
+      - name: Replace the current Supabase ticker universe
+        env:
+          SUPABASE_URL: https://cszzbkssxxgwgafwuonc.supabase.co
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          FORCE_FLAG=""
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            FORCE_FLAG="--force"
+          fi
+          python -m stockscanner.ticker_universe_store $FORCE_FLAG

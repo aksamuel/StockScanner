@@ -133,3 +133,18 @@ to the StockScanner Supabase project:
 The administrator `aaksamuel@zohomail.com` can then open `admin.html` and permit
 an email address. Only permitted email addresses can create an account. Supabase
 Auth manages password hashes; StockScanner never stores user passwords.
+
+## Store the current NYSE universe in Supabase
+
+Apply `supabase/migrations/20260828093000_store_latest_market_data.sql`, then
+keep `SUPABASE_SECRET_KEY` in the protected GitHub `github-pages` environment.
+The **Daily NYSE Ticker Universe** workflow refreshes `public.nyse_tickers`
+once each weekday at or after 8:00 AM New York time. It uses both possible UTC
+hours plus database date guards so daylight-saving changes and delayed GitHub
+jobs do not create duplicate downloads.
+
+The production universe scan reads the current rows from Supabase. Each refresh
+atomically replaces the table; ticker history is not retained. The same
+migration changes `public.price_snapshots` to retain only the latest
+`hourly_yahoo` payload, and the hourly workflow writes only when `prices.json`
+actually changed during that run.

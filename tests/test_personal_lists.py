@@ -65,3 +65,17 @@ def test_pages_deploy_when_personal_list_files_change():
         "personal-lists.js",
     ):
         assert f'- "{path}"' in workflow
+
+
+def test_bought_page_calculates_latest_profit_and_loss_percentage():
+    page = read("my-bought-selection.html")
+    styles = read("personal-lists.css")
+
+    assert "<th>Symbol</th><th>Profit / Loss %</th>" in page
+    assert '.from("price_snapshots")' in page
+    assert '.eq("source", "hourly_yahoo")' in page
+    assert "((currentPrice - purchasedPrice) / purchasedPrice) * 100" in page
+    assert 'profitLoss > 0 ? "pl-profit"' in page
+    assert 'profitLoss < 0 ? "pl-loss"' in page
+    assert "td.pl-profit" in styles
+    assert "td.pl-loss" in styles

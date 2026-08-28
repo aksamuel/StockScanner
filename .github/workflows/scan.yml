@@ -73,6 +73,8 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    environment:
+      name: github-pages
 
     steps:
       - name: Checkout repository
@@ -113,6 +115,9 @@ jobs:
 
       - name: Run scanner (universe mode)
         if: github.event.inputs.mode == 'universe' || github.event_name == 'schedule'
+        env:
+          SUPABASE_URL: https://cszzbkssxxgwgafwuonc.supabase.co
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
         run: |
           LIMIT_FLAG=""
           if [ "${{ inputs.limit }}" != "0" ] && [ -n "${{ inputs.limit }}" ]; then
@@ -120,7 +125,7 @@ jobs:
           fi
           python -m stockscanner.cli \
             --universe \
-            --force-download \
+            --universe-source supabase \
             --parallel \
             --workers ${{ inputs.workers || 20 }} \
             --portfolio ${{ inputs.portfolio || 50000 }} \

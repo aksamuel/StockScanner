@@ -68,3 +68,9 @@ def test_account_bar_displays_user_identity_at_top_right():
     assert 'identity.textContent = `User: ${displayName}`' in source
     assert 'controls.style.top = "10px"' in source
     assert 'controls.style.bottom = "auto"' in source
+
+
+def test_login_actions_stack_on_narrow_mobile_screens():
+    source = read("login.html")
+    assert "@media (max-width: 480px)" in source
+    assert ".actions { grid-template-columns: 1fr; }" in source

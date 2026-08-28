@@ -89,6 +89,10 @@ th, td { padding: 12px; border-bottom: 1px solid #334b5f; text-align: left; }
 th { color: #b3e5fc; background: #142433; white-space: nowrap; }
 tr:last-child td { border-bottom: 0; }
 td.symbol { color: #81d4fa; font-weight: 750; }
+td.pl-profit { color: #66bb6a; font-weight: 750; }
+td.pl-loss { color: #ef5350; font-weight: 750; }
+td.pl-neutral { color: #e0e0e0; font-weight: 750; }
+td.pl-unavailable { color: #90a4ae; }
 .empty { padding: 24px; color: #90a4ae; text-align: center; }
 #message { min-height: 24px; margin: 12px 0; color: #ffcc80; }
 #message.success { color: #a5d6a7; }

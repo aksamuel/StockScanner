@@ -1,11 +1,14 @@
-# StockScanner v2.11.0
+# StockScanner v2.12.0
 
 [![Stock Scanner](https://github.com/aksamuel/StockScanner/actions/workflows/scan.yml/badge.svg)](https://github.com/aksamuel/StockScanner/actions/workflows/scan.yml)
 
 StockScanner scans a watchlist or the NYSE universe, calculates technical and
 analyst signals, sizes positions, and produces Excel and GitHub Pages reports.
 
-**NEW in v2.11.0: AI-Powered Features with ChatGPT Integration** 🤖
+**Stable release: v2.12.0** — Supabase-backed current market data, personal
+portfolio profit/loss, and production-responsive dashboards.
+
+AI-powered features with ChatGPT integration were introduced in v2.11.0. 🤖
 
 ## Features
 

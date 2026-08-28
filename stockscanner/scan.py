@@ -8,6 +8,7 @@ from stockscanner.config import (
     TOP_RESULTS,
 )
 from stockscanner.universe import load_nyse_tickers
+from stockscanner.ticker_universe_store import load_latest_ticker_universe
 from stockscanner.watchlist import load_watchlist
 from stockscanner.market_data import (
     completed_daily_data,
@@ -439,13 +440,20 @@ def scan_watchlist(export_to_excel=True, parallel=False, max_workers=10, batch_r
     )
 
 
-def scan_nyse(export_to_excel=True, limit=None, force_download=False, parallel=False, max_workers=10, batch_reports=False, quiet=False, progress=False, html_report=False, available_cash=1000, risk_percent=1):
+def scan_nyse(export_to_excel=True, limit=None, force_download=False, universe_source="download", supabase_url="", supabase_secret_key="", parallel=False, max_workers=10, batch_reports=False, quiet=False, progress=False, html_report=False, available_cash=1000, risk_percent=1):
     try:
-        tickers = load_nyse_tickers(
-            force_download=force_download,
-            limit=limit,
-            use_yfinance=True,
-        )
+        if universe_source == "supabase":
+            tickers = load_latest_ticker_universe(
+                supabase_url=supabase_url,
+                secret_key=supabase_secret_key,
+                limit=limit,
+            )
+        else:
+            tickers = load_nyse_tickers(
+                force_download=force_download,
+                limit=limit,
+                use_yfinance=True,
+            )
     except Exception as error:
         print(f"Could not load NYSE universe: {error}")
         raise SystemExit(1)

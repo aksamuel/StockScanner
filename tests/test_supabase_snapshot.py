@@ -65,7 +65,7 @@ def test_store_snapshot_uses_secret_key_only_as_apikey_header():
 
     request = captured["request"]
     assert request.full_url.endswith(
-        "/rest/v1/price_snapshots?on_conflict=generated_at%2Csource"
+        "/rest/v1/price_snapshots?on_conflict=source"
     )
     assert request.get_header("Apikey") == "sb_secret_test"
     assert request.get_header("Authorization") is None
@@ -80,3 +80,11 @@ def test_store_snapshot_requires_backend_credentials():
             supabase_url="https://example.supabase.co",
             secret_key="",
         )
+
+
+def test_snapshot_record_rejects_non_hourly_sources():
+    payload = sample_payload()
+    payload["source"] = "full_scan"
+
+    with pytest.raises(SupabaseSnapshotError, match="only the latest hourly_yahoo"):
+        snapshot_record(payload)

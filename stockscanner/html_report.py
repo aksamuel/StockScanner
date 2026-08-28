@@ -1094,7 +1094,8 @@ header .subtitle {{ color: #90a4ae; text-align: center; margin-top: 4px; font-si
     border: 1px solid #263d50;
     border-radius: 8px;
     padding: 20px;
-    max-width: 600px;
+    width: 100%;
+    max-width: none;
     margin: 0 auto 32px;
 }}
 .refresh-time {{
@@ -1250,6 +1251,22 @@ tr:hover {{ background: #1e3348; }}
 #targetSortStatus.refresh-success {{ color: #a5d6a7; }}
 .select-column {{ width: 48px; text-align: center; }}
 .select-column input {{ width: 18px; height: 18px; cursor: pointer; accent-color: #4caf50; }}
+@media (max-width: 720px) {{
+    .container {{ padding: 12px; }}
+    header {{ padding: 18px 0; margin-bottom: 16px; }}
+    header h1 {{ font-size: 1.45rem; }}
+    .dashboard-nav a,
+    .dashboard-nav .nav-current {{ margin: 3px 1px; padding: 7px 10px; }}
+    .cards {{ grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; }}
+    .chart-container {{ padding: 12px; }}
+    .filter-bar {{ align-items: stretch; }}
+    .filter-bar input {{ width: 100%; }}
+    .target-sort-controls {{ width: 100%; }}
+    .tabs {{ overflow-x: auto; }}
+    .tab {{ flex: 0 0 auto; padding: 8px 14px; }}
+    th {{ padding: 9px 10px; }}
+    td {{ padding: 8px 10px; }}
+}}
 footer {{
     text-align: center;
     color: #607d8b;

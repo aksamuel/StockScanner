@@ -31,6 +31,10 @@ def snapshot_record(payload):
         raise SupabaseSnapshotError("Snapshot failures must be a JSON object")
     if not payload.get("generated_at") or not payload.get("source"):
         raise SupabaseSnapshotError("Snapshot requires generated_at and source")
+    if payload["source"] != "hourly_yahoo":
+        raise SupabaseSnapshotError(
+            "Supabase stores only the latest hourly_yahoo price snapshot"
+        )
 
     updated_symbols = payload.get("updated_symbols", [])
     return {
@@ -60,7 +64,7 @@ def store_snapshot(
     if not secret_key:
         raise SupabaseSnapshotError("SUPABASE_SECRET_KEY is required")
 
-    query = urlencode({"on_conflict": "generated_at,source"})
+    query = urlencode({"on_conflict": "source"})
     endpoint = f"{supabase_url.rstrip('/')}/rest/v1/price_snapshots?{query}"
     headers = {
         "apikey": secret_key,

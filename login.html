@@ -21,6 +21,11 @@
     button:disabled { cursor: wait; opacity: .65; }
     #message { min-height: 24px; margin: 16px 0 0; color: #ffcc80; font-size: .9rem; }
     #message.success { color: #a5d6a7; }
+    @media (max-width: 480px) {
+      body { padding: 14px; }
+      main { padding: 22px 18px; }
+      .actions { grid-template-columns: 1fr; }
+    }
   </style>
 </head>
 <body>

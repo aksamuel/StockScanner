@@ -48,7 +48,7 @@
     </div>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>Symbol</th><th>Quantity</th><th>Buy price</th><th>Bought date</th><th>Notes</th><th>Action</th></tr></thead>
+        <thead><tr><th>Symbol</th><th>Profit / Loss %</th><th>Quantity</th><th>Buy price</th><th>Bought date</th><th>Notes</th><th>Action</th></tr></thead>
         <tbody id="rows"></tbody>
       </table>
       <div id="empty" class="empty" hidden>No stocks in your bought list.</div>
@@ -75,6 +75,7 @@
     const user = await requireApprovedUser();
     const priceFormat = new Intl.NumberFormat(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 });
     let selections = [];
+    let latestPrices = {};
 
     if (user) {
       boughtOn.value = localDateValue();
@@ -110,17 +111,28 @@
     filter.addEventListener("input", renderSelections);
 
     async function loadSelections() {
-      const { data, error } = await supabase
-        .from("user_bought_selections")
-        .select("id,symbol,quantity,buy_price,bought_on,notes")
-        .eq("user_id", user.id)
-        .order("symbol");
-      if (error) {
-        setMessage(message, error.message);
+      const [selectionResult, priceResult] = await Promise.all([
+        supabase
+          .from("user_bought_selections")
+          .select("id,symbol,quantity,buy_price,bought_on,notes")
+          .eq("user_id", user.id)
+          .order("symbol"),
+        supabase
+          .from("price_snapshots")
+          .select("prices,price_timestamp,generated_at")
+          .eq("source", "hourly_yahoo")
+          .maybeSingle(),
+      ]);
+      if (selectionResult.error) {
+        setMessage(message, selectionResult.error.message);
         return;
       }
-      selections = data;
-      count.textContent = `${data.length} selection${data.length === 1 ? "" : "s"}`;
+      if (priceResult.error) {
+        setMessage(message, `Bought selections loaded, but current prices are unavailable: ${priceResult.error.message}`);
+      }
+      latestPrices = priceResult.data?.prices || {};
+      selections = selectionResult.data;
+      count.textContent = `${selections.length} selection${selections.length === 1 ? "" : "s"}`;
       renderSelections();
     }
 
@@ -135,6 +147,18 @@
 
     function selectionRow(item) {
       const row = document.createElement("tr");
+      const currentPrice = Number(latestPrices[item.symbol]);
+      const purchasedPrice = Number(item.buy_price);
+      const profitLoss = Number.isFinite(currentPrice) && currentPrice >= 0 && purchasedPrice > 0
+        ? ((currentPrice - purchasedPrice) / purchasedPrice) * 100
+        : null;
+      const profitLossCell = tableCell(
+        profitLoss === null ? "Unavailable" : `${profitLoss >= 0 ? "+" : ""}${profitLoss.toFixed(2)}%`,
+        profitLoss === null ? "pl-unavailable" : profitLoss > 0 ? "pl-profit" : profitLoss < 0 ? "pl-loss" : "pl-neutral",
+      );
+      if (profitLoss !== null) {
+        profitLossCell.title = `Latest price: $${priceFormat.format(currentPrice)}`;
+      }
       const action = document.createElement("td");
       const remove = document.createElement("button");
       remove.type = "button";
@@ -157,7 +181,7 @@
       });
       action.append(remove);
       row.append(
-        tableCell(item.symbol, "symbol"), tableCell(Number(item.quantity).toLocaleString()),
+        tableCell(item.symbol, "symbol"), profitLossCell, tableCell(Number(item.quantity).toLocaleString()),
         tableCell(`$${priceFormat.format(Number(item.buy_price))}`), tableCell(formatDate(item.bought_on)),
         tableCell(item.notes || "—"), action,
       );

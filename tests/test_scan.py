@@ -513,6 +513,9 @@ def test_three_report_pages_have_requested_columns_navigation_and_selection():
     assert "One-Year Performance: S&amp;P 500 vs Equal-Weight Top 20" in pages["landing"]
     assert "Performance chart unavailable" in pages["landing"]
     assert '<canvas id="performanceChart"' not in pages["landing"]
+    assert "width: 100%;\n    max-width: none;" in pages["landing"]
+    assert "@media (max-width: 720px)" in pages["landing"]
+    assert ".filter-bar input { width: 100%; }" in pages["technical"]
     assert '<table id="topTable">' not in pages["landing"]
     for page_key in ["technical", "analysts", "bought-selection"]:
         assert "One-Year Performance" not in pages[page_key]
