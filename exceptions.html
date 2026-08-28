@@ -127,18 +127,12 @@ tr:hover .expired-date { background: #c62828; }
 .empty { padding: 24px; color: #90a4ae; text-align: center; }
 footer { margin-top: 30px; color: #607d8b; font-size: 0.8rem; text-align: center; }
 </style>
-<style data-stockscanner-auth>
-html:not(.auth-ready) { visibility: hidden; }
-.stockscanner-account { position: fixed; right: 14px; bottom: 14px; z-index: 9999; display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid #3b5368; border-radius: 8px; background: #0f1923; color: #b0bec5; font: 12px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; box-shadow: 0 6px 22px #0008; }
-.stockscanner-account button { padding: 5px 9px; border: 1px solid #4fc3f7; border-radius: 5px; color: #4fc3f7; background: transparent; cursor: pointer; }
-</style>
-<script type="module" src="/StockScanner/auth.js" data-stockscanner-auth></script>
 </head>
 <body>
 <header>
     <div class="container">
         <h1>Stock Exception List</h1>
-        <div class="subtitle">Updated: 28 August 2026, 09:41 AM</div>
+        <div class="subtitle">Updated: 28 August 2026, 10:28 AM</div>
         <div class="nav">
             <a href="index.html">KPI Dashboard</a>
             <a href="technical.html">Technical Analysis</a>
@@ -149,7 +143,7 @@ html:not(.auth-ready) { visibility: hidden; }
     </div>
 </header>
 <main class="container">
-    <div class="summary"><strong>18</strong><br>Listed exceptions</div>
+    <div class="summary"><strong>0</strong><br>Listed exceptions</div>
     <div class="controls">
         <input id="filter" type="search" placeholder="Filter exceptions..." aria-label="Filter exceptions">
         <div class="add-ticker">
@@ -164,24 +158,7 @@ html:not(.auth-ready) { visibility: hidden; }
     <div class="table-wrap">
         <table id="exceptions">
             <thead><tr><th class="select-column"><input id="selectAll" type="checkbox" aria-label="Select all exceptions"></th><th>Symbol</th><th>Date From</th><th>Date To</th><th>Reason</th></tr></thead>
-            <tbody><tr><td class="select-column"><input class="ticker-select" type="checkbox" value="ANET" aria-label="Select ANET"></td><td>ANET</td><td>17/Aug/2026</td><td>16/Sep/2026</td><td>SCB</td></tr>
-<tr><td class="select-column"><input class="ticker-select" type="checkbox" value="ATI" aria-label="Select ATI"></td><td>ATI</td><td>17/Aug/2026</td><td>16/Sep/2026</td><td>Added from scanner dashboard</td></tr>
-<tr><td class="select-column"><input class="ticker-select" type="checkbox" value="BNY" aria-label="Select BNY"></td><td>BNY</td><td>19/Aug/2026</td><td>18/Sep/2026</td><td>Added from scanner dashboard</td></tr>
-<tr><td class="select-column"><input class="ticker-select" type="checkbox" value="CIB" aria-label="Select CIB"></td><td>CIB</td><td>17/Aug/2026</td><td>16/Sep/2026</td><td>INDstock</td></tr>
-<tr><td class="select-column"><input class="ticker-select" type="checkbox" value="CM" aria-label="Select CM"></td><td>CM</td><td>17/Aug/2026</td><td>16/Sep/2026</td><td>Added from scanner dashboard</td></tr>
-<tr><td class="select-column"><input class="ticker-select" type="checkbox" value="CVE" aria-label="Select CVE"></td><td>CVE</td><td>20/Aug/2026</td><td>19/Sep/2026</td><td>IBKR</td></tr>
-<tr><td class="select-column"><input class="ticker-select" type="checkbox" value="CW" aria-label="Select CW"></td><td>CW</td><td>17/Aug/2026</td><td>16/Sep/2026</td><td>IndStock</td></tr>
-<tr><td class="select-column"><input class="ticker-select" type="checkbox" value="DELL" aria-label="Select DELL"></td><td>DELL</td><td>19/Aug/2026</td><td>18/Sep/2026</td><td>Added from scanner dashboard</td></tr>
-<tr><td class="select-column"><input class="ticker-select" type="checkbox" value="EC" aria-label="Select EC"></td><td>EC</td><td>17/Aug/2026</td><td>16/Sep/2026</td><td>IBKR</td></tr>
-<tr><td class="select-column"><input class="ticker-select" type="checkbox" value="ING" aria-label="Select ING"></td><td>ING</td><td>19/Aug/2026</td><td>18/Sep/2026</td><td>Added from scanner dashboard</td></tr>
-<tr><td class="select-column"><input class="ticker-select" type="checkbox" value="NET" aria-label="Select NET"></td><td>NET</td><td>18/Aug/2026</td><td>17/Sep/2026</td><td>Added from scanner dashboard</td></tr>
-<tr><td class="select-column"><input class="ticker-select" type="checkbox" value="NUE" aria-label="Select NUE"></td><td>NUE</td><td>20/Aug/2026</td><td>19/Sep/2026</td><td>IBKR</td></tr>
-<tr><td class="select-column"><input class="ticker-select" type="checkbox" value="PR" aria-label="Select PR"></td><td>PR</td><td>17/Aug/2026</td><td>16/Sep/2026</td><td>INDstock</td></tr>
-<tr><td class="select-column"><input class="ticker-select" type="checkbox" value="RY" aria-label="Select RY"></td><td>RY</td><td>17/Aug/2026</td><td>16/Sep/2026</td><td>Added from scanner dashboard</td></tr>
-<tr><td class="select-column"><input class="ticker-select" type="checkbox" value="STT" aria-label="Select STT"></td><td>STT</td><td>19/Aug/2026</td><td>18/Sep/2026</td><td>Added from scanner dashboard</td></tr>
-<tr><td class="select-column"><input class="ticker-select" type="checkbox" value="TD" aria-label="Select TD"></td><td>TD</td><td>17/Aug/2026</td><td>16/Sep/2026</td><td>INDstock</td></tr>
-<tr><td class="select-column"><input class="ticker-select" type="checkbox" value="URI" aria-label="Select URI"></td><td>URI</td><td>17/Aug/2026</td><td>16/Sep/2026</td><td>Added from scanner dashboard</td></tr>
-<tr><td class="select-column"><input class="ticker-select" type="checkbox" value="WAT" aria-label="Select WAT"></td><td>WAT</td><td>17/Aug/2026</td><td>16/Sep/2026</td><td>INDstock</td></tr></tbody>
+            <tbody></tbody>
         </table>
         <div id="empty" class="empty" hidden>No matching exceptions found.</div>
     </div>
