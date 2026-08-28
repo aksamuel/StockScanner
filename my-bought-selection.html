@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>My bought selection | StockScanner</title>
+  <link rel="stylesheet" href="/StockScanner/personal-lists.css">
+</head>
+<body>
+  <main>
+    <div class="page-header">
+      <div>
+        <h1>My bought selection</h1>
+        <p class="subtitle">Stocks you selected or purchased, stored only under your account.</p>
+      </div>
+      <nav class="page-nav" aria-label="Personal lists">
+        <a href="/StockScanner/index.html">Dashboard</a>
+        <a href="/StockScanner/my-exceptions.html">My exceptions</a>
+        <a href="/StockScanner/my-bought-selection.html" aria-current="page">My bought list</a>
+      </nav>
+    </div>
+    <section class="panel" aria-labelledby="addTitle">
+      <h2 id="addTitle">Add a bought selection</h2>
+      <form id="boughtForm">
+        <label>Symbol
+          <input id="symbol" data-symbol type="text" maxlength="15" pattern="[A-Za-z0-9][A-Za-z0-9.-]{0,14}" required>
+        </label>
+        <label>Quantity
+          <input id="quantity" type="number" min="0.000001" step="any" value="1" required>
+        </label>
+        <label>Buy price (USD)
+          <input id="buyPrice" type="number" min="0" step="0.000001" required>
+        </label>
+        <label>Bought date
+          <input id="boughtOn" type="date" required>
+        </label>
+        <label class="wide">Notes
+          <input id="notes" type="text" maxlength="500" placeholder="Optional notes">
+        </label>
+        <button type="submit">Add selection</button>
+      </form>
+      <p id="message" role="status" aria-live="polite"></p>
+    </section>
+    <div class="list-toolbar">
+      <span id="count" class="count">0 selections</span>
+      <input id="filter" class="filter" type="search" placeholder="Filter by symbol or notes" aria-label="Filter bought selections">
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Symbol</th><th>Quantity</th><th>Buy price</th><th>Bought date</th><th>Notes</th><th>Action</th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+      <div id="empty" class="empty" hidden>No stocks in your bought list.</div>
+    </div>
+  </main>
+  <script type="module" src="/StockScanner/auth.js" data-stockscanner-auth></script>
+  <script type="module">
+    import {
+      formatDate, localDateValue, requireApprovedUser, setFormBusy,
+      setMessage, supabase, tableCell,
+    } from "/StockScanner/personal-lists.js";
+
+    const form = document.querySelector("#boughtForm");
+    const symbol = document.querySelector("#symbol");
+    const quantity = document.querySelector("#quantity");
+    const buyPrice = document.querySelector("#buyPrice");
+    const boughtOn = document.querySelector("#boughtOn");
+    const notes = document.querySelector("#notes");
+    const filter = document.querySelector("#filter");
+    const rows = document.querySelector("#rows");
+    const empty = document.querySelector("#empty");
+    const message = document.querySelector("#message");
+    const count = document.querySelector("#count");
+    const user = await requireApprovedUser();
+    const priceFormat = new Intl.NumberFormat(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 });
+    let selections = [];
+
+    if (user) {
+      boughtOn.value = localDateValue();
+      await loadSelections();
+    }
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (!user || !form.reportValidity()) return;
+      setFormBusy(form, true);
+      const ticker = symbol.value.trim().toUpperCase();
+      const { error } = await supabase.from("user_bought_selections").insert({
+        user_id: user.id,
+        symbol: ticker,
+        quantity: quantity.value,
+        buy_price: buyPrice.value,
+        bought_on: boughtOn.value,
+        notes: notes.value.trim() || null,
+      });
+      setFormBusy(form, false);
+      if (error) {
+        setMessage(message, error.code === "23505" ? `${ticker} is already in your bought list.` : error.message);
+        return;
+      }
+      form.reset();
+      quantity.value = "1";
+      boughtOn.value = localDateValue();
+      symbol.focus();
+      setMessage(message, `${ticker} was added to your bought list.`, true);
+      await loadSelections();
+    });
+
+    filter.addEventListener("input", renderSelections);
+
+    async function loadSelections() {
+      const { data, error } = await supabase
+        .from("user_bought_selections")
+        .select("id,symbol,quantity,buy_price,bought_on,notes")
+        .eq("user_id", user.id)
+        .order("symbol");
+      if (error) {
+        setMessage(message, error.message);
+        return;
+      }
+      selections = data;
+      count.textContent = `${data.length} selection${data.length === 1 ? "" : "s"}`;
+      renderSelections();
+    }
+
+    function renderSelections() {
+      const term = filter.value.trim().toLowerCase();
+      const visible = selections.filter((item) =>
+        item.symbol.toLowerCase().includes(term) || (item.notes || "").toLowerCase().includes(term)
+      );
+      rows.replaceChildren(...visible.map(selectionRow));
+      empty.hidden = visible.length !== 0;
+    }
+
+    function selectionRow(item) {
+      const row = document.createElement("tr");
+      const action = document.createElement("td");
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "delete";
+      remove.textContent = "Delete";
+      remove.addEventListener("click", async () => {
+        remove.disabled = true;
+        const { error } = await supabase
+          .from("user_bought_selections")
+          .delete()
+          .eq("id", item.id)
+          .eq("user_id", user.id);
+        if (error) {
+          remove.disabled = false;
+          setMessage(message, error.message);
+          return;
+        }
+        setMessage(message, `${item.symbol} was deleted from your bought list.`, true);
+        await loadSelections();
+      });
+      action.append(remove);
+      row.append(
+        tableCell(item.symbol, "symbol"), tableCell(Number(item.quantity).toLocaleString()),
+        tableCell(`$${priceFormat.format(Number(item.buy_price))}`), tableCell(formatDate(item.bought_on)),
+        tableCell(item.notes || "—"), action,
+      );
+      return row;
+    }
+  </script>
+</body>
+</html>

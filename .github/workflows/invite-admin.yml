@@ -2,11 +2,6 @@ name: Invite StockScanner Admin
 
 on:
   workflow_dispatch:
-    inputs:
-      admin_email:
-        description: Email address to invite or promote as administrator
-        required: true
-        type: string
 
 permissions:
   contents: read
@@ -18,6 +13,7 @@ concurrency:
 jobs:
   invite:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     environment:
       name: github-pages
     steps:
@@ -28,13 +24,16 @@ jobs:
         uses: actions/setup-node@v5
         with:
           node-version: "22"
+          cache: npm
+          cache-dependency-path: .github/scripts/package-lock.json
 
-      - name: Install pinned Supabase client
-        run: npm install --no-save --ignore-scripts @supabase/supabase-js@2.112.3
+      - name: Install locked Supabase client
+        working-directory: .github/scripts
+        run: npm ci --ignore-scripts --no-audit
 
       - name: Invite or promote administrator
         env:
-          ADMIN_EMAIL: ${{ inputs.admin_email }}
+          ADMIN_EMAIL: aaksamuel@zohomail.com
           ADMIN_REDIRECT_URL: https://aksamuel.github.io/StockScanner/login.html
           SUPABASE_URL: https://cszzbkssxxgwgafwuonc.supabase.co
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}

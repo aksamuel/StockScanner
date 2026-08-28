@@ -16,6 +16,12 @@ on:
     paths:
       - "auth.js"
       - "login.html"
+      - "admin.html"
+      - "users.html"
+      - "my-exceptions.html"
+      - "my-bought-selection.html"
+      - "personal-lists.css"
+      - "personal-lists.js"
       - "tools/inject_auth.py"
       - ".github/workflows/scan.yml"
 

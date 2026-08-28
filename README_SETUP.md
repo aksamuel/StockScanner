@@ -118,3 +118,18 @@ Then run:
 ```cmd
 .venv\Scripts\python.exe -m pytest
 ```
+
+## Activate invite-only Supabase authentication
+
+The application migration creates `public.signup_allowlist` and the
+`private.hook_require_admin_permission` Auth hook. After applying the migration
+to the StockScanner Supabase project:
+
+1. Open **Authentication → Hooks → Before User Created**.
+2. Select the Postgres hook in schema `private` named
+   `hook_require_admin_permission`.
+3. Enable and save the hook before deploying the updated login page.
+
+The administrator `aaksamuel@zohomail.com` can then open `admin.html` and permit
+an email address. Only permitted email addresses can create an account. Supabase
+Auth manages password hashes; StockScanner never stores user passwords.

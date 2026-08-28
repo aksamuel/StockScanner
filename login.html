@@ -72,17 +72,56 @@
       message.classList.toggle("success", success);
     }
 
+    async function continueIfApproved(user, recordLogin = false) {
+      const { data: access, error } = await supabase
+        .from("user_access")
+        .select("status")
+        .eq("user_id", user.id)
+        .maybeSingle();
+      if (!error && access?.status === "approved") {
+        if (recordLogin) {
+          const now = new Date().toISOString();
+          await Promise.all([
+            supabase.from("user_activity_events").insert({
+              user_id: user.id,
+              event_type: "login",
+              page_path: `${APP_ROOT}login.html`,
+            }),
+            supabase.from("user_presence").upsert({
+              user_id: user.id,
+              last_seen_at: now,
+              signed_out_at: null,
+              last_page: `${APP_ROOT}login.html`,
+            }, { onConflict: "user_id" }),
+          ]);
+        }
+        window.location.replace(destination());
+        return true;
+      }
+      await supabase.auth.signOut({ scope: "local" });
+      setMessage(
+        access?.status === "rejected"
+          ? "Access was not approved. Contact the StockScanner administrator."
+          : "Your account is awaiting approval from the StockScanner administrator.",
+      );
+      return false;
+    }
+
+    if (new URLSearchParams(window.location.search).get("approval") === "pending") {
+      setMessage("Your account is awaiting approval from the StockScanner administrator.");
+    }
+
     const { data: { session } } = await supabase.auth.getSession();
-    if (session) window.location.replace(destination());
+    if (session) await continueIfApproved(session.user);
 
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
       setBusy(true);
       setMessage("Signing in...");
-      const { error } = await supabase.auth.signInWithPassword({ email: email.value.trim(), password: password.value });
+      const { data, error } = await supabase.auth.signInWithPassword({ email: email.value.trim(), password: password.value });
       setBusy(false);
       if (error) return setMessage(error.message);
-      window.location.replace(destination());
+      await continueIfApproved(data.user, true);
     });
 
     signUp.addEventListener("click", async () => {
@@ -96,8 +135,8 @@
       });
       setBusy(false);
       if (error) return setMessage(error.message);
-      if (data.session) return window.location.replace(destination());
-      setMessage("Account created. Check your email to confirm your address, then sign in.", true);
+      if (data.session) await supabase.auth.signOut({ scope: "local" });
+      setMessage("Account created. Confirm your email, then wait for administrator approval before signing in.", true);
     });
   </script>
 </body>
