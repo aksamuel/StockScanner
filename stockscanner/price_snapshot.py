@@ -20,6 +20,11 @@ from .price_providers import (
     download_alpaca_snapshots,
     download_twelve_data_snapshots,
 )
+from .portfolio_symbols import (
+    PortfolioSymbolError,
+    load_portfolio_symbols,
+    normalize_portfolio_symbols,
+)
 
 
 NEW_YORK = ZoneInfo("America/New_York")
@@ -245,8 +250,9 @@ def refresh_snapshot(
     alpaca_downloader: Callable = download_alpaca_snapshots,
     twelve_data_downloader: Callable = download_twelve_data_snapshots,
     report_paths=None,
+    additional_symbols=None,
 ):
-    """Refresh prices through bounded free-provider fallback attempts."""
+    """Refresh scanner and held-symbol prices through bounded free providers."""
     local = _new_york_time(now)
     if not is_regular_market_session(local):
         return {
@@ -260,7 +266,8 @@ def refresh_snapshot(
         previous["prices"] if previous is not None else bootstrap_prices(report_paths)
     )
     prices = dict(prior_prices)
-    symbols = sorted(prior_prices)
+    portfolio_symbols = normalize_portfolio_symbols(additional_symbols or [])
+    symbols = sorted(set(prior_prices).union(portfolio_symbols))
     updated_results = {}
     provider_for_symbol = {}
     attempt_errors = {symbol: [] for symbol in symbols}
@@ -376,6 +383,8 @@ def refresh_snapshot(
         for provider in ("Alpaca", "Yahoo", "Twelve Data")
     }
     payload["collection_strategy"] = "free_split_with_bounded_failover"
+    payload["requested_symbol_count"] = len(symbols)
+    payload["portfolio_symbol_count"] = len(portfolio_symbols)
     payload["provider_counts"] = provider_counts
     payload["updated_symbols"] = sorted(updated_results)
     _write_snapshot(payload, path)
@@ -400,8 +409,19 @@ def main(argv=None):
     )
     args = parser.parse_args(argv)
     try:
-        result = refresh_snapshot(args.output)
-    except SnapshotError as exc:
+        supabase_url = os.environ.get("SUPABASE_URL", "")
+        secret_key = os.environ.get("SUPABASE_SECRET_KEY", "")
+        portfolio_symbols = []
+        if supabase_url or secret_key:
+            portfolio_symbols = load_portfolio_symbols(
+                supabase_url=supabase_url,
+                secret_key=secret_key,
+            )
+        result = refresh_snapshot(
+            args.output,
+            additional_symbols=portfolio_symbols,
+        )
+    except (PortfolioSymbolError, SnapshotError) as exc:
         parser.error(str(exc))
     print(json.dumps(result, sort_keys=True))
     return 0

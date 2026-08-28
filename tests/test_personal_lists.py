@@ -180,6 +180,29 @@ def test_portfolio_tables_are_user_owned_and_cascade_deleted():
     assert "A portfolio import is limited to 1000 rows" in source
 
 
+def test_portfolio_csv_atomically_replaces_only_the_current_users_broker():
+    migration = PORTFOLIO_MIGRATION.read_text(encoding="utf-8")
+    page = read("portfolio-analysis.html")
+    function_start = migration.index("create function public.replace_my_portfolio_holdings")
+    function_end = migration.index("$$;", function_start)
+    function = migration[function_start:function_end]
+
+    scoped_delete = (
+        "delete from public.user_portfolio_holdings\n"
+        "  where user_id = v_user_id and broker = v_broker;"
+    )
+    assert scoped_delete in function
+    assert function.index(scoped_delete) < function.index(
+        "insert into public.user_portfolio_holdings"
+    )
+    assert "truncate" not in function.lower()
+    assert 'await supabase.rpc("replace_my_portfolio_holdings"' in page
+    assert "Previous ${broker} holdings replaced" in page
+    assert page.index('await supabase.rpc("replace_my_portfolio_holdings"') < page.index(
+        "await loadPortfolio();", page.index('await supabase.rpc("replace_my_portfolio_holdings"')
+    )
+
+
 def test_portfolio_page_supports_ibkr_csv_and_rule_based_analysis():
     page = read("portfolio-analysis.html")
     logic = read("portfolio-analysis.js")
@@ -192,11 +215,36 @@ def test_portfolio_page_supports_ibkr_csv_and_rule_based_analysis():
     assert '.rpc("replace_my_portfolio_holdings"' in page
     assert page.count('.eq("user_id", user.id)') >= 4
     assert "symbol,quantity,buy_price,buy_date" in template
+    assert 'buy_price: ["buy_price", "costbasisprice", "cost_basis_price"]' in logic
+    assert 'buy_date: ["buy_date", "opendatetime", "open_date_time", "trade_date"]' in logic
+    assert '.toUpperCase().replace(/\\s+/g, "-")' in logic
+    assert "Native IBKR exports using Symbol, Quantity, CostBasisPrice, and OpenDateTime" in page
     assert "holdingReturnPercent" in logic
     assert "profitTimingLabel" in logic
-    assert "Sell review · target reached" in logic
-    assert "Risk review · stop reached" in logic
+    assert 'return decision("sell", "Sell review"' in logic
+    assert 'return decision("partial-sell", "Partial sell review"' in logic
     assert "Hold / monitor" in logic
+    assert "loadDailyScannerSignals" in page
+    assert "const recommendationText = cells[4]?.textContent" in page
+    assert "portfolioConcentrationPercent" in page
+    assert "portfolioActionDecision" in page
+
+
+def test_portfolio_table_headers_sort_visible_user_holdings():
+    page = read("portfolio-analysis.html")
+
+    for key in (
+        "symbol", "broker", "quantity", "buy_price", "bought_on",
+        "present_price", "return_percent", "concentration", "scanner",
+        "held_days", "action", "price_updated",
+    ):
+        assert f'data-sort-key="{key}"' in page
+        assert f'data-sort-column="{key}"' in page
+    assert 'let sortKey = "symbol"' in page
+    assert 'let sortDirection = "ascending"' in page
+    assert "visible.sort(compareHoldings)" in page
+    assert "updateSortHeaders()" in page
+    assert 'header.setAttribute("aria-sort", active ? sortDirection : "none")' in page
 
 
 def test_ibkr_import_function_authenticates_user_and_uses_server_secrets():

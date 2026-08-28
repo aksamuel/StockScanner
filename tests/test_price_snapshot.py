@@ -212,3 +212,67 @@ def test_refresh_caps_twelve_data_fallback_at_eight_free_credits(tmp_path):
     assert result["provider_counts"]["Twelve Data"] == 8
     assert result["updated"] == 8
     assert result["failed"] == 4
+
+
+def test_refresh_adds_user_held_symbols_outside_the_scanner_universe(tmp_path):
+    snapshot_path = tmp_path / "prices.json"
+    write_snapshot_from_results(
+        [{"Symbol": "NYSE1", "Current Price": 10}],
+        snapshot_path,
+        ny_time(9),
+    )
+
+    def alpaca(symbols, now):
+        return {
+            symbol: {"price": 25, "timestamp": now.isoformat()}
+            for symbol in symbols
+        }
+
+    result = refresh_snapshot(
+        snapshot_path,
+        now=ny_time(10),
+        additional_symbols=["nasdaq1", "amex1", "NYSE1", "nasdaq1"],
+        alpaca_downloader=alpaca,
+        downloader=lambda symbol, now: {
+            "price": 30,
+            "timestamp": now.isoformat(),
+        },
+        twelve_data_downloader=lambda symbols, now: {},
+    )
+    payload = json.loads(snapshot_path.read_text(encoding="utf-8"))
+
+    assert result["symbols"] == 3
+    assert payload["prices"] == {
+        "AMEX1": 25.0,
+        "NASDAQ1": 30.0,
+        "NYSE1": 25.0,
+    }
+    assert payload["requested_symbol_count"] == 3
+    assert payload["portfolio_symbol_count"] == 3
+
+
+def test_failed_new_held_symbol_is_reported_without_invalid_stored_price(tmp_path):
+    snapshot_path = tmp_path / "prices.json"
+    write_snapshot_from_results(
+        [{"Symbol": "NYSE1", "Current Price": 10}],
+        snapshot_path,
+        ny_time(9),
+    )
+
+    result = refresh_snapshot(
+        snapshot_path,
+        now=ny_time(10),
+        additional_symbols=["NASDAQ1"],
+        alpaca_downloader=lambda symbols, now: {
+            "NYSE1": {"price": 11, "timestamp": now.isoformat()}
+        },
+        downloader=lambda symbol, now: None,
+        twelve_data_downloader=lambda symbols, now: {},
+    )
+    payload = json.loads(snapshot_path.read_text(encoding="utf-8"))
+
+    assert result["symbols"] == 1
+    assert result["failed"] == 1
+    assert payload["prices"] == {"NYSE1": 11.0}
+    assert "NASDAQ1" in payload["failures"]
+    assert payload["requested_symbol_count"] == 2

@@ -228,6 +228,11 @@ longer create GitHub issues.
 | Imported broker holdings | `public.user_portfolio_holdings` | Latest per user and broker | On demand |
 | Portfolio import status | `public.user_portfolio_imports` | Latest per user and broker | On demand |
 
+Each CSV or IBKR import is an atomic replacement for the signed-in user and the
+selected broker. It deletes that user's older rows for the same broker, inserts
+the new file, and refreshes the analysis. Holdings for other users and brokers
+are never truncated or changed.
+
 IBKR download uses a server-side Flex Web Service token and query ID. Those
 secrets belong only in Supabase Edge Function secrets. The browser never
 receives them. The IBKR query should return Open Positions in CSV format and use
@@ -236,6 +241,12 @@ tax-lot detail when buy dates are required.
 Backend workflows use `SUPABASE_SECRET_KEY` from the protected GitHub
 `github-pages` environment. That secret must never be placed in HTML,
 JavaScript, documentation examples, or source control.
+
+The daily scanner remains NYSE-only. The hourly price universe is broader: it
+combines the latest scanner symbols with the distinct symbols in every user's
+`user_portfolio_holdings`, so existing NASDAQ and AMEX positions can receive a
+present price without becoming daily scan candidates. The backend query reads
+only the `symbol` column and does not expose portfolio details to the browser.
 
 The hourly job assigns alternating symbols to Alpaca Basic/IEX and Yahoo. Any
 missing or timed-out symbol is retried once through the other primary provider.

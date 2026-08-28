@@ -59,13 +59,26 @@ export function portfolioRowsFromCsv(source) {
   if (rows.length < 2) throw new Error("The CSV must contain a header and at least one holding.");
   if (rows.length > 1001) throw new Error("A CSV import is limited to 1000 holdings.");
   const headers = rows[0].map((value) => value.trim().toLowerCase());
-  for (const required of ["symbol", "quantity", "buy_price", "buy_date"]) {
-    if (!headers.includes(required)) throw new Error(`Missing required CSV column: ${required}`);
+  const columnAliases = {
+    symbol: ["symbol"],
+    quantity: ["quantity"],
+    buy_price: ["buy_price", "costbasisprice", "cost_basis_price"],
+    buy_date: ["buy_date", "opendatetime", "open_date_time", "trade_date"],
+  };
+  const columnIndexes = Object.fromEntries(Object.entries(columnAliases).map(([name, aliases]) => [
+    name,
+    aliases.map((alias) => headers.indexOf(alias)).find((index) => index >= 0) ?? -1,
+  ]));
+  for (const required of Object.keys(columnAliases)) {
+    if (columnIndexes[required] < 0) throw new Error(`Missing required CSV column: ${required}`);
   }
-  const get = (row, name) => row[headers.indexOf(name)] || "";
+  const get = (row, name) => {
+    const index = columnIndexes[name] ?? headers.indexOf(name);
+    return index >= 0 ? row[index] || "" : "";
+  };
   return rows.slice(1).map((row, index) => {
     const rowNumber = index + 2;
-    const symbol = get(row, "symbol").trim().toUpperCase();
+    const symbol = get(row, "symbol").trim().toUpperCase().replace(/\s+/g, "-");
     if (!/^[A-Z0-9][A-Z0-9.-]{0,29}$/.test(symbol)) {
       throw new Error(`Row ${rowNumber}: invalid ticker symbol.`);
     }
@@ -92,6 +105,13 @@ export function portfolioRowsFromCsv(source) {
       notes: notes || null,
     };
   });
+}
+
+export function detectedPortfolioBroker(source) {
+  const [header = []] = parseCsv(source);
+  const headers = header.map((value) => value.trim().toLowerCase());
+  return ["clientaccountid", "symbol", "quantity", "costbasisprice", "opendatetime"]
+    .every((column) => headers.includes(column)) ? "IBKR" : null;
 }
 
 export function holdingReturnPercent(holding, currentPrice) {
@@ -178,4 +198,110 @@ export function sellReviewSignal(holding, currentPrice, returnPercent) {
     return { code: "risk-review", label: `Risk review · ${DEFAULT_LOSS_REVIEW_PERCENT}% rule` };
   }
   return { code: "monitor", label: "Hold / monitor" };
+}
+
+export function portfolioConcentrationPercent(holdings) {
+  const bySymbol = {};
+  let grossMarketValue = 0;
+  for (const holding of holdings || []) {
+    const price = Number(holding?.quote?.price);
+    const quantity = Number(holding?.quantity);
+    if (!Number.isFinite(price) || price < 0 || !Number.isFinite(quantity)) continue;
+    const marketValue = Math.abs(price * quantity);
+    bySymbol[holding.symbol] = (bySymbol[holding.symbol] || 0) + marketValue;
+    grossMarketValue += marketValue;
+  }
+  if (grossMarketValue <= 0) return {};
+  return Object.fromEntries(Object.entries(bySymbol).map(([symbol, value]) => [
+    symbol,
+    value / grossMarketValue * 100,
+  ]));
+}
+
+export function portfolioActionDecision(holding, context = {}) {
+  const optionalNumber = (value) => value === null || value === undefined || value === "" ? Number.NaN : Number(value);
+  const currentPrice = optionalNumber(context.currentPrice);
+  const returnPercent = optionalNumber(context.returnPercent);
+  const heldDays = optionalNumber(context.heldDays);
+  const concentrationPercent = optionalNumber(context.concentrationPercent);
+  const scannerRecommendation = String(context.scannerRecommendation || "unavailable")
+    .trim().toLowerCase().replace(/\s+/g, "-");
+  const scannerScore = optionalNumber(context.scannerScore);
+  const isShort = Number(holding.quantity) < 0;
+  const target = Number(holding.target_price);
+  const stop = Number(holding.stop_loss);
+  const hasPrice = Number.isFinite(currentPrice) && currentPrice >= 0;
+  const hasReturn = Number.isFinite(returnPercent);
+  const targetHit = hasPrice && Number.isFinite(target) && target > 0
+    && (isShort ? currentPrice <= target : currentPrice >= target);
+  const stopHit = hasPrice && Number.isFinite(stop) && stop > 0
+    && (isShort ? currentPrice >= stop : currentPrice <= stop);
+  const scannerLabel = scannerRecommendation === "unavailable"
+    ? "Scanner unavailable"
+    : scannerRecommendation.split("-").map((word) => word[0].toUpperCase() + word.slice(1)).join(" ");
+  const scannerReason = Number.isFinite(scannerScore)
+    ? `${scannerLabel} (${scannerScore.toFixed(0)})`
+    : scannerLabel;
+  const decision = (code, label, reasons, priority) => ({ code, label, reasons, priority });
+
+  if (!hasPrice || !hasReturn) {
+    return decision("unavailable", "Data needed", ["Present price or buy price is unavailable."], -1);
+  }
+  if (stopHit) {
+    return decision("sell", "Sell review", [`Stop-loss ${stop.toFixed(2)} has been reached.`, scannerReason], 3);
+  }
+  if (targetHit) {
+    return decision("sell", "Sell review", [`Target ${target.toFixed(2)} has been reached.`, scannerReason], 3);
+  }
+  if (scannerRecommendation === "avoid" && returnPercent <= DEFAULT_LOSS_REVIEW_PERCENT) {
+    return decision("sell", "Sell review", [
+      `${returnPercent.toFixed(2)}% return is below the ${DEFAULT_LOSS_REVIEW_PERCENT}% risk threshold.`,
+      scannerReason,
+    ], 3);
+  }
+  if (Number.isFinite(concentrationPercent) && concentrationPercent >= 20) {
+    return decision("partial-sell", "Partial sell review", [
+      `${concentrationPercent.toFixed(1)}% portfolio concentration exceeds the 20% high-concentration threshold.`,
+      scannerReason,
+    ], 2);
+  }
+  if (scannerRecommendation === "avoid" && returnPercent > 0) {
+    return decision("partial-sell", "Partial sell review", [
+      `Protect a ${returnPercent.toFixed(2)}% gain while the scanner rating is Avoid.`,
+      scannerReason,
+    ], 2);
+  }
+  if (
+    returnPercent >= DEFAULT_PROFIT_REVIEW_PERCENT
+    && (
+      ["watch", "avoid"].includes(scannerRecommendation)
+      || (Number.isFinite(heldDays) && heldDays >= 180)
+      || (Number.isFinite(concentrationPercent) && concentrationPercent >= 10)
+    )
+  ) {
+    const secondaryReason = Number.isFinite(concentrationPercent) && concentrationPercent >= 10
+      ? `${concentrationPercent.toFixed(1)}% portfolio concentration.`
+      : Number.isFinite(heldDays) && heldDays >= 180
+        ? `${heldDays} days held.`
+        : scannerReason;
+    return decision("partial-sell", "Partial sell review", [
+      `${returnPercent.toFixed(2)}% return exceeds the ${DEFAULT_PROFIT_REVIEW_PERCENT}% profit-review threshold.`,
+      secondaryReason,
+    ], 2);
+  }
+  if (
+    returnPercent <= DEFAULT_LOSS_REVIEW_PERCENT
+    && (scannerRecommendation === "watch" || (Number.isFinite(heldDays) && heldDays >= 180))
+  ) {
+    return decision("partial-sell", "Partial sell review", [
+      `${returnPercent.toFixed(2)}% return is below the ${DEFAULT_LOSS_REVIEW_PERCENT}% risk threshold.`,
+      Number.isFinite(heldDays) ? `${heldDays} days held; reassess capital efficiency.` : scannerReason,
+    ], 2);
+  }
+
+  const holdReasons = [scannerReason];
+  if (Number.isFinite(concentrationPercent)) {
+    holdReasons.push(`${concentrationPercent.toFixed(1)}% of known portfolio market value.`);
+  }
+  return decision("hold", "Hold / monitor", holdReasons, 1);
 }

@@ -18,15 +18,32 @@
     .metrics { margin: 22px 0; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
     .metric strong { display: block; margin-top: 7px; color: #81d4fa; font-size: 1.6rem; }
     .signal { display: inline-block; padding: 4px 7px; border-radius: 999px; font-size: .78rem; font-weight: 750; white-space: nowrap; }
-    .signal-monitor { color: #b3e5fc; background: #23405a; }
-    .signal-sell-review { color: #b9f6ca; background: #1b5e20; }
-    .signal-risk-review { color: #ffcdd2; background: #7f1d1d; }
     .signal-unavailable { color: #cfd8dc; background: #455a64; }
+    .signal-sell { color: #fff; background: #b71c1c; }
+    .signal-partial-sell { color: #1a1a1a; background: #ffca28; }
+    .signal-hold { color: #b9f6ca; background: #1b5e20; }
+    .decision-reasons { margin-top: 6px; max-width: 270px; color: #b0bec5; font-size: .78rem; line-height: 1.35; }
     .subtle { color: #90a4ae; font-size: .88rem; }
     .warning { color: #ffcc80; }
     .table-wrap { margin-top: 12px; }
-    .portfolio-table { min-width: 1280px; }
+    .portfolio-table { min-width: 1680px; }
     .portfolio-table td { vertical-align: top; }
+    .sort-button {
+      display: inline-flex;
+      min-height: 0;
+      padding: 0;
+      gap: 5px;
+      align-items: center;
+      border: 0;
+      border-radius: 0;
+      color: inherit;
+      background: transparent;
+      font: inherit;
+    }
+    .sort-button::after { content: "↕"; color: #78909c; font-size: .8em; }
+    th[aria-sort="ascending"] .sort-button::after { content: "▲"; color: #81d4fa; }
+    th[aria-sort="descending"] .sort-button::after { content: "▼"; color: #81d4fa; }
+    .sort-button:focus-visible { outline: 2px solid #4fc3f7; outline-offset: 4px; }
     .row-actions { display: flex; gap: 7px; }
     button.secondary { color: #e0e0e0; border-color: #546e7a; background: #24384a; }
     dialog { width: min(92vw, 600px); border: 1px solid #4fc3f7; border-radius: 9px; color: #e0e0e0; background: #142433; }
@@ -66,10 +83,10 @@
       </article>
 
       <article class="import-card">
-        <h2>Upload another broker CSV</h2>
+        <h2>Upload broker CSV</h2>
         <form id="csvForm">
           <label>Broker name
-            <input id="broker" type="text" maxlength="80" placeholder="Example: ZOHO BROKER" required>
+            <input id="broker" type="text" maxlength="80" placeholder="Auto-detected for native IBKR CSV">
           </label>
           <label>Portfolio CSV file
             <input id="csvFile" type="file" accept=".csv,text/csv" required>
@@ -79,22 +96,24 @@
             <a class="template-link" href="/StockScanner/portfolio-holdings-template.csv" download>Download CSV template</a>
           </div>
         </form>
-        <p class="subtle">Required columns: symbol, quantity, buy_price, buy_date. Uploading replaces only your holdings for the named broker.</p>
+        <p class="subtle">Accepted columns: symbol, quantity, buy_price, buy_date. Native IBKR exports using Symbol, Quantity, CostBasisPrice, and OpenDateTime are also accepted. Uploading replaces only your holdings for the named broker.</p>
         <p id="csvStatus" class="subtle" role="status" aria-live="polite"></p>
       </article>
     </section>
 
     <section class="panel">
       <h2>How the analysis works</h2>
-      <p>The page compares buy price with the newest available present price. A target or stop entered in the CSV takes priority. Otherwise, +20% produces a profit-review signal and −10% produces a risk-review signal. These are transparent screening rules, not automatic trade instructions or personalized financial advice.</p>
+      <p>The page combines present profit/loss, days held, the newest daily StockScanner recommendation and score, user-set targets and stop-losses, and each symbol's share of known portfolio market value. A reached target or stop takes priority. An Avoid rating combined with a loss of at least 10% produces a sell review; high concentration, weaker trend, long holding time, or a gain of at least 20% can produce a partial-sell review. Missing price or scanner evidence is disclosed and never guessed.</p>
+      <p class="subtle">Concentration thresholds: 10% warrants closer review and 20% is treated as high concentration. Decisions are screening prompts for your review, not automatic orders or guaranteed outcomes.</p>
       <p class="warning">IBKR may omit buy dates unless its Flex query uses Open Positions at tax-lot detail. Missing dates are never guessed.</p>
     </section>
 
     <section class="metrics" aria-label="Portfolio summary">
       <div class="metric">Holdings<strong id="holdingCount">0</strong></div>
       <div class="metric">Currently profitable<strong id="profitableCount">0</strong></div>
-      <div class="metric">Profit reviews<strong id="sellReviewCount">0</strong></div>
-      <div class="metric">Risk reviews<strong id="riskReviewCount">0</strong></div>
+      <div class="metric">Sell reviews<strong id="sellDecisionCount">0</strong></div>
+      <div class="metric">Partial-sell reviews<strong id="partialSellCount">0</strong></div>
+      <div class="metric">Hold / monitor<strong id="holdCount">0</strong></div>
       <div class="metric">Last downloaded<strong id="lastDownloaded">Never</strong></div>
     </section>
 
@@ -106,9 +125,19 @@
       <table class="portfolio-table">
         <thead>
           <tr>
-            <th>Symbol</th><th>Broker</th><th>Quantity</th><th>Buy price</th><th>Buy date</th>
-            <th>Present price</th><th>Profit / Loss %</th><th>Time to profit</th><th>Sell review</th>
-            <th>Price updated</th><th>Action</th>
+            <th scope="col" data-sort-column="symbol" aria-sort="ascending"><button class="sort-button" type="button" data-sort-key="symbol">Symbol</button></th>
+            <th scope="col" data-sort-column="broker" aria-sort="none"><button class="sort-button" type="button" data-sort-key="broker">Broker</button></th>
+            <th scope="col" data-sort-column="quantity" aria-sort="none"><button class="sort-button" type="button" data-sort-key="quantity">Quantity</button></th>
+            <th scope="col" data-sort-column="buy_price" aria-sort="none"><button class="sort-button" type="button" data-sort-key="buy_price">Buy price</button></th>
+            <th scope="col" data-sort-column="bought_on" aria-sort="none"><button class="sort-button" type="button" data-sort-key="bought_on">Buy date</button></th>
+            <th scope="col" data-sort-column="present_price" aria-sort="none"><button class="sort-button" type="button" data-sort-key="present_price">Present price</button></th>
+            <th scope="col" data-sort-column="return_percent" aria-sort="none"><button class="sort-button" type="button" data-sort-key="return_percent">Profit / Loss %</button></th>
+            <th scope="col" data-sort-column="concentration" aria-sort="none"><button class="sort-button" type="button" data-sort-key="concentration">Concentration</button></th>
+            <th scope="col" data-sort-column="scanner" aria-sort="none"><button class="sort-button" type="button" data-sort-key="scanner">Daily scanner</button></th>
+            <th scope="col" data-sort-column="held_days" aria-sort="none"><button class="sort-button" type="button" data-sort-key="held_days">Time to profit</button></th>
+            <th scope="col" data-sort-column="action" aria-sort="none"><button class="sort-button" type="button" data-sort-key="action">Action review</button></th>
+            <th scope="col" data-sort-column="price_updated" aria-sort="none"><button class="sort-button" type="button" data-sort-key="price_updated">Price updated</button></th>
+            <th scope="col">Manage</th>
           </tr>
         </thead>
         <tbody id="rows"></tbody>
@@ -147,7 +176,7 @@
   <script type="module" src="/StockScanner/auth.js" data-stockscanner-auth></script>
   <script type="module">
     import { formatDate, requireApprovedUser, setFormBusy, setMessage, supabase, tableCell } from "/StockScanner/personal-lists.js";
-    import { daysHeld, holdingReturnPercent, portfolioRowsFromCsv, profitTimingLabel, sellReviewSignal } from "/StockScanner/portfolio-analysis.js";
+    import { daysHeld, detectedPortfolioBroker, holdingReturnPercent, portfolioActionDecision, portfolioConcentrationPercent, portfolioRowsFromCsv, profitTimingLabel } from "/StockScanner/portfolio-analysis.js";
 
     const user = await requireApprovedUser();
     const rows = document.querySelector("#rows");
@@ -165,9 +194,20 @@
     let imports = [];
     let latestPrices = {};
     let snapshotTime = null;
+    let scannerSignals = {};
+    let sortKey = "symbol";
+    let sortDirection = "ascending";
 
     if (user) await loadPortfolio();
     filter.addEventListener("input", renderPortfolio);
+    document.querySelectorAll(".sort-button").forEach((button) => {
+      button.addEventListener("click", () => {
+        const selectedKey = button.dataset.sortKey;
+        sortDirection = selectedKey === sortKey && sortDirection === "ascending" ? "descending" : "ascending";
+        sortKey = selectedKey;
+        renderPortfolio();
+      });
+    });
 
     ibkrImport.addEventListener("click", async () => {
       if (!user) return;
@@ -188,14 +228,17 @@
       event.preventDefault();
       if (!user || !csvForm.reportValidity()) return;
       const file = document.querySelector("#csvFile").files[0];
-      const broker = document.querySelector("#broker").value.trim().toUpperCase();
       if (!file || file.size > 1_000_000) {
         csvStatus.textContent = "Choose a CSV file no larger than 1 MB.";
         return;
       }
       setFormBusy(csvForm, true);
       try {
-        const parsedRows = portfolioRowsFromCsv(await file.text());
+        const csvSource = await file.text();
+        const broker = detectedPortfolioBroker(csvSource)
+          || document.querySelector("#broker").value.trim().toUpperCase();
+        if (!broker) throw new Error("Enter a broker name for this CSV format.");
+        const parsedRows = portfolioRowsFromCsv(csvSource);
         const { data, error } = await supabase.rpc("replace_my_portfolio_holdings", {
           p_broker: broker,
           p_source: "csv",
@@ -203,7 +246,7 @@
         });
         if (error) throw error;
         const result = data?.[0] || {};
-        csvStatus.textContent = `${result.replaced_count ?? parsedRows.length} holding${parsedRows.length === 1 ? "" : "s"} imported for ${broker} at ${formatTime(result.downloaded_at)}.`;
+        csvStatus.textContent = `Previous ${broker} holdings replaced with ${result.replaced_count ?? parsedRows.length} current holding${parsedRows.length === 1 ? "" : "s"} at ${formatTime(result.downloaded_at)}. Analysis refreshed.`;
         csvStatus.classList.add("success");
         await loadPortfolio();
       } catch (error) {
@@ -215,7 +258,7 @@
     });
 
     async function loadPortfolio() {
-      const [holdingResult, importResult, priceResult] = await Promise.all([
+      const [holdingResult, importResult, priceResult, scannerResult] = await Promise.all([
         supabase
           .from("user_portfolio_holdings")
           .select("id,broker,position_key,symbol,description,asset_class,currency,quantity,buy_price,bought_on,current_price,current_price_at,market_value,unrealized_pnl,target_price,stop_loss,notes,import_source,imported_at")
@@ -231,6 +274,7 @@
           .select("prices,price_timestamp,generated_at")
           .eq("source", "hourly_yahoo")
           .maybeSingle(),
+        loadDailyScannerSignals(),
       ]);
       const error = holdingResult.error || importResult.error;
       if (error) {
@@ -241,8 +285,43 @@
       imports = importResult.data || [];
       latestPrices = priceResult.data?.prices || {};
       snapshotTime = priceResult.data?.price_timestamp || priceResult.data?.generated_at || null;
-      if (priceResult.error) setMessage(message, `Portfolio loaded, but hourly prices are unavailable: ${priceResult.error.message}`);
+      scannerSignals = scannerResult.signals;
+      const warnings = [];
+      if (priceResult.error) warnings.push(`Hourly prices are unavailable: ${priceResult.error.message}`);
+      if (scannerResult.error) warnings.push("Daily scanner recommendations are unavailable; action reviews are conditional.");
+      if (warnings.length) setMessage(message, `Portfolio loaded. ${warnings.join(" ")}`);
       renderPortfolio();
+    }
+
+    async function loadDailyScannerSignals() {
+      try {
+        const response = await fetch("/StockScanner/index.html", { cache: "no-store" });
+        if (!response.ok) throw new Error(`Dashboard returned HTTP ${response.status}.`);
+        const documentCopy = new DOMParser().parseFromString(await response.text(), "text/html");
+        const signals = {};
+        documentCopy.querySelectorAll("#kpiStockTable tbody tr").forEach((row) => {
+          const cells = row.querySelectorAll("td");
+          const symbol = cells[1]?.textContent.trim().toUpperCase();
+          if (!symbol) return;
+          const recommendationText = cells[4]?.textContent
+            .replace(/[^A-Za-z ]/g, " ").replace(/\s+/g, " ").trim();
+          const recommendation = recommendationText
+            ? recommendationText.toLowerCase().replace(/\s+/g, "-")
+            : "unavailable";
+          const score = Number(cells[5]?.textContent);
+          signals[symbol] = {
+            recommendation,
+            label: recommendationText
+              ? recommendationText.toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase())
+              : "Unavailable",
+            score: Number.isFinite(score) ? score : null,
+          };
+        });
+        if (!Object.keys(signals).length) throw new Error("No daily scanner rows were found.");
+        return { signals, error: null };
+      } catch (error) {
+        return { signals: {}, error };
+      }
     }
 
     function currentQuote(holding) {
@@ -251,7 +330,7 @@
       const snapshotDate = snapshotTime ? new Date(snapshotTime) : null;
       const importedDate = holding.current_price_at ? new Date(holding.current_price_at) : null;
       if (Number.isFinite(snapshotPrice) && snapshotPrice >= 0 && (!importedDate || (snapshotDate && snapshotDate >= importedDate))) {
-        return { price: snapshotPrice, at: snapshotTime, source: "Hourly Yahoo snapshot" };
+        return { price: snapshotPrice, at: snapshotTime, source: "Hourly market snapshot" };
       }
       if (Number.isFinite(importedPrice) && importedPrice >= 0) {
         return { price: importedPrice, at: holding.current_price_at || holding.imported_at, source: holding.broker };
@@ -269,24 +348,91 @@
         returnPercent,
         heldDays,
         timing: profitTimingLabel(returnPercent, heldDays),
-        signal: sellReviewSignal(holding, quote.price, returnPercent),
       };
     }
 
     function renderPortfolio() {
-      const analyzed = holdings.map(analyzedHolding);
+      const baseAnalysis = holdings.map(analyzedHolding);
+      const concentrations = portfolioConcentrationPercent(baseAnalysis);
+      const analyzed = baseAnalysis.map((holding) => {
+        const scanner = scannerSignals[holding.symbol] || {
+          recommendation: "unavailable", label: "Unavailable", score: null,
+        };
+        const concentrationPercent = concentrations[holding.symbol] ?? null;
+        return {
+          ...holding,
+          scanner,
+          concentrationPercent,
+          decision: portfolioActionDecision(holding, {
+            currentPrice: holding.quote.price,
+            returnPercent: holding.returnPercent,
+            heldDays: holding.heldDays,
+            scannerRecommendation: scanner.recommendation,
+            scannerScore: scanner.score,
+            concentrationPercent,
+          }),
+        };
+      });
       const term = filter.value.trim().toLowerCase();
       const visible = analyzed.filter((holding) => [
-        holding.symbol, holding.broker, holding.description, holding.signal.label,
+        holding.symbol, holding.broker, holding.description, holding.scanner.label,
+        holding.decision.label, ...holding.decision.reasons,
       ].some((value) => String(value || "").toLowerCase().includes(term)));
+      visible.sort(compareHoldings);
+      updateSortHeaders();
       rows.replaceChildren(...visible.map(holdingRow));
       empty.hidden = visible.length !== 0;
       document.querySelector("#count").textContent = `${holdings.length} holding${holdings.length === 1 ? "" : "s"}`;
       document.querySelector("#holdingCount").textContent = holdings.length;
       document.querySelector("#profitableCount").textContent = analyzed.filter((holding) => holding.returnPercent > 0).length;
-      document.querySelector("#sellReviewCount").textContent = analyzed.filter((holding) => holding.signal.code === "sell-review").length;
-      document.querySelector("#riskReviewCount").textContent = analyzed.filter((holding) => holding.signal.code === "risk-review").length;
+      document.querySelector("#sellDecisionCount").textContent = analyzed.filter((holding) => holding.decision.code === "sell").length;
+      document.querySelector("#partialSellCount").textContent = analyzed.filter((holding) => holding.decision.code === "partial-sell").length;
+      document.querySelector("#holdCount").textContent = analyzed.filter((holding) => holding.decision.code === "hold").length;
       document.querySelector("#lastDownloaded").textContent = imports[0] ? formatTime(imports[0].downloaded_at) : "Never";
+    }
+
+    function sortValue(holding) {
+      const values = {
+        symbol: holding.symbol,
+        broker: holding.broker,
+        quantity: Number(holding.quantity),
+        buy_price: holding.buy_price === null ? null : Number(holding.buy_price),
+        bought_on: holding.bought_on ? Date.parse(`${holding.bought_on}T00:00:00Z`) : null,
+        present_price: holding.quote.price,
+        return_percent: holding.returnPercent,
+        concentration: holding.concentrationPercent,
+        scanner: holding.scanner.score,
+        held_days: holding.heldDays,
+        action: holding.decision.priority,
+        price_updated: holding.quote.at ? Date.parse(holding.quote.at) : null,
+      };
+      return values[sortKey];
+    }
+
+    function compareHoldings(left, right) {
+      const leftValue = sortValue(left);
+      const rightValue = sortValue(right);
+      const leftMissing = leftValue === null || leftValue === undefined || Number.isNaN(leftValue);
+      const rightMissing = rightValue === null || rightValue === undefined || Number.isNaN(rightValue);
+      if (leftMissing || rightMissing) {
+        if (leftMissing && rightMissing) return 0;
+        return leftMissing ? 1 : -1;
+      }
+      const comparison = typeof leftValue === "string"
+        ? leftValue.localeCompare(rightValue, undefined, { numeric: true, sensitivity: "base" })
+        : leftValue - rightValue;
+      return sortDirection === "ascending" ? comparison : -comparison;
+    }
+
+    function updateSortHeaders() {
+      document.querySelectorAll("th[data-sort-column]").forEach((header) => {
+        const active = header.dataset.sortColumn === sortKey;
+        header.setAttribute("aria-sort", active ? sortDirection : "none");
+        const button = header.querySelector(".sort-button");
+        button.title = active
+          ? `Sorted ${sortDirection}. Click to reverse.`
+          : `Sort by ${button.textContent}.`;
+      });
     }
 
     function holdingRow(holding) {
@@ -299,11 +445,19 @@
         holding.returnPercent === null ? "Unavailable" : `${holding.returnPercent >= 0 ? "+" : ""}${holding.returnPercent.toFixed(2)}%`,
         holding.returnPercent === null ? "pl-unavailable" : holding.returnPercent > 0 ? "pl-profit" : holding.returnPercent < 0 ? "pl-loss" : "pl-neutral",
       );
-      const signalCell = document.createElement("td");
-      const signal = document.createElement("span");
-      signal.className = `signal signal-${holding.signal.code}`;
-      signal.textContent = holding.signal.label;
-      signalCell.append(signal);
+      const scannerCell = tableCell(
+        holding.scanner.score === null
+          ? holding.scanner.label
+          : `${holding.scanner.label} · ${holding.scanner.score.toFixed(0)}`,
+      );
+      const decisionCell = document.createElement("td");
+      const decision = document.createElement("span");
+      decision.className = `signal signal-${holding.decision.code}`;
+      decision.textContent = holding.decision.label;
+      const decisionReasons = document.createElement("div");
+      decisionReasons.className = "decision-reasons";
+      decisionReasons.textContent = holding.decision.reasons.join(" ");
+      decisionCell.append(decision, decisionReasons);
       const actions = document.createElement("td");
       actions.className = "row-actions";
       const edit = document.createElement("button");
@@ -325,8 +479,10 @@
         tableCell(holding.bought_on ? formatDate(holding.bought_on) : "Not provided"),
         priceCell,
         returnCell,
+        tableCell(holding.concentrationPercent === null ? "Unavailable" : `${holding.concentrationPercent.toFixed(2)}%`),
+        scannerCell,
         tableCell(holding.timing),
-        signalCell,
+        decisionCell,
         tableCell(formatTime(holding.quote.at)),
         actions,
       );

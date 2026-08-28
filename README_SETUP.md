@@ -196,7 +196,13 @@ feed. Optionally add a Twelve Data Basic key as `TWELVE_DATA_API_KEY`; the code
 uses no more than eight Twelve Data symbols per run so the scheduled workflow
 stays below its free minute and daily quotas.
 
-The symbol list is split evenly between Alpaca and Yahoo. Missing or timed-out
+The hourly symbol list is the union of the latest scanner snapshot and all
+distinct symbols in `public.user_portfolio_holdings`. This keeps the daily scan
+NYSE-only while still pricing existing NASDAQ and AMEX holdings. The workflow
+uses `SUPABASE_SECRET_KEY` to read only the holdings' `symbol` column; it never
+places portfolio rows or the secret in the public site.
+
+The combined list is split evenly between Alpaca and Yahoo. Missing or timed-out
 prices cross over to the other provider once, then up to eight remaining gaps
 use Twelve Data. Retries are intentionally bounded: an endless loop could
 exceed a free quota and still cannot guarantee a current quote for an inactive
@@ -221,7 +227,10 @@ The two signed-in user pages serve different purposes:
   buy price, present price, profit/loss percentage, days held, and an estimated
   breakeven period using the Equal-weight Top 20 as a reference scenario.
 - `portfolio-analysis.html`: on-demand IBKR Flex and broker CSV holdings, current
-  return, holding duration, and target/stop review signals.
+  return, holding duration, daily scanner evidence, concentration, and
+  sell/partial-sell/hold review signals. Each import atomically replaces only
+  the signed-in user's older rows for that broker before the page recalculates
+  the analysis; it never truncates another user or broker.
 
 Do not duplicate bought positions into the Exception List. The authenticated
 Top 20 hides that user's bought/imported holdings and active exceptions by
