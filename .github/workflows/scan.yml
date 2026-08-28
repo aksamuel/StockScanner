@@ -155,22 +155,23 @@ jobs:
       - name: Deploy Dashboard as landing page
         if: ${{ always() }}
         run: |
-          if [ "${{ github.event_name }}" != "push" ]; then
-            python -m stockscanner.exceptions_dashboard
-          fi
           touch .nojekyll
           touch reports/.nojekyll
-          # Publish the latest linked report pages at stable site paths
-          LATEST_LANDING=$(find reports/ -name "landing.html" -type f | sort -r | head -1)
-          if [ -n "$LATEST_LANDING" ]; then
-            LATEST_FOLDER=$(dirname "$LATEST_LANDING")
-            cp "$LATEST_FOLDER/landing.html" index.html
-            cp "$LATEST_FOLDER/technical.html" technical.html
-            cp "$LATEST_FOLDER/analysts.html" analysts.html
-            cp "$LATEST_FOLDER/bought-selection.html" bought-selection.html
-            echo "Deployed linked dashboards from: $LATEST_FOLDER"
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "Deploying the static pages already committed by this push."
           else
-            cat <<'EOF' > index.html
+            python -m stockscanner.exceptions_dashboard
+            # Publish the newly generated linked report pages at stable site paths.
+            LATEST_LANDING=$(find reports/ -name "landing.html" -type f | sort -r | head -1)
+            if [ -n "$LATEST_LANDING" ]; then
+              LATEST_FOLDER=$(dirname "$LATEST_LANDING")
+              cp "$LATEST_FOLDER/landing.html" index.html
+              cp "$LATEST_FOLDER/technical.html" technical.html
+              cp "$LATEST_FOLDER/analysts.html" analysts.html
+              cp "$LATEST_FOLDER/bought-selection.html" bought-selection.html
+              echo "Deployed linked dashboards from: $LATEST_FOLDER"
+            else
+              cat <<'EOF' > index.html
           <!DOCTYPE html>
           <html lang="en">
           <head>
@@ -184,6 +185,7 @@ jobs:
           </body>
           </html>
           EOF
+            fi
           fi
 
       - name: Apply Supabase Auth guard
