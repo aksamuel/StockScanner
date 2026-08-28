@@ -41,64 +41,310 @@ h1 { margin: 0 0 5px; color: #4fc3f7; }
   background: #1a2a3a;
 }
 form {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
-  gap: 13px;
-  align-items: end;
-}
-.wide { grid-column: span 2; }
-label { display: grid; gap: 6px; color: #b0bec5; font-size: .88rem; }
-input {
-  width: 100%;
-  min-height: 42px;
-  padding: 9px 11px;
-  border: 1px solid #3b5368;
-  border-radius: 6px;
-  color: #fff;
-  background: #10212d;
-  font: inherit;
-}
-input:focus { outline: 2px solid #4fc3f7; outline-offset: 1px; }
-input[data-symbol] { text-transform: uppercase; }
-button {
-  min-height: 40px;
-  padding: 8px 12px;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  color: #10242d;
-  background: #81c784;
-  font: inherit;
-  font-weight: 700;
-  cursor: pointer;
-}
-button.delete { color: #fff; background: #c62828; }
-button.secondary { color: #e0e0e0; border-color: #546e7a; background: #24384a; }
-button:disabled { opacity: .58; cursor: wait; }
-.row-actions { display: flex; gap: 7px; }
-.list-toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 14px;
-  align-items: center;
-  justify-content: space-between;
-  margin: 18px 0 12px;
-}
-.count { color: #b3e5fc; font-weight: 700; }
-.filter { width: min(100%, 320px); }
-.table-wrap { overflow-x: auto; border: 1px solid #334b5f; border-radius: 9px; }
-table { width: 100%; border-collapse: collapse; background: #1a2a3a; }
-th, td { padding: 12px; border-bottom: 1px solid #334b5f; text-align: left; }
-th { color: #b3e5fc; background: #142433; white-space: nowrap; }
-tr:last-child td { border-bottom: 0; }
-td.symbol { color: #81d4fa; font-weight: 750; }
-td.pl-profit { color: #66bb6a; font-weight: 750; }
-td.pl-loss { color: #ef5350; font-weight: 750; }
-td.pl-neutral { color: #e0e0e0; font-weight: 750; }
-td.pl-unavailable { color: #90a4ae; }
-.empty { padding: 24px; color: #90a4ae; text-align: center; }
-#message { min-height: 24px; margin: 12px 0; color: #ffcc80; }
-#message.success { color: #a5d6a7; }
-@media (max-width: 720px) {
-  body { padding: 66px 14px 32px; }
-  .wide { grid-column: span 1; }
-}
+  diss¯4ÞÚ$z{-®éÜj× row.querySelectorAll("td");
+          const symbol = cells[1]?.textContent.trim().toUpperCase();
+          if (!symbol) return;
+          const recommendationText = cells[4]?.textContent
+            .replace(/[^A-Za-z ]/g, " ").replace(/\s+/g, " ").trim();
+          const recommendation = recommendationText
+            ? recommendationText.toLowerCase().replace(/\s+/g, "-")
+            : "unavailable";
+          const score = Number(cells[5]?.textContent);
+          signals[symbol] = {
+            recommendation,
+            label: recommendationText
+              ? recommendationText.toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase())
+              : "Unavailable",
+            score: Number.isFinite(score) ? score : null,
+            scannerPrice: numericCell(cells[2]),
+            technicalTarget: null,
+            resistanceTarget: null,
+            analystTargetUpside: null,
+          };
+        });
+        if (!Object.keys(signals).length) throw new Error("No daily scanner rows were found.");
+        const targetWarnings = [];
+        const [technicalResult, analystResult] = await Promise.allSettled([
+          fetchDocument("/StockScanner/technical.html"),
+          fetchDocument("/StockScanner/analysts.html"),
+        ]);
+        if (technicalResult.status === "fulfilled") {
+          try {
+            reportRows(technicalResult.value).forEach(({ cells, headerIndex, symbol }) => {
+              if (signals[symbol]) signals[symbol].technicalTarget = numericCell(cells[headerIndex["Target 1"]]);
+            });
+          } catch (error) {
+            targetWarnings.push(error.message || "Technical targets unavailable.");
+          }
+        } else {
+          targetWarnings.push(technicalResult.reason?.message || "Technical targets unavailable.");
+        }
+        if (analystResult.status === "fulfilled") {
+          try {
+            reportRows(analystResult.value).forEach(({ cells, headerIndex, symbol }) => {
+              if (!signals[symbol]) return;
+              signals[symbol].resistanceTarget = numericCell(cells[headerIndex["Resistance Low"]]);
+              signals[symbol].analystTargetUpside = numericCell(cells[headerIndex["Target Upside"]]);
+            });
+          } catch (error) {
+            targetWarnings.push(error.message || "Analyst targets unavailable.");
+          }
+        } else {
+          targetWarnings.push(analystResult.reason?.message || "Analyst targets unavailable.");
+        }
+        return { signals, error: null, targetWarnings };
+      } catch (error) {
+        return { signals: {}, error, targetWarnings: [] };
+      }
+    }
+
+    function currentQuote(holding) {
+      const snapshotPrice = Number(latestPrices[holding.symbol]);
+      const importedPrice = Number(holding.current_price);
+      const snapshotDate = snapshotTime ? new Date(snapshotTime) : null;
+      const importedDate = holding.current_price_at ? new Date(holding.current_price_at) : null;
+      if (Number.isFinite(snapshotPrice) && snapshotPrice >= 0 && (!importedDate || (snapshotDate && snapshotDate >= importedDate))) {
+        return { price: snapshotPrice, at: snapshotTime, source: "Hourly market snapshot" };
+      }
+      if (Number.isFinite(importedPrice) && importedPrice >= 0) {
+        return { price: importedPrice, at: holding.current_price_at || holding.imported_at, source: holding.broker };
+      }
+      return { price: null, at: null, source: "Unavailable" };
+    }
+
+    function analyzedHolding(holding) {
+      const quote = currentQuote(holding);
+      const returnPercent = holdingReturnPercent(holding, quote.price);
+      const heldDays = daysHeld(holding.bought_on);
+      return {
+        ...holding,
+        quote,
+        returnPercent,
+        heldDays,
+        timing: profitTimingLabel(returnPercent, heldDays),
+      };
+    }
+
+    function renderPortfolio() {
+      const baseAnalysis = holdings.map(analyzedHolding);
+      const concentrations = portfolioConcentrationPercent(baseAnalysis);
+      const analyzed = baseAnalysis.map((holding) => {
+        const scanner = scannerSignals[holding.symbol] || {
+          recommendation: "unavailable", label: "Unavailable", score: null,
+          scannerPrice: null, technicalTarget: null, resistanceTarget: null, analystTargetUpside: null,
+        };
+        const concentrationPercent = concentrations[holding.symbol] ?? null;
+        const analystTarget = Number.isFinite(scanner.analystTargetUpside) && Number.isFinite(scanner.scannerPrice)
+          ? scanner.scannerPrice * (1 + scanner.analystTargetUpside / 100)
+          : null;
+        const decisionContext = {
+          currentPrice: holding.quote.price,
+          returnPercent: holding.returnPercent,
+          heldDays: holding.heldDays,
+          scannerRecommendation: scanner.recommendation,
+          scannerScore: scanner.score,
+          concentrationPercent,
+          technicalTarget: scanner.technicalTarget,
+          resistanceTarget: scanner.resistanceTarget,
+          analystTarget,
+        };
+        const target = recommendedTargetPrice(holding, decisionContext);
+        return {
+          ...holding,
+          scanner,
+          concentrationPercent,
+          target,
+          decision: portfolioActionDecision(holding, { ...decisionContext, recommendedTarget: target }),
+        };
+      });
+      const term = filter.value.trim().toLowerCase();
+      const visible = analyzed.filter((holding) => [
+        holding.symbol, holding.broker, holding.description, holding.scanner.label,
+        holding.decision.label, holding.target?.source, ...holding.decision.reasons,
+      ].some((value) => String(value || "").toLowerCase().includes(term)));
+      visible.sort(compareHoldings);
+      updateSortHeaders();
+      rows.replaceChildren(...visible.map(holdingRow));
+      empty.hidden = visible.length !== 0;
+      document.querySelector("#count").textContent = `${holdings.length} holding${holdings.length === 1 ? "" : "s"}`;
+      document.querySelector("#holdingCount").textContent = holdings.length;
+      document.querySelector("#profitableCount").textContent = analyzed.filter((holding) => holding.returnPercent > 0).length;
+      document.querySelector("#sellDecisionCount").textContent = analyzed.filter((holding) => holding.decision.code === "sell").length;
+      document.querySelector("#partialSellCount").textContent = analyzed.filter((holding) => holding.decision.code === "partial-sell").length;
+      document.querySelector("#holdCount").textContent = analyzed.filter((holding) => holding.decision.code === "hold").length;
+      document.querySelector("#lastDownloaded").textContent = imports[0] ? formatTime(imports[0].downloaded_at) : "Never";
+    }
+
+    function sortValue(holding) {
+      const values = {
+        symbol: holding.symbol,
+        broker: holding.broker,
+        quantity: Number(holding.quantity),
+        buy_price: holding.buy_price === null ? null : Number(holding.buy_price),
+        bought_on: holding.bought_on ? Date.parse(`${holding.bought_on}T00:00:00Z`) : null,
+        present_price: holding.quote.price,
+        return_percent: holding.returnPercent,
+        target: holding.target?.price,
+        concentration: holding.concentrationPercent,
+        scanner: holding.scanner.score,
+        held_days: holding.heldDays,
+        action: holding.decision.priority,
+        price_updated: holding.quote.at ? Date.parse(holding.quote.at) : null,
+      };
+      return values[sortKey];
+    }
+
+    function compareHoldings(left, right) {
+      const leftValue = sortValue(left);
+      const rightValue = sortValue(right);
+      const leftMissing = leftValue === null || leftValue === undefined || Number.isNaN(leftValue);
+      const rightMissing = rightValue === null || rightValue === undefined || Number.isNaN(rightValue);
+      if (leftMissing || rightMissing) {
+        if (leftMissing && rightMissing) return 0;
+        return leftMissing ? 1 : -1;
+      }
+      const comparison = typeof leftValue === "string"
+        ? leftValue.localeCompare(rightValue, undefined, { numeric: true, sensitivity: "base" })
+        : leftValue - rightValue;
+      return sortDirection === "ascending" ? comparison : -comparison;
+    }
+
+    function updateSortHeaders() {
+      document.querySelectorAll("th[data-sort-column]").forEach((header) => {
+        const active = header.dataset.sortColumn === sortKey;
+        header.setAttribute("aria-sort", active ? sortDirection : "none");
+        const button = header.querySelector(".sort-button");
+        button.title = active
+          ? `Sorted ${sortDirection}. Click to reverse.`
+          : `Sort by ${button.textContent}.`;
+      });
+    }
+
+    function holdingRow(holding) {
+      const row = document.createElement("tr");
+      const symbolCell = tableCell(holding.symbol, "symbol");
+      symbolCell.title = holding.description || holding.symbol;
+      const priceCell = tableCell(holding.quote.price === null ? "Unavailable" : `${holding.currency} ${numberFormat.format(holding.quote.price)}`);
+      priceCell.title = holding.quote.source;
+      const returnCell = tableCell(
+        holding.returnPercent === null ? "Unavailable" : `${holding.returnPercent >= 0 ? "+" : ""}${holding.returnPercent.toFixed(2)}%`,
+        holding.returnPercent === null ? "pl-unavailable" : holding.returnPercent > 0 ? "pl-profit" : holding.returnPercent < 0 ? "pl-loss" : "pl-neutral",
+      );
+      const scannerCell = tableCell(
+        holding.scanner.score === null
+          ? holding.scanner.label
+          : `${holding.scanner.label} Â· ${holding.scanner.score.toFixed(0)}`,
+      );
+      const targetCell = tableCell(
+        holding.target ? `${holding.currency} ${numberFormat.format(holding.target.price)}` : "Unavailable",
+      );
+      if (holding.target) {
+        const targetSource = document.createElement("div");
+        targetSource.className = "target-source";
+        targetSource.textContent = holding.target.source;
+        targetCell.append(targetSource);
+        targetCell.title = holding.target.candidates
+          .map(({ price, source }) => `${source}: ${numberFormat.format(price)}`)
+          .join("; ");
+      }
+      const decisionCell = document.createElement("td");
+      const decision = document.createElement("span");
+      decision.className = `signal signal-${holding.decision.code}`;
+      decision.textContent = holding.decision.label;
+      const decisionReasons = document.createElement("div");
+      decisionReasons.className = "decision-reasons";
+      decisionReasons.textContent = holding.decision.reasons.join(" ");
+      decisionCell.append(decision, decisionReasons);
+      const actions = document.createElement("td");
+      actions.className = "row-actions";
+      const edit = document.createElement("button");
+      edit.type = "button";
+      edit.className = "secondary";
+      edit.textContent = "Edit";
+      edit.addEventListener("click", () => openEdit(holding));
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "delete";
+      remove.textContent = "Delete";
+      remove.addEventListener("click", () => deleteHolding(holding, remove));
+      actions.append(edit, remove);
+      row.append(
+        symbolCell,
+        decisionCell,
+        tableCell(Number(holding.quantity).toLocaleString()),
+        tableCell(holding.buy_price === null ? "Not provided" : `${holding.currency} ${numberFormat.format(Number(holding.buy_price))}`),
+        tableCell(holding.bought_on ? formatDate(holding.bought_on) : "Not provided"),
+        priceCell,
+        returnCell,
+        targetCell,
+        tableCell(holding.concentrationPercent === null ? "Unavailable" : `${holding.concentrationPercent.toFixed(2)}%`),
+        scannerCell,
+        tableCell(holding.timing),
+        tableCell(formatTime(holding.quote.at)),
+        tableCell(holding.broker),
+        actions,
+      );
+      return row;
+    }
+
+    function openEdit(holding) {
+      document.querySelector("#editId").value = holding.id;
+      document.querySelector("#editSymbol").textContent = holding.symbol;
+      document.querySelector("#editBuyPrice").value = holding.buy_price ?? "";
+      document.querySelector("#editBuyDate").value = holding.bought_on ?? "";
+      document.querySelector("#editTarget").value = holding.target_price ?? "";
+      document.querySelector("#editStop").value = holding.stop_loss ?? "";
+      document.querySelector("#editNotes").value = holding.notes ?? "";
+      editDialog.showModal();
+    }
+
+    document.querySelector("#cancelEdit").addEventListener("click", () => editDialog.close());
+    editForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const id = Number(document.querySelector("#editId").value);
+      setFormBusy(editForm, true);
+      const nullable = (selector) => document.querySelector(selector).value || null;
+      const { error } = await supabase
+        .from("user_portfolio_holdings")
+        .update({
+          buy_price: nullable("#editBuyPrice"),
+          bought_on: nullable("#editBuyDate"),
+          target_price: nullable("#editTarget"),
+          stop_loss: nullable("#editStop"),
+          notes: nullable("#editNotes"),
+        })
+        .eq("id", id)
+        .eq("user_id", user.id);
+      setFormBusy(editForm, false);
+      if (error) {
+        setMessage(message, error.message);
+        return;
+      }
+      editDialog.close();
+      setMessage(message, "Holding details updated.", true);
+      await loadPortfolio();
+    });
+
+    async function deleteHolding(holding, button) {
+      if (!confirm(`Delete ${holding.symbol} from your ${holding.broker} portfolio?`)) return;
+      button.disabled = true;
+      const { error } = await supabase
+        .from("user_portfolio_holdings")
+        .delete()
+        .eq("id", holding.id)
+        .eq("user_id", user.id);
+      if (error) {
+        button.disabled = false;
+        setMessage(message, error.message);
+        return;
+      }
+      setMessage(message, `${holding.symbol} was deleted from your imported portfolio.`, true);
+      await loadPortfolio();
+    }
+
+    function formatTime(value) {
+      return value ? new Date(value).toLocaleString() : "Unavailable";
+    }
+  </script>
+</body>
+</html>

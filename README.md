@@ -1,12 +1,13 @@
-# StockScanner v2.12.0
+# StockScanner v2.13.0
 
 [![Stock Scanner](https://github.com/aksamuel/StockScanner/actions/workflows/scan.yml/badge.svg)](https://github.com/aksamuel/StockScanner/actions/workflows/scan.yml)
 
 StockScanner scans a watchlist or the NYSE universe, calculates technical and
 analyst signals, sizes positions, and produces Excel and GitHub Pages reports.
 
-**Stable release: v2.12.0** — Supabase-backed current market data, personal
-portfolio profit/loss, and production-responsive dashboards.
+**Stable release: v2.13.0** — conservative automatic portfolio targets, a 7%
+profit-review threshold, Supabase-backed current market data, and responsive
+production dashboards.
 
 AI-powered features with ChatGPT integration were introduced in v2.11.0. 🤖
 
@@ -24,7 +25,7 @@ AI-powered features with ChatGPT integration were introduced in v2.11.0. 🤖
 - Admin-only activity and user-management pages
 - Per-user exception and bought-selection lists protected by RLS
 - On-demand user portfolio imports from IBKR Flex or a broker CSV
-- Rule-based portfolio profit/loss, holding-time, target, and stop reviews
+- Rule-based portfolio profit/loss, holding-time, target, and stop reviews, with a 7% profit-review threshold and conservative automatic targets from technical, resistance, analyst-proxy, and return-objective inputs
 - Current profit/loss percentage for purchased positions
 - Bought-position time-to-profit status and benchmark-based breakeven-day scenarios
 - Daily Supabase NYSE universe refresh at 8:07 AM New York time
@@ -269,7 +270,7 @@ cd C:\StockScanner
 .\.venv\Scripts\python.exe -m pytest -q
 ```
 
-The current local `v2.12.0` package passes 101 tests.
+The current local `v2.13.0` package passes 113 tests.
 
 ## License
 

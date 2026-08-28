@@ -1,4 +1,4 @@
-export const DEFAULT_PROFIT_REVIEW_PERCENT = 20;
+export const DEFAULT_PROFIT_REVIEW_PERCENT = 7;
 export const DEFAULT_LOSS_REVIEW_PERCENT = -10;
 
 export function parseCsv(source) {
@@ -123,6 +123,49 @@ export function holdingReturnPercent(holding, currentPrice) {
   return (quantity < 0 ? buyPrice - currentPrice : currentPrice - buyPrice) / buyPrice * 100;
 }
 
+export function recommendedTargetPrice(holding, context = {}) {
+  const optionalNumber = (value) => value === null || value === undefined || value === ""
+    ? Number.NaN
+    : Number(value);
+  const manualTarget = optionalNumber(holding.target_price);
+  if (Number.isFinite(manualTarget) && manualTarget > 0) {
+    return {
+      price: manualTarget,
+      type: "manual",
+      source: "Manual target",
+      candidates: [{ price: manualTarget, source: "Manual target" }],
+    };
+  }
+
+  const buyPrice = optionalNumber(holding.buy_price);
+  if (!Number.isFinite(buyPrice) || buyPrice <= 0) return null;
+  const isShort = Number(holding.quantity) < 0;
+  const reviewTarget = buyPrice * (1 + (isShort ? -1 : 1) * DEFAULT_PROFIT_REVIEW_PERCENT / 100);
+  const candidates = [
+    { price: reviewTarget, source: `${DEFAULT_PROFIT_REVIEW_PERCENT}% return objective` },
+    { price: optionalNumber(context.technicalTarget), source: "Technical Target 1" },
+    { price: optionalNumber(context.resistanceTarget), source: "Technical resistance" },
+    { price: optionalNumber(context.analystTarget), source: "Analyst target proxy" },
+  ].filter(({ price }) => (
+    Number.isFinite(price) && price > 0 && (isShort ? price <= buyPrice : price >= buyPrice)
+  ));
+  if (!candidates.length) return null;
+
+  const selectedPrice = isShort
+    ? Math.max(...candidates.map(({ price }) => price))
+    : Math.min(...candidates.map(({ price }) => price));
+  const tolerance = Math.max(0.000001, selectedPrice * 0.000001);
+  const selectedSources = candidates
+    .filter(({ price }) => Math.abs(price - selectedPrice) <= tolerance)
+    .map(({ source }) => source);
+  return {
+    price: selectedPrice,
+    type: "automatic",
+    source: selectedSources.join(" + "),
+    candidates,
+  };
+}
+
 export function daysHeld(boughtOn, now = new Date()) {
   if (!boughtOn) return null;
   const bought = new Date(`${boughtOn}T00:00:00Z`);
@@ -228,7 +271,8 @@ export function portfolioActionDecision(holding, context = {}) {
     .trim().toLowerCase().replace(/\s+/g, "-");
   const scannerScore = optionalNumber(context.scannerScore);
   const isShort = Number(holding.quantity) < 0;
-  const target = Number(holding.target_price);
+  const targetDetails = context.recommendedTarget || recommendedTargetPrice(holding, context);
+  const target = Number(targetDetails?.price);
   const stop = Number(holding.stop_loss);
   const hasPrice = Number.isFinite(currentPrice) && currentPrice >= 0;
   const hasReturn = Number.isFinite(returnPercent);
@@ -251,7 +295,11 @@ export function portfolioActionDecision(holding, context = {}) {
     return decision("sell", "Sell review", [`Stop-loss ${stop.toFixed(2)} has been reached.`, scannerReason], 3);
   }
   if (targetHit) {
-    return decision("sell", "Sell review", [`Target ${target.toFixed(2)} has been reached.`, scannerReason], 3);
+    const targetKind = targetDetails?.type === "manual" ? "Manual target" : "Automatic target";
+    return decision("sell", "Sell review", [
+      `${targetKind} ${target.toFixed(2)} has been reached (${targetDetails?.source || "target rule"}).`,
+      scannerReason,
+    ], 3);
   }
   if (scannerRecommendation === "avoid" && returnPercent <= DEFAULT_LOSS_REVIEW_PERCENT) {
     return decision("sell", "Sell review", [

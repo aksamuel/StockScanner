@@ -1,10 +1,10 @@
-StockScanner stable release 2.12.0
+StockScanner stable release 2.13.0
 
-This package has been prepared for stable production release version 2.12.0.
+This package has been prepared for stable production release version 2.13.0.
 
 Key details:
 - Package name: stockscanner
-- Version: 2.12.0
+- Version: 2.13.0
 - Entry points:
   - stockscanner = stockscanner.cli:main
   - download-nyse = download_nyse:main
@@ -27,8 +27,9 @@ Run the scanner with:
 
 Production baseline:
   - Branch: main
-  - Stable branch: stable/v2.12.0
-  - Release verification: 96 tests passed
+  - Stable branch: stable/v2.13.0
+  - Stable tag: v2.13.0
+  - Release verification: 113 tests passed
 
 Production data:
   - Latest NYSE ticker universe: public.nyse_tickers in Supabase
@@ -36,19 +37,26 @@ Production data:
   - No market-data snapshot history is retained
 
 Production workflows:
-  - Daily NYSE ticker refresh at 8:00 AM New York time
-  - Full scanner and GitHub Pages deployment at 13:00 UTC on weekdays
+  - Daily NYSE ticker refresh at 8:07 AM New York time
+  - Full scanner and GitHub Pages deployment at 9:17 AM New York time
   - Hourly price refresh during weekday market hours
 
 Authentication and personal data:
   - New accounts require administrator permission
   - Admin pages are restricted to aaksamuel@zohomail.com
-  - Exception and bought-selection rows are private to each user
-  - Bought selections show current profit/loss percentages
-  - Bought selections show time-to-profit status and benchmark breakeven scenarios
+  - Exception, bought-selection, and portfolio rows are private to each user
+  - Deleting a user cascades deletion of their personal lists and portfolio
   - Protected-page navigation uses a responsive collapsible left drawer
   - KPI cards open searchable category stock lists
-  - Deleting a user cascades deletion of their personal lists
+
+Portfolio analysis in v2.13.0:
+  - Action review appears next to Symbol and Broker is the final data column
+  - Profit review begins at a 7% return instead of 20%
+  - A manual target overrides automatic target selection
+  - Automatic targets use the closest valid profit-side value from the 7%
+    return objective, Technical Target 1, technical resistance, and the analyst
+    target proxy
+  - A reached target creates a review signal only; no trade is submitted
 
 Documentation:
   - README.md: product overview and architecture

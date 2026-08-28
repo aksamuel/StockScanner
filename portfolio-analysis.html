@@ -103,7 +103,7 @@
 
     <section class="panel">
       <h2>How the analysis works</h2>
-      <p>The page combines present profit/loss, days held, the newest daily StockScanner recommendation and score, user-set targets and stop-losses, and each symbol's share of known portfolio market value. A reached target or stop takes priority. An Avoid rating combined with a loss of at least 10% produces a sell review; high concentration, weaker trend, long holding time, or a gain of at least 20% can produce a partial-sell review. Missing price or scanner evidence is disclosed and never guessed.</p>
+      <p>The page combines present profit/loss, days held, the newest daily StockScanner recommendation and score, targets and stop-losses, and each symbol's share of known portfolio market value. A manual target remains the highest-priority target. Otherwise, the automatic target is the lowest valid price at or above cost from the 7% return objective, Technical Target 1, resistance and the analyst target proxy. A reached target or stop takes priority. An Avoid rating combined with a loss of at least 10% produces a sell review; high concentration, weaker trend, long holding time, or a gain of at least 7% can produce a partial-sell review. Missing evidence is disclosed and never guessed.</p>
       <p class="subtle">Concentration thresholds: 10% warrants closer review and 20% is treated as high concentration. Decisions are screening prompts for your review, not automatic orders or guaranteed outcomes.</p>
       <p class="warning">IBKR may omit buy dates unless its Flex query uses Open Positions at tax-lot detail. Missing dates are never guessed.</p>
     </section>
@@ -126,17 +126,18 @@
         <thead>
           <tr>
             <th scope="col" data-sort-column="symbol" aria-sort="ascending"><button class="sort-button" type="button" data-sort-key="symbol">Symbol</button></th>
-            <th scope="col" data-sort-column="broker" aria-sort="none"><button class="sort-button" type="button" data-sort-key="broker">Broker</button></th>
+            <th scope="col" data-sort-column="action" aria-sort="none"><button class="sort-button" type="button" data-sort-key="action">Action review</button></th>
             <th scope="col" data-sort-column="quantity" aria-sort="none"><button class="sort-button" type="button" data-sort-key="quantity">Quantity</button></th>
             <th scope="col" data-sort-column="buy_price" aria-sort="none"><button class="sort-button" type="button" data-sort-key="buy_price">Buy price</button></th>
             <th scope="col" data-sort-column="bought_on" aria-sort="none"><button class="sort-button" type="button" data-sort-key="bought_on">Buy date</button></th>
             <th scope="col" data-sort-column="present_price" aria-sort="none"><button class="sort-button" type="button" data-sort-key="present_price">Present price</button></th>
             <th scope="col" data-sort-column="return_percent" aria-sort="none"><button class="sort-button" type="button" data-sort-key="return_percent">Profit / Loss %</button></th>
+            <th scope="col" data-sort-column="target" aria-sort="none"><button class="sort-button" type="button" data-sort-key="target">Review target</button></th>
             <th scope="col" data-sort-column="concentration" aria-sort="none"><button class="sort-button" type="button" data-sort-key="concentration">Concentration</button></th>
             <th scope="col" data-sort-column="scanner" aria-sort="none"><button class="sort-button" type="button" data-sort-key="scanner">Daily scanner</button></th>
             <th scope="col" data-sort-column="held_days" aria-sort="none"><button class="sort-button" type="button" data-sort-key="held_days">Time to profit</button></th>
-            <th scope="col" data-sort-column="action" aria-sort="none"><button class="sort-button" type="button" data-sort-key="action">Action review</button></th>
             <th scope="col" data-sort-column="price_updated" aria-sort="none"><button class="sort-button" type="button" data-sort-key="price_updated">Price updated</button></th>
+            <th scope="col" data-sort-column="broker" aria-sort="none"><button class="sort-button" type="button" data-sort-key="broker">Broker</button></th>
             <th scope="col">Manage</th>
           </tr>
         </thead>
@@ -176,7 +177,7 @@
   <script type="module" src="/StockScanner/auth.js" data-stockscanner-auth></script>
   <script type="module">
     import { formatDate, requireApprovedUser, setFormBusy, setMessage, supabase, tableCell } from "/StockScanner/personal-lists.js";
-    import { daysHeld, detectedPortfolioBroker, holdingReturnPercent, portfolioActionDecision, portfolioConcentrationPercent, portfolioRowsFromCsv, profitTimingLabel } from "/StockScanner/portfolio-analysis.js";
+    import { daysHeld, detectedPortfolioBroker, holdingReturnPercent, portfolioActionDecision, portfolioConcentrationPercent, portfolioRowsFromCsv, profitTimingLabel, recommendedTargetPrice } from "/StockScanner/portfolio-analysis.js";
 
     const user = await requireApprovedUser();
     const rows = document.querySelector("#rows");
@@ -289,15 +290,38 @@
       const warnings = [];
       if (priceResult.error) warnings.push(`Hourly prices are unavailable: ${priceResult.error.message}`);
       if (scannerResult.error) warnings.push("Daily scanner recommendations are unavailable; action reviews are conditional.");
+      if (scannerResult.targetWarnings?.length) warnings.push(`Automatic targets are limited: ${scannerResult.targetWarnings.join(" ")}`);
       if (warnings.length) setMessage(message, `Portfolio loaded. ${warnings.join(" ")}`);
       renderPortfolio();
     }
 
     async function loadDailyScannerSignals() {
+      const numericCell = (cell) => {
+        const text = String(cell?.textContent || "").replace(/[$,%]/g, "").trim();
+        if (!text) return null;
+        const parsed = Number(text);
+        return Number.isFinite(parsed) ? parsed : null;
+      };
+      const reportRows = (documentCopy) => {
+        const table = documentCopy.querySelector("#allTable");
+        if (!table) throw new Error("Analysis table was not found.");
+        const headers = [...table.querySelectorAll("thead th")].map((header) => header.textContent.trim());
+        const headerIndex = Object.fromEntries(headers.map((header, index) => [header, index]));
+        return [...table.querySelectorAll("tbody tr")].map((row) => ({
+          row,
+          cells: row.querySelectorAll("td"),
+          headerIndex,
+          symbol: String(row.dataset.symbol || row.querySelectorAll("td")[headerIndex.Symbol]?.textContent || "")
+            .trim().toUpperCase().split(/\s+/)[0],
+        })).filter(({ symbol }) => symbol);
+      };
+      const fetchDocument = async (path) => {
+        const response = await fetch(path, { cache: "no-store" });
+        if (!response.ok) throw new Error(`${path.split("/").at(-1)} returned HTTP ${response.status}.`);
+        return new DOMParser().parseFromString(await response.text(), "text/html");
+      };
       try {
-        const response = await fetch("/StockScanner/index.html", { cache: "no-store" });
-        if (!response.ok) throw new Error(`Dashboard returned HTTP ${response.status}.`);
-        const documentCopy = new DOMParser().parseFromString(await response.text(), "text/html");
+        const documentCopy = await fetchDocument("/StockScanner/index.html");
         const signals = {};
         documentCopy.querySelectorAll("#kpiStockTable tbody tr").forEach((row) => {
           const cells = row.querySelectorAll("td");
@@ -315,12 +339,45 @@
               ? recommendationText.toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase())
               : "Unavailable",
             score: Number.isFinite(score) ? score : null,
+            scannerPrice: numericCell(cells[2]),
+            technicalTarget: null,
+            resistanceTarget: null,
+            analystTargetUpside: null,
           };
         });
         if (!Object.keys(signals).length) throw new Error("No daily scanner rows were found.");
-        return { signals, error: null };
+        const targetWarnings = [];
+        const [technicalResult, analystResult] = await Promise.allSettled([
+          fetchDocument("/StockScanner/technical.html"),
+          fetchDocument("/StockScanner/analysts.html"),
+        ]);
+        if (technicalResult.status === "fulfilled") {
+          try {
+            reportRows(technicalResult.value).forEach(({ cells, headerIndex, symbol }) => {
+              if (signals[symbol]) signals[symbol].technicalTarget = numericCell(cells[headerIndex["Target 1"]]);
+            });
+          } catch (error) {
+            targetWarnings.push(error.message || "Technical targets unavailable.");
+          }
+        } else {
+          targetWarnings.push(technicalResult.reason?.message || "Technical targets unavailable.");
+        }
+        if (analystResult.status === "fulfilled") {
+          try {
+            reportRows(analystResult.value).forEach(({ cells, headerIndex, symbol }) => {
+              if (!signals[symbol]) return;
+              signals[symbol].resistanceTarget = numericCell(cells[headerIndex["Resistance Low"]]);
+              signals[symbol].analystTargetUpside = numericCell(cells[headerIndex["Target Upside"]]);
+            });
+          } catch (error) {
+            targetWarnings.push(error.message || "Analyst targets unavailable.");
+          }
+        } else {
+          targetWarnings.push(analystResult.reason?.message || "Analyst targets unavailable.");
+        }
+        return { signals, error: null, targetWarnings };
       } catch (error) {
-        return { signals: {}, error };
+        return { signals: {}, error, targetWarnings: [] };
       }
     }
 
@@ -357,26 +414,36 @@
       const analyzed = baseAnalysis.map((holding) => {
         const scanner = scannerSignals[holding.symbol] || {
           recommendation: "unavailable", label: "Unavailable", score: null,
+          scannerPrice: null, technicalTarget: null, resistanceTarget: null, analystTargetUpside: null,
         };
         const concentrationPercent = concentrations[holding.symbol] ?? null;
+        const analystTarget = Number.isFinite(scanner.analystTargetUpside) && Number.isFinite(scanner.scannerPrice)
+          ? scanner.scannerPrice * (1 + scanner.analystTargetUpside / 100)
+          : null;
+        const decisionContext = {
+          currentPrice: holding.quote.price,
+          returnPercent: holding.returnPercent,
+          heldDays: holding.heldDays,
+          scannerRecommendation: scanner.recommendation,
+          scannerScore: scanner.score,
+          concentrationPercent,
+          technicalTarget: scanner.technicalTarget,
+          resistanceTarget: scanner.resistanceTarget,
+          analystTarget,
+        };
+        const target = recommendedTargetPrice(holding, decisionContext);
         return {
           ...holding,
           scanner,
           concentrationPercent,
-          decision: portfolioActionDecision(holding, {
-            currentPrice: holding.quote.price,
-            returnPercent: holding.returnPercent,
-            heldDays: holding.heldDays,
-            scannerRecommendation: scanner.recommendation,
-            scannerScore: scanner.score,
-            concentrationPercent,
-          }),
+          target,
+          decision: portfolioActionDecision(holding, { ...decisionContext, recommendedTarget: target }),
         };
       });
       const term = filter.value.trim().toLowerCase();
       const visible = analyzed.filter((holding) => [
         holding.symbol, holding.broker, holding.description, holding.scanner.label,
-        holding.decision.label, ...holding.decision.reasons,
+        holding.decision.label, holding.target?.source, ...holding.decision.reasons,
       ].some((value) => String(value || "").toLowerCase().includes(term)));
       visible.sort(compareHoldings);
       updateSortHeaders();
@@ -400,6 +467,7 @@
         bought_on: holding.bought_on ? Date.parse(`${holding.bought_on}T00:00:00Z`) : null,
         present_price: holding.quote.price,
         return_percent: holding.returnPercent,
+        target: holding.target?.price,
         concentration: holding.concentrationPercent,
         scanner: holding.scanner.score,
         held_days: holding.heldDays,
@@ -450,6 +518,18 @@
           ? holding.scanner.label
           : `${holding.scanner.label} · ${holding.scanner.score.toFixed(0)}`,
       );
+      const targetCell = tableCell(
+        holding.target ? `${holding.currency} ${numberFormat.format(holding.target.price)}` : "Unavailable",
+      );
+      if (holding.target) {
+        const targetSource = document.createElement("div");
+        targetSource.className = "target-source";
+        targetSource.textContent = holding.target.source;
+        targetCell.append(targetSource);
+        targetCell.title = holding.target.candidates
+          .map(({ price, source }) => `${source}: ${numberFormat.format(price)}`)
+          .join("; ");
+      }
       const decisionCell = document.createElement("td");
       const decision = document.createElement("span");
       decision.className = `signal signal-${holding.decision.code}`;
@@ -473,17 +553,18 @@
       actions.append(edit, remove);
       row.append(
         symbolCell,
-        tableCell(holding.broker),
+        decisionCell,
         tableCell(Number(holding.quantity).toLocaleString()),
         tableCell(holding.buy_price === null ? "Not provided" : `${holding.currency} ${numberFormat.format(Number(holding.buy_price))}`),
         tableCell(holding.bought_on ? formatDate(holding.bought_on) : "Not provided"),
         priceCell,
         returnCell,
+        targetCell,
         tableCell(holding.concentrationPercent === null ? "Unavailable" : `${holding.concentrationPercent.toFixed(2)}%`),
         scannerCell,
         tableCell(holding.timing),
-        decisionCell,
         tableCell(formatTime(holding.quote.at)),
+        tableCell(holding.broker),
         actions,
       );
       return row;

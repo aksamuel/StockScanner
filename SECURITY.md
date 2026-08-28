@@ -4,11 +4,11 @@
 
 | Version | Security support |
 |---|---|
-| `2.12.x` | Supported |
-| `< 2.12` | Unsupported; upgrade to the current stable release |
+| `2.13.x` | Supported |
+| `< 2.13` | Unsupported; upgrade to the current stable release |
 
 The production baseline is maintained on `main` and pinned on the
-`stable/v2.12.0` branch.
+`stable/v2.13.0` branch.
 
 ## Reporting a vulnerability
 

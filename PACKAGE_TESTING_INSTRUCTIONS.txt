@@ -1,4 +1,4 @@
-StockScanner v2.12.0 package testing instructions
+StockScanner v2.13.0 package testing instructions
 
 Run these commands from C:\StockScanner.
 
@@ -18,7 +18,7 @@ Run these commands from C:\StockScanner.
 
     python -m pytest -q
 
-The v2.12.0 production package passed 96 tests. A later test count can be higher
+The v2.13.0 production package passed 113 tests. A later test count can be higher
 as new coverage is added; success means the command exits with no failures.
 
 4. Confirm package-version consistency
@@ -27,10 +27,10 @@ as new coverage is added; success means the command exits with no failures.
 
 Expected stable version:
 
-    2.12.0
+    2.13.0
 
 The same version must appear in stockscanner\__init__.py, pyproject.toml,
-README.md, and STABLE_RELEASE_2_12_0.txt.
+README.md, and STABLE_RELEASE_2_13_0.txt.
 
 5. Check the CLI entry point
 
@@ -64,7 +64,7 @@ SUPABASE_SECRET_KEY were intentionally provided for that test.
 Production acceptance criteria
 
 - All tests pass.
-- Package version reports 2.12.0.
+- Package version reports 2.13.0.
 - Daily NYSE workflow updates public.nyse_tickers atomically.
 - The production scanner reads the universe from Supabase.
 - public.price_snapshots contains only the latest hourly_yahoo row.

@@ -230,12 +230,32 @@ def test_portfolio_page_supports_ibkr_csv_and_rule_based_analysis():
     assert "portfolioActionDecision" in page
 
 
+def test_portfolio_uses_seven_percent_review_and_conservative_automatic_target():
+    page = read("portfolio-analysis.html")
+    logic = read("portfolio-analysis.js")
+
+    assert "DEFAULT_PROFIT_REVIEW_PERCENT = 7" in logic
+    assert "recommendedTargetPrice" in logic
+    assert 'source: "7% return objective"' not in logic
+    assert '`${DEFAULT_PROFIT_REVIEW_PERCENT}% return objective`' in logic
+    assert 'source: "Technical Target 1"' in logic
+    assert 'source: "Technical resistance"' in logic
+    assert 'source: "Analyst target proxy"' in logic
+    assert "Math.min(...candidates.map" in logic
+    assert 'targetDetails?.type === "manual"' in logic
+    assert 'fetchDocument("/StockScanner/technical.html")' in page
+    assert 'fetchDocument("/StockScanner/analysts.html")' in page
+    assert "scanner.scannerPrice * (1 + scanner.analystTargetUpside / 100)" in page
+    assert 'data-sort-key="target"' in page
+    assert "gain of at least 7%" in page
+
+
 def test_portfolio_table_headers_sort_visible_user_holdings():
     page = read("portfolio-analysis.html")
 
     for key in (
         "symbol", "broker", "quantity", "buy_price", "bought_on",
-        "present_price", "return_percent", "concentration", "scanner",
+        "present_price", "return_percent", "target", "concentration", "scanner",
         "held_days", "action", "price_updated",
     ):
         assert f'data-sort-key="{key}"' in page
@@ -245,6 +265,19 @@ def test_portfolio_table_headers_sort_visible_user_holdings():
     assert "visible.sort(compareHoldings)" in page
     assert "updateSortHeaders()" in page
     assert 'header.setAttribute("aria-sort", active ? sortDirection : "none")' in page
+
+
+def test_portfolio_table_places_action_after_symbol_and_broker_last():
+    page = read("portfolio-analysis.html")
+    header = page[page.index("<thead>"):page.index("</thead>")]
+    row_append = page[page.index("row.append("):page.index("return row;", page.index("row.append("))]
+
+    assert header.index('data-sort-key="symbol"') < header.index('data-sort-key="action"')
+    assert header.index('data-sort-key="action"') < header.index('data-sort-key="quantity"')
+    assert header.index('data-sort-key="price_updated"') < header.index('data-sort-key="broker"')
+    assert row_append.index("symbolCell") < row_append.index("decisionCell")
+    assert row_append.index("decisionCell") < row_append.index("Number(holding.quantity)")
+    assert row_append.index("formatTime(holding.quote.at)") < row_append.index("holding.broker")
 
 
 def test_ibkr_import_function_authenticates_user_and_uses_server_secrets():

@@ -1,4 +1,4 @@
-# StockScanner v2.12.0 setup and operations
+# StockScanner v2.13.0 setup and operations
 
 Windows PowerShell commands to create and activate a virtual environment, install dependencies from `requirements.txt`, and verify installation.
 
@@ -228,7 +228,10 @@ The two signed-in user pages serve different purposes:
   breakeven period using the Equal-weight Top 20 as a reference scenario.
 - `portfolio-analysis.html`: on-demand IBKR Flex and broker CSV holdings, current
   return, holding duration, daily scanner evidence, concentration, and
-  sell/partial-sell/hold review signals. Each import atomically replaces only
+  sell/partial-sell/hold review signals. The profit-review threshold is 7%.
+  Manual targets override the conservative automatic target, which selects the
+  closest valid profit-side price from the return objective, Technical Target 1,
+  resistance, and analyst target proxy. Each import atomically replaces only
   the signed-in user's older rows for that broker before the page recalculates
   the analysis; it never truncates another user or broker.
 

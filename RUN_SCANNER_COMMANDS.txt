@@ -1,4 +1,4 @@
-StockScanner v2.12.0 command reference
+StockScanner v2.13.0 command reference
 
 Run commands from C:\StockScanner. If global Python is unavailable, use
 .venv\Scripts\python.exe as shown below.
