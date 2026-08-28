@@ -62,6 +62,33 @@ def test_personal_list_client_contains_no_server_secret():
     assert "sb_secret_" not in source
 
 
+def test_personal_list_tables_expand_to_the_viewport_and_scroll_on_mobile():
+    styles = read("personal-lists.css")
+
+    assert "width: calc(100vw - 48px);" in styles
+    assert "margin-left: calc(50% - 50vw + 24px);" in styles
+    assert "width: calc(100vw - 28px);" in styles
+    assert "overflow-x: auto;" in styles
+    for page in (
+        "my-exceptions.html",
+        "my-bought-selection.html",
+        "portfolio-analysis.html",
+    ):
+        assert 'class="table-wrap"' in read(page)
+
+
+def test_personal_list_headers_use_the_compact_single_navigation_pattern():
+    styles = read("personal-lists.css")
+    auth = read("auth.js")
+
+    assert "padding: 62px 24px 40px;" in styles
+    assert "margin-bottom: 14px;" in styles
+    assert "padding-top: 12px !important;" in auth
+    assert "padding-left: 94px;" in auth
+    assert ".stockscanner-menu-toggle > span:last-child { display: none; }" in auth
+    assert auth.count('["Scanner", "Bought candidates", "bought-selection.html"]') == 1
+
+
 def test_pages_deploy_when_personal_list_files_change():
     workflow = read(".github/workflows/scan.yml")
     for path in (
@@ -265,6 +292,22 @@ def test_portfolio_table_headers_sort_visible_user_holdings():
     assert "visible.sort(compareHoldings)" in page
     assert "updateSortHeaders()" in page
     assert 'header.setAttribute("aria-sort", active ? sortDirection : "none")' in page
+
+
+def test_portfolio_kpis_filter_the_holdings_table_accessibly():
+    page = read("portfolio-analysis.html")
+
+    for filter_name in ("all", "profitable", "sell", "partial-sell", "hold"):
+        assert f'data-portfolio-filter="{filter_name}"' in page
+    assert page.count('class="metric metric-filter"') == 5
+    assert page.count('aria-controls="rows"') == 5
+    assert 'let portfolioFilter = "all"' in page
+    assert "analyzed.filter(matchesPortfolioFilter).filter" in page
+    assert 'holding.returnPercent > 0' in page
+    assert 'holding.decision.code === portfolioFilter' in page
+    assert 'button.setAttribute("aria-pressed", active ? "true" : "false")' in page
+    assert 'portfolioFilter === selectedFilter && selectedFilter !== "all"' in page
+    assert "No holdings match the selected filters." in page
 
 
 def test_portfolio_table_places_action_after_symbol_and_broker_last():

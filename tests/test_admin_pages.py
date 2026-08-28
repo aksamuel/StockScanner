@@ -74,3 +74,20 @@ def test_login_actions_stack_on_narrow_mobile_screens():
     source = read("login.html")
     assert "@media (max-width: 480px)" in source
     assert ".actions { grid-template-columns: 1fr; }" in source
+
+
+def test_admin_tables_use_full_viewport_width_with_mobile_gutters():
+    for page in ("admin.html", "users.html"):
+        source = read(page)
+        assert "width: calc(100vw - 48px)" in source
+        assert "margin-left: calc(50% - 50vw + 24px)" in source
+        assert "width: calc(100vw - 28px)" in source
+        assert "overflow-x: auto" in source
+
+
+def test_admin_pages_use_one_compact_header_pattern():
+    for page in ("admin.html", "users.html"):
+        source = read(page)
+        assert "padding: 62px 24px 40px" in source
+        assert "font-size: 1.45rem" in source
+        assert ".stockscanner-account" not in source

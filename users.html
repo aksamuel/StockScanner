@@ -5,24 +5,19 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex">
   <title>User management | StockScanner</title>
-  <style data-stockscanner-auth>
-    html:not(.auth-ready) { visibility: hidden; }
-    .stockscanner-account { position: fixed; top: 10px; right: 12px; z-index: 99999; display: flex; gap: 10px; align-items: center; padding: 7px 10px; border: 1px solid #546e7a; border-radius: 6px; color: #eceff1; background: #10212d; font: 13px/1.2 sans-serif; }
-    .stockscanner-account a { color: #81d4fa; }
-    .stockscanner-account button { padding: 4px 8px; border: 0; border-radius: 4px; cursor: pointer; }
-  </style>
+  <style data-stockscanner-auth>html:not(.auth-ready) { visibility: hidden; }</style>
   <style>
     :root { color-scheme: dark; }
     * { box-sizing: border-box; }
-    body { margin: 0; padding: 78px 24px 40px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #e0e0e0; background: #0f1923; }
+    body { margin: 0; padding: 62px 24px 40px; overflow-x: clip; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #e0e0e0; background: #0f1923; }
     main { width: min(100%, 1100px); margin: auto; }
-    h1 { margin-bottom: 5px; color: #4fc3f7; }
-    .subtitle { margin-top: 0; color: #90a4ae; }
-    .page-header { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; justify-content: space-between; }
-    .page-header a { padding: 10px 14px; border: 1px solid #4fc3f7; border-radius: 6px; color: #4fc3f7; text-decoration: none; font-weight: 700; }
-    .toolbar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin: 24px 0 16px; }
+    h1 { margin: 0 0 3px; color: #4fc3f7; font-size: 1.45rem; line-height: 1.2; }
+    .subtitle { margin: 0; color: #90a4ae; font-size: .86rem; line-height: 1.35; }
+    .page-header { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+    .page-header a { padding: 7px 10px; border: 1px solid #4fc3f7; border-radius: 6px; color: #4fc3f7; text-decoration: none; font-weight: 700; }
+    .toolbar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin: 16px 0 12px; }
     input { min-width: min(100%, 320px); padding: 10px 12px; border: 1px solid #3b5368; border-radius: 6px; color: #fff; background: #10212d; font: inherit; }
-    .table-wrap { overflow-x: auto; border: 1px solid #334b5f; border-radius: 9px; }
+    .table-wrap { width: calc(100vw - 48px); margin-left: calc(50% - 50vw + 24px); overflow-x: auto; border: 1px solid #334b5f; border-radius: 9px; }
     table { width: 100%; border-collapse: collapse; background: #1a2a3a; }
     th, td { padding: 12px; border-bottom: 1px solid #334b5f; text-align: left; white-space: nowrap; }
     th { color: #b3e5fc; background: #142433; }
@@ -38,7 +33,10 @@
     button.refresh { color: #4fc3f7; border-color: #4fc3f7; background: transparent; }
     button:disabled { opacity: .55; cursor: wait; }
     #message { min-height: 24px; color: #ffcc80; }
-    @media (max-width: 720px) { body { padding-inline: 14px; } .stockscanner-account span { display: none; } }
+    @media (max-width: 720px) {
+      body { padding: 58px 14px 32px; }
+      .table-wrap { width: calc(100vw - 28px); margin-left: calc(50% - 50vw + 14px); }
+    }
   </style>
 </head>
 <body>

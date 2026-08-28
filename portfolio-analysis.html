@@ -17,6 +17,10 @@
     .timestamp { color: #b3e5fc; font-weight: 700; }
     .metrics { margin: 22px 0; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
     .metric strong { display: block; margin-top: 7px; color: #81d4fa; font-size: 1.6rem; }
+    .metric-filter { min-height: 0; color: #e0e0e0; text-align: left; font-weight: 400; }
+    .metric-filter:hover, .metric-filter:focus-visible { border-color: #4fc3f7; background: #203448; }
+    .metric-filter:focus-visible { outline: 2px solid #4fc3f7; outline-offset: 2px; }
+    .metric-filter[aria-pressed="true"] { border-color: #4fc3f7; background: #173247; box-shadow: 0 0 0 2px #4fc3f733; }
     .signal { display: inline-block; padding: 4px 7px; border-radius: 999px; font-size: .78rem; font-weight: 750; white-space: nowrap; }
     .signal-unavailable { color: #cfd8dc; background: #455a64; }
     .signal-sell { color: #fff; background: #b71c1c; }
@@ -109,16 +113,16 @@
     </section>
 
     <section class="metrics" aria-label="Portfolio summary">
-      <div class="metric">Holdings<strong id="holdingCount">0</strong></div>
-      <div class="metric">Currently profitable<strong id="profitableCount">0</strong></div>
-      <div class="metric">Sell reviews<strong id="sellDecisionCount">0</strong></div>
-      <div class="metric">Partial-sell reviews<strong id="partialSellCount">0</strong></div>
-      <div class="metric">Hold / monitor<strong id="holdCount">0</strong></div>
+      <button class="metric metric-filter" type="button" data-portfolio-filter="all" aria-pressed="true" aria-controls="rows">Holdings<strong id="holdingCount">0</strong></button>
+      <button class="metric metric-filter" type="button" data-portfolio-filter="profitable" aria-pressed="false" aria-controls="rows">Currently profitable<strong id="profitableCount">0</strong></button>
+      <button class="metric metric-filter" type="button" data-portfolio-filter="sell" aria-pressed="false" aria-controls="rows">Sell reviews<strong id="sellDecisionCount">0</strong></button>
+      <button class="metric metric-filter" type="button" data-portfolio-filter="partial-sell" aria-pressed="false" aria-controls="rows">Partial-sell reviews<strong id="partialSellCount">0</strong></button>
+      <button class="metric metric-filter" type="button" data-portfolio-filter="hold" aria-pressed="false" aria-controls="rows">Hold / monitor<strong id="holdCount">0</strong></button>
       <div class="metric">Last downloaded<strong id="lastDownloaded">Never</strong></div>
     </section>
 
     <div class="list-toolbar">
-      <span id="count" class="count">0 holdings</span>
+      <span id="count" class="count" aria-live="polite">0 holdings</span>
       <input id="filter" class="filter" type="search" placeholder="Filter by ticker, broker, or signal" aria-label="Filter portfolio holdings">
     </div>
     <div class="table-wrap">
@@ -198,9 +202,19 @@
     let scannerSignals = {};
     let sortKey = "symbol";
     let sortDirection = "ascending";
+    let portfolioFilter = "all";
 
     if (user) await loadPortfolio();
     filter.addEventListener("input", renderPortfolio);
+    document.querySelectorAll(".metric-filter").forEach((button) => {
+      button.addEventListener("click", () => {
+        const selectedFilter = button.dataset.portfolioFilter;
+        portfolioFilter = portfolioFilter === selectedFilter && selectedFilter !== "all"
+          ? "all"
+          : selectedFilter;
+        renderPortfolio();
+      });
+    });
     document.querySelectorAll(".sort-button").forEach((button) => {
       button.addEventListener("click", () => {
         const selectedKey = button.dataset.sortKey;
@@ -441,21 +455,50 @@
         };
       });
       const term = filter.value.trim().toLowerCase();
-      const visible = analyzed.filter((holding) => [
+      const visible = analyzed.filter(matchesPortfolioFilter).filter((holding) => [
         holding.symbol, holding.broker, holding.description, holding.scanner.label,
         holding.decision.label, holding.target?.source, ...holding.decision.reasons,
       ].some((value) => String(value || "").toLowerCase().includes(term)));
       visible.sort(compareHoldings);
       updateSortHeaders();
+      updatePortfolioFilterButtons();
       rows.replaceChildren(...visible.map(holdingRow));
       empty.hidden = visible.length !== 0;
-      document.querySelector("#count").textContent = `${holdings.length} holding${holdings.length === 1 ? "" : "s"}`;
+      empty.textContent = holdings.length ? "No holdings match the selected filters." : "No portfolio holdings have been imported.";
+      document.querySelector("#count").textContent = visible.length === holdings.length && !term
+        ? `${holdings.length} holding${holdings.length === 1 ? "" : "s"}`
+        : `${visible.length} of ${holdings.length} holdings shown`;
       document.querySelector("#holdingCount").textContent = holdings.length;
       document.querySelector("#profitableCount").textContent = analyzed.filter((holding) => holding.returnPercent > 0).length;
       document.querySelector("#sellDecisionCount").textContent = analyzed.filter((holding) => holding.decision.code === "sell").length;
       document.querySelector("#partialSellCount").textContent = analyzed.filter((holding) => holding.decision.code === "partial-sell").length;
       document.querySelector("#holdCount").textContent = analyzed.filter((holding) => holding.decision.code === "hold").length;
       document.querySelector("#lastDownloaded").textContent = imports[0] ? formatTime(imports[0].downloaded_at) : "Never";
+    }
+
+    function matchesPortfolioFilter(holding) {
+      if (portfolioFilter === "profitable") return holding.returnPercent > 0;
+      if (["sell", "partial-sell", "hold"].includes(portfolioFilter)) {
+        return holding.decision.code === portfolioFilter;
+      }
+      return true;
+    }
+
+    function updatePortfolioFilterButtons() {
+      const labels = {
+        all: "all holdings",
+        profitable: "currently profitable holdings",
+        sell: "sell reviews",
+        "partial-sell": "partial-sell reviews",
+        hold: "hold or monitor reviews",
+      };
+      document.querySelectorAll(".metric-filter").forEach((button) => {
+        const active = button.dataset.portfolioFilter === portfolioFilter;
+        button.setAttribute("aria-pressed", active ? "true" : "false");
+        button.title = active && portfolioFilter !== "all"
+          ? "Active filter. Click again to show all holdings."
+          : `Show ${labels[button.dataset.portfolioFilter]}`;
+      });
     }
 
     function sortValue(holding) {

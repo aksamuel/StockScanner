@@ -453,6 +453,7 @@ body {
     padding: 0;
     background: #f5f7fb;
     color: #0f243e;
+    overflow-x: clip;
 }
 .container {
     max-width: 1200px;
@@ -460,18 +461,19 @@ body {
     padding: 24px;
 }
 header {
-    margin-bottom: 24px;
+    margin-bottom: 12px;
 }
 header h1 {
-    margin: 0 0 8px;
-    font-size: 2rem;
+    margin: 0 0 3px;
+    font-size: 1.4rem;
+    line-height: 1.2;
 }
 header p {
     margin: 0;
     color: #475569;
 }
 nav {
-    margin: 16px 0;
+    margin: 8px 0 12px;
 }
 nav a {
     margin-right: 16px;
@@ -488,7 +490,8 @@ nav a:hover {
 }
 .summary table,
 .report-links table {
-    width: 100%;
+    width: calc(100vw - 48px);
+    margin-left: calc(50% - 50vw + 24px);
     border-collapse: collapse;
 }
 .summary th,
@@ -505,7 +508,8 @@ nav a:hover {
     color: #ffffff;
 }
 .stockscanner-table {
-    width: 100%;
+    width: calc(100vw - 48px);
+    margin-left: calc(50% - 50vw + 24px);
     border-collapse: collapse;
     margin-bottom: 32px;
 }
@@ -534,6 +538,15 @@ footer {
     padding-top: 16px;
     border-top: 1px solid #d9e1f2;
     color: #475569;
+}
+@media (max-width: 720px) {
+    .container { padding: 12px; }
+    .summary table,
+    .report-links table,
+    .stockscanner-table {
+        width: calc(100vw - 24px);
+        margin-left: calc(50% - 50vw + 12px);
+    }
 }
 </style>"""
 

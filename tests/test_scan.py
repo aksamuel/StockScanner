@@ -501,6 +501,12 @@ def test_three_report_pages_have_requested_columns_navigation_and_selection():
     assert '<canvas id="performanceChart"' not in pages["landing"]
     assert "width: 100%;\n    max-width: none;" in pages["landing"]
     assert "@media (max-width: 720px)" in pages["landing"]
+    for page in pages.values():
+        assert "width: calc(100vw - 40px);" in page
+        assert "margin-left: calc(50% - 50vw + 20px);" in page
+        assert "width: calc(100vw - 24px);" in page
+        assert "header {\n    background:" in page
+        assert "padding: 10px 0;\n    margin-bottom: 14px;" in page
     assert ".filter-bar input { width: 100%; }" in pages["technical"]
     assert '<table id="topTable">' not in pages["landing"]
     for page_key in ["technical", "analysts", "bought-selection"]:
@@ -509,6 +515,14 @@ def test_three_report_pages_have_requested_columns_navigation_and_selection():
         assert "performanceChart" not in pages[page_key]
         assert "Equal-weight Top 20" not in pages[page_key]
         assert "Scan completed:" not in pages[page_key]
+
+
+def test_standalone_report_tables_expand_to_viewport_width():
+    assert "width: calc(100vw - 48px);" in report.HTML_STYLE
+    assert "margin-left: calc(50% - 50vw + 24px);" in report.HTML_STYLE
+    assert "width: calc(100vw - 24px);" in report.HTML_STYLE
+    assert "margin-bottom: 12px;" in report.HTML_STYLE
+    assert "font-size: 1.4rem;" in report.HTML_STYLE
 
 
 def test_analyst_page_symbols_use_current_price_to_support_low_gap_colors():

@@ -5,29 +5,29 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex">
   <title>Admin dashboard | StockScanner</title>
-  <style data-stockscanner-auth>
-    html:not(.auth-ready) { visibility: hidden; }
-    .stockscanner-account { position: fixed; top: 10px; right: 12px; z-index: 99999; display: flex; gap: 10px; align-items: center; padding: 7px 10px; border: 1px solid #546e7a; border-radius: 6px; color: #eceff1; background: #10212d; font: 13px/1.2 sans-serif; }
-    .stockscanner-account a { color: #81d4fa; }
-    .stockscanner-account button { padding: 4px 8px; border: 0; border-radius: 4px; cursor: pointer; }
-  </style>
+  <style data-stockscanner-auth>html:not(.auth-ready) { visibility: hidden; }</style>
   <style>
     :root { color-scheme: dark; }
-    body { margin: 0; padding: 70px 24px 40px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #e0e0e0; background: #0f1923; }
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 62px 24px 40px; overflow-x: clip; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #e0e0e0; background: #0f1923; }
     main { width: min(100%, 1100px); margin: auto; }
-    h1 { color: #4fc3f7; }
-    .page-header { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; justify-content: space-between; }
-    .page-header a { padding: 10px 14px; border: 1px solid #4fc3f7; border-radius: 6px; color: #4fc3f7; text-decoration: none; font-weight: 700; }
-    h2 { margin-top: 32px; color: #b3e5fc; }
+    h1 { margin: 0; color: #4fc3f7; font-size: 1.45rem; line-height: 1.2; }
+    .page-header { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+    .page-header a { padding: 7px 10px; border: 1px solid #4fc3f7; border-radius: 6px; color: #4fc3f7; text-decoration: none; font-weight: 700; }
+    h2 { margin-top: 24px; color: #b3e5fc; }
     .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 14px; margin: 22px 0; }
     .metric { padding: 18px; border: 1px solid #334b5f; border-radius: 9px; background: #1a2a3a; }
     .metric strong { display: block; margin-top: 7px; color: #81d4fa; font-size: 1.8rem; }
-    .table-wrap { overflow-x: auto; }
+    .table-wrap { width: calc(100vw - 48px); margin-left: calc(50% - 50vw + 24px); overflow-x: auto; }
     table { width: 100%; border-collapse: collapse; background: #1a2a3a; }
     th, td { padding: 12px; border-bottom: 1px solid #334b5f; text-align: left; }
     button { padding: 7px 12px; border: 0; border-radius: 5px; color: #10242d; background: #81c784; font-weight: 700; cursor: pointer; }
     button:disabled { opacity: .6; cursor: wait; }
     #message { min-height: 24px; color: #ffcc80; }
+    @media (max-width: 720px) {
+      body { padding: 58px 14px 32px; }
+      .table-wrap { width: calc(100vw - 28px); margin-left: calc(50% - 50vw + 14px); }
+    }
   </style>
 </head>
 <body>
