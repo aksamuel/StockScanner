@@ -2,12 +2,20 @@ name: Daily NYSE Ticker Universe
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/ticker-universe.yml"
+      - "stockscanner/ticker_universe_store.py"
+      - "stockscanner/universe.py"
+      - "supabase/migrations/**"
   # GitHub cron is UTC-only. Running at both candidate UTC hours and applying
   # New York/date guards in Python produces one refresh at 08:00 through DST.
   schedule:
     - cron: "0 12,13 * * 1-5"
 
 permissions:
+  actions: write
   contents: read
 
 concurrency:
@@ -43,7 +51,13 @@ jobs:
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
         run: |
           FORCE_FLAG=""
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          if [ "${{ github.event_name }}" != "schedule" ]; then
             FORCE_FLAG="--force"
           fi
           python -m stockscanner.ticker_universe_store $FORCE_FLAG
+
+      - name: Regenerate production reports after release bootstrap
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run scan.yml --ref main -f mode=universe
