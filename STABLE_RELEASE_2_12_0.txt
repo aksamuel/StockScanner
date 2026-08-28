@@ -25,7 +25,34 @@ Install locally with:
 Run the scanner with:
   .\run.bat
 
+Production baseline:
+  - Branch: main
+  - Stable branch: stable/v2.12.0
+  - Release verification: 96 tests passed
+
 Production data:
   - Latest NYSE ticker universe: public.nyse_tickers in Supabase
   - Latest hourly prices: public.price_snapshots in Supabase
   - No market-data snapshot history is retained
+
+Production workflows:
+  - Daily NYSE ticker refresh at 8:00 AM New York time
+  - Full scanner and GitHub Pages deployment at 13:00 UTC on weekdays
+  - Hourly price refresh during weekday market hours
+
+Authentication and personal data:
+  - New accounts require administrator permission
+  - Admin pages are restricted to aaksamuel@zohomail.com
+  - Exception and bought-selection rows are private to each user
+  - Bought selections show current profit/loss percentages
+  - Bought selections show time-to-profit status and benchmark breakeven scenarios
+  - Protected-page navigation uses a responsive collapsible left drawer
+  - KPI cards open searchable category stock lists
+  - Deleting a user cascades deletion of their personal lists
+
+Documentation:
+  - README.md: product overview and architecture
+  - README_SETUP.md: installation, migrations, workflows, and security setup
+  - RUN_SCANNER_COMMANDS.txt: local and Supabase command reference
+  - PACKAGE_TESTING_INSTRUCTIONS.txt: complete verification procedure
+  - SECURITY.md: supported versions and security policy

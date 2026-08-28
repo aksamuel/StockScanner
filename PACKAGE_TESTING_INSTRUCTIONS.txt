@@ -1,49 +1,84 @@
-How to test the StockScanner package
+StockScanner v2.12.0 package testing instructions
 
-1. Activate the virtual environment
+Run these commands from C:\StockScanner.
 
-From C:\StockScanner:
+1. Create or activate the virtual environment
 
+    python -m venv .venv
     .venv\Scripts\Activate.ps1
 
-2. Run the unit tests
+2. Install runtime, package, and test dependencies
 
-    python -m pytest -q tests/test_scan.py
+    python -m pip install --upgrade pip
+    python -m pip install -r requirements.txt
+    python -m pip install -r requirements-dev.txt
+    python -m pip install -e .
 
-If the package is healthy, you should see:
-- 2 passed
+3. Run the complete repository test suite
 
-3. Check the CLI entrypoint
+    python -m pytest -q
+
+The v2.12.0 production package passed 96 tests. A later test count can be higher
+as new coverage is added; success means the command exits with no failures.
+
+4. Confirm package-version consistency
+
+    python -c "import stockscanner; print(stockscanner.__version__)"
+
+Expected stable version:
+
+    2.12.0
+
+The same version must appear in stockscanner\__init__.py, pyproject.toml,
+README.md, and STABLE_RELEASE_2_12_0.txt.
+
+5. Check the CLI entry point
 
     python -m stockscanner --help
 
-This should print the CLI usage and option list.
+This should print the current CLI options, including --universe-source.
 
-4. Run a quick scan without exporting reports
+6. Run a small local download-mode scan
 
-    python -m stockscanner --universe --limit 10 --no-report
+    python -m stockscanner.cli --universe --universe-source download --limit 10 --parallel --workers 5 --no-report --progress
 
-This verifies the package can:
-- load the NYSE universe
-- download data
-- calculate indicators
-- score stocks
+This checks universe download, one-year Yahoo Finance history, indicators,
+scoring, and parallel execution. External market-data services can occasionally
+rate-limit a test; retry only after confirming the error is external.
 
-5. Test the NYSE downloader
+7. Test the Supabase ticker-universe module without writing production data
 
-    python -m download_nyse --force-yfinance --limit 20
+    python -m pytest -q tests\test_ticker_universe_store.py
 
-This confirms the ticker download path works.
+Do not run a production refresh from a developer PC unless SUPABASE_URL and
+SUPABASE_SECRET_KEY were intentionally provided for that test.
 
-6. Alternative Windows launcher
+8. Test the latest-only hourly snapshot integration
 
-If you prefer the launcher script:
+    python -m pytest -q tests\test_supabase_snapshot.py tests\test_price_snapshot.py
 
-    .\run.bat --universe --limit 10 --no-report
+9. Validate documentation and source formatting
 
-What success looks like
+    git diff --check
 
-- CLI help displays normally
-- tests pass
-- a scan completes without crashing
-- the downloader saves data/nyse_tickers.csv when run
+Production acceptance criteria
+
+- All tests pass.
+- Package version reports 2.12.0.
+- Daily NYSE workflow updates public.nyse_tickers atomically.
+- The production scanner reads the universe from Supabase.
+- public.price_snapshots contains only the latest hourly_yahoo row.
+- Auth pages reject unapproved users.
+- Admin pages are limited to aaksamuel@zohomail.com.
+- Each user can access only their own exception and bought-selection rows.
+- The shared responsive navigation drawer works with pointer and keyboard input.
+- KPI cards open the matching full scanned-stock lists.
+- Bought-list breakeven estimates use the documented Equal-weight Top 20 scenario.
+- GitHub Pages deploys successfully and protected pages redirect signed-out users.
+
+Ticker storage note
+
+The production ticker universe is not stored in a GitHub CSV. It is stored in
+public.nyse_tickers and replaced once per weekday at or after 8:00 AM New York
+time. The legacy local CSV downloader remains available only for local testing
+and recovery.

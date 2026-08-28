@@ -20,8 +20,13 @@ on:
       - "users.html"
       - "my-exceptions.html"
       - "my-bought-selection.html"
+      - "portfolio-analysis.html"
+      - "portfolio-analysis.js"
+      - "portfolio-holdings-template.csv"
       - "personal-lists.css"
       - "personal-lists.js"
+      - "supabase/functions/import-ibkr-portfolio/**"
+      - "supabase/migrations/**"
       - "tools/inject_auth.py"
       - ".github/workflows/scan.yml"
 

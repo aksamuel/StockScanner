@@ -1,0 +1,3 @@
+symbol,quantity,buy_price,buy_date,target_price,stop_loss,currency,notes
+AAPL,10,185.50,2026-01-15,225.00,165.00,USD,Example row - replace or delete
+MSFT,5,420.00,2026-02-10,500.00,380.00,USD,Optional target and stop prices

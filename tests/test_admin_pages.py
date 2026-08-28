@@ -61,13 +61,13 @@ def test_presence_heartbeat_does_not_increment_page_hits():
     assert 'recordActivity(data.user, "page_view")' not in interval
 
 
-def test_account_bar_displays_user_identity_at_top_right():
+def test_navigation_drawer_displays_user_identity():
     source = read("auth.js")
     assert "user.user_metadata?.full_name" in source
     assert "user.email" in source
-    assert 'identity.textContent = `User: ${displayName}`' in source
-    assert 'controls.style.top = "10px"' in source
-    assert 'controls.style.bottom = "auto"' in source
+    assert "identity.textContent = displayName" in source
+    assert 'identity.className = "stockscanner-drawer-user"' in source
+    assert "identity.title = user.email || displayName" in source
 
 
 def test_login_actions_stack_on_narrow_mobile_screens():

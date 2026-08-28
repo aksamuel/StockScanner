@@ -1,0 +1,396 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>My portfolio analysis | StockScanner</title>
+  <link rel="stylesheet" href="/StockScanner/personal-lists.css">
+  <style>
+    main.portfolio-main { width: min(100%, 1500px); }
+    .import-grid, .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 14px; }
+    .import-card, .metric { padding: 18px; border: 1px solid #334b5f; border-radius: 9px; background: #1a2a3a; }
+    .import-card h2 { margin-top: 0; color: #b3e5fc; }
+    .import-card form { display: grid; grid-template-columns: 1fr; }
+    .button-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+    .template-link { color: #81d4fa; font-weight: 700; }
+    .timestamp { color: #b3e5fc; font-weight: 700; }
+    .metrics { margin: 22px 0; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
+    .metric strong { display: block; margin-top: 7px; color: #81d4fa; font-size: 1.6rem; }
+    .signal { display: inline-block; padding: 4px 7px; border-radius: 999px; font-size: .78rem; font-weight: 750; white-space: nowrap; }
+    .signal-monitor { color: #b3e5fc; background: #23405a; }
+    .signal-sell-review { color: #b9f6ca; background: #1b5e20; }
+    .signal-risk-review { color: #ffcdd2; background: #7f1d1d; }
+    .signal-unavailable { color: #cfd8dc; background: #455a64; }
+    .subtle { color: #90a4ae; font-size: .88rem; }
+    .warning { color: #ffcc80; }
+    .table-wrap { margin-top: 12px; }
+    .portfolio-table { min-width: 1280px; }
+    .portfolio-table td { vertical-align: top; }
+    .row-actions { display: flex; gap: 7px; }
+    button.secondary { color: #e0e0e0; border-color: #546e7a; background: #24384a; }
+    dialog { width: min(92vw, 600px); border: 1px solid #4fc3f7; border-radius: 9px; color: #e0e0e0; background: #142433; }
+    dialog::backdrop { background: rgb(0 0 0 / .72); }
+    dialog form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    dialog .dialog-title, dialog .dialog-actions { grid-column: 1 / -1; }
+    dialog .dialog-actions { display: flex; justify-content: flex-end; gap: 10px; }
+    @media (max-width: 720px) {
+      dialog form { grid-template-columns: 1fr; }
+      dialog .dialog-title, dialog .dialog-actions { grid-column: 1; }
+    }
+  </style>
+</head>
+<body>
+  <main class="portfolio-main">
+    <div class="page-header">
+      <div>
+        <h1>My portfolio analysis</h1>
+        <p class="subtitle">On-demand, user-owned broker holdings with current profit/loss and review signals.</p>
+      </div>
+      <nav class="page-nav" aria-label="Personal lists">
+        <a href="/StockScanner/index.html">Dashboard</a>
+        <a href="/StockScanner/my-exceptions.html">My exceptions</a>
+        <a href="/StockScanner/my-bought-selection.html">My bought list</a>
+        <a href="/StockScanner/portfolio-analysis.html" aria-current="page">Portfolio analysis</a>
+      </nav>
+    </div>
+
+    <section class="import-grid" aria-label="Portfolio import options">
+      <article class="import-card">
+        <h2>Download from IBKR</h2>
+        <p>Retrieves the latest open positions only when you click the button. A correctly configured IBKR Flex query can include tax-lot buy dates.</p>
+        <div class="button-row">
+          <button id="ibkrImport" type="button">Download IBKR holdings</button>
+        </div>
+        <p id="ibkrStatus" class="subtle" role="status" aria-live="polite">Not downloaded during this visit.</p>
+      </article>
+
+      <article class="import-card">
+        <h2>Upload another broker CSV</h2>
+        <form id="csvForm">
+          <label>Broker name
+            <input id="broker" type="text" maxlength="80" placeholder="Example: ZOHO BROKER" required>
+          </label>
+          <label>Portfolio CSV file
+            <input id="csvFile" type="file" accept=".csv,text/csv" required>
+          </label>
+          <div class="button-row">
+            <button type="submit">Upload and analyze</button>
+            <a class="template-link" href="/StockScanner/portfolio-holdings-template.csv" download>Download CSV template</a>
+          </div>
+        </form>
+        <p class="subtle">Required columns: symbol, quantity, buy_price, buy_date. Uploading replaces only your holdings for the named broker.</p>
+        <p id="csvStatus" class="subtle" role="status" aria-live="polite"></p>
+      </article>
+    </section>
+
+    <section class="panel">
+      <h2>How the analysis works</h2>
+      <p>The page compares buy price with the newest available present price. A target or stop entered in the CSV takes priority. Otherwise, +20% produces a profit-review signal and −10% produces a risk-review signal. These are transparent screening rules, not automatic trade instructions or personalized financial advice.</p>
+      <p class="warning">IBKR may omit buy dates unless its Flex query uses Open Positions at tax-lot detail. Missing dates are never guessed.</p>
+    </section>
+
+    <section class="metrics" aria-label="Portfolio summary">
+      <div class="metric">Holdings<strong id="holdingCount">0</strong></div>
+      <div class="metric">Currently profitable<strong id="profitableCount">0</strong></div>
+      <div class="metric">Profit reviews<strong id="sellReviewCount">0</strong></div>
+      <div class="metric">Risk reviews<strong id="riskReviewCount">0</strong></div>
+      <div class="metric">Last downloaded<strong id="lastDownloaded">Never</strong></div>
+    </section>
+
+    <div class="list-toolbar">
+      <span id="count" class="count">0 holdings</span>
+      <input id="filter" class="filter" type="search" placeholder="Filter by ticker, broker, or signal" aria-label="Filter portfolio holdings">
+    </div>
+    <div class="table-wrap">
+      <table class="portfolio-table">
+        <thead>
+          <tr>
+            <th>Symbol</th><th>Broker</th><th>Quantity</th><th>Buy price</th><th>Buy date</th>
+            <th>Present price</th><th>Profit / Loss %</th><th>Time to profit</th><th>Sell review</th>
+            <th>Price updated</th><th>Action</th>
+          </tr>
+        </thead>
+        <tbody id="rows"></tbody>
+      </table>
+      <div id="empty" class="empty" hidden>No portfolio holdings have been imported.</div>
+    </div>
+    <p id="message" role="status" aria-live="polite"></p>
+  </main>
+
+  <dialog id="editDialog">
+    <form id="editForm" method="dialog">
+      <h2 class="dialog-title">Update <span id="editSymbol"></span></h2>
+      <input id="editId" type="hidden">
+      <label>Buy price
+        <input id="editBuyPrice" type="number" min="0" step="any">
+      </label>
+      <label>Buy date
+        <input id="editBuyDate" type="date">
+      </label>
+      <label>Target price
+        <input id="editTarget" type="number" min="0" step="any">
+      </label>
+      <label>Stop loss
+        <input id="editStop" type="number" min="0" step="any">
+      </label>
+      <label class="wide">Notes
+        <input id="editNotes" type="text" maxlength="500">
+      </label>
+      <div class="dialog-actions">
+        <button id="cancelEdit" class="secondary" type="button">Cancel</button>
+        <button type="submit">Save details</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script type="module" src="/StockScanner/auth.js" data-stockscanner-auth></script>
+  <script type="module">
+    import { formatDate, requireApprovedUser, setFormBusy, setMessage, supabase, tableCell } from "/StockScanner/personal-lists.js";
+    import { daysHeld, holdingReturnPercent, portfolioRowsFromCsv, profitTimingLabel, sellReviewSignal } from "/StockScanner/portfolio-analysis.js";
+
+    const user = await requireApprovedUser();
+    const rows = document.querySelector("#rows");
+    const empty = document.querySelector("#empty");
+    const message = document.querySelector("#message");
+    const filter = document.querySelector("#filter");
+    const csvForm = document.querySelector("#csvForm");
+    const csvStatus = document.querySelector("#csvStatus");
+    const ibkrStatus = document.querySelector("#ibkrStatus");
+    const ibkrImport = document.querySelector("#ibkrImport");
+    const editDialog = document.querySelector("#editDialog");
+    const editForm = document.querySelector("#editForm");
+    const numberFormat = new Intl.NumberFormat(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 });
+    let holdings = [];
+    let imports = [];
+    let latestPrices = {};
+    let snapshotTime = null;
+
+    if (user) await loadPortfolio();
+    filter.addEventListener("input", renderPortfolio);
+
+    ibkrImport.addEventListener("click", async () => {
+      if (!user) return;
+      ibkrImport.disabled = true;
+      ibkrStatus.textContent = "Requesting the latest IBKR Flex portfolio…";
+      const { data, error } = await supabase.functions.invoke("import-ibkr-portfolio", { body: {} });
+      ibkrImport.disabled = false;
+      if (error || data?.error) {
+        ibkrStatus.textContent = data?.error || error?.message || "IBKR import failed.";
+        return;
+      }
+      const missingDates = Number(data.missing_buy_dates || 0);
+      ibkrStatus.textContent = `${data.count} IBKR holding${data.count === 1 ? "" : "s"} downloaded ${formatTime(data.downloaded_at)}.${missingDates ? ` ${missingDates} need a buy date.` : ""}`;
+      await loadPortfolio();
+    });
+
+    csvForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (!user || !csvForm.reportValidity()) return;
+      const file = document.querySelector("#csvFile").files[0];
+      const broker = document.querySelector("#broker").value.trim().toUpperCase();
+      if (!file || file.size > 1_000_000) {
+        csvStatus.textContent = "Choose a CSV file no larger than 1 MB.";
+        return;
+      }
+      setFormBusy(csvForm, true);
+      try {
+        const parsedRows = portfolioRowsFromCsv(await file.text());
+        const { data, error } = await supabase.rpc("replace_my_portfolio_holdings", {
+          p_broker: broker,
+          p_source: "csv",
+          p_holdings: parsedRows,
+        });
+        if (error) throw error;
+        const result = data?.[0] || {};
+        csvStatus.textContent = `${result.replaced_count ?? parsedRows.length} holding${parsedRows.length === 1 ? "" : "s"} imported for ${broker} at ${formatTime(result.downloaded_at)}.`;
+        csvStatus.classList.add("success");
+        await loadPortfolio();
+      } catch (error) {
+        csvStatus.classList.remove("success");
+        csvStatus.textContent = error.message || "CSV import failed.";
+      } finally {
+        setFormBusy(csvForm, false);
+      }
+    });
+
+    async function loadPortfolio() {
+      const [holdingResult, importResult, priceResult] = await Promise.all([
+        supabase
+          .from("user_portfolio_holdings")
+          .select("id,broker,position_key,symbol,description,asset_class,currency,quantity,buy_price,bought_on,current_price,current_price_at,market_value,unrealized_pnl,target_price,stop_loss,notes,import_source,imported_at")
+          .eq("user_id", user.id)
+          .order("symbol"),
+        supabase
+          .from("user_portfolio_imports")
+          .select("broker,import_source,downloaded_at,row_count")
+          .eq("user_id", user.id)
+          .order("downloaded_at", { ascending: false }),
+        supabase
+          .from("price_snapshots")
+          .select("prices,price_timestamp,generated_at")
+          .eq("source", "hourly_yahoo")
+          .maybeSingle(),
+      ]);
+      const error = holdingResult.error || importResult.error;
+      if (error) {
+        setMessage(message, error.message);
+        return;
+      }
+      holdings = holdingResult.data || [];
+      imports = importResult.data || [];
+      latestPrices = priceResult.data?.prices || {};
+      snapshotTime = priceResult.data?.price_timestamp || priceResult.data?.generated_at || null;
+      if (priceResult.error) setMessage(message, `Portfolio loaded, but hourly prices are unavailable: ${priceResult.error.message}`);
+      renderPortfolio();
+    }
+
+    function currentQuote(holding) {
+      const snapshotPrice = Number(latestPrices[holding.symbol]);
+      const importedPrice = Number(holding.current_price);
+      const snapshotDate = snapshotTime ? new Date(snapshotTime) : null;
+      const importedDate = holding.current_price_at ? new Date(holding.current_price_at) : null;
+      if (Number.isFinite(snapshotPrice) && snapshotPrice >= 0 && (!importedDate || (snapshotDate && snapshotDate >= importedDate))) {
+        return { price: snapshotPrice, at: snapshotTime, source: "Hourly Yahoo snapshot" };
+      }
+      if (Number.isFinite(importedPrice) && importedPrice >= 0) {
+        return { price: importedPrice, at: holding.current_price_at || holding.imported_at, source: holding.broker };
+      }
+      return { price: null, at: null, source: "Unavailable" };
+    }
+
+    function analyzedHolding(holding) {
+      const quote = currentQuote(holding);
+      const returnPercent = holdingReturnPercent(holding, quote.price);
+      const heldDays = daysHeld(holding.bought_on);
+      return {
+        ...holding,
+        quote,
+        returnPercent,
+        heldDays,
+        timing: profitTimingLabel(returnPercent, heldDays),
+        signal: sellReviewSignal(holding, quote.price, returnPercent),
+      };
+    }
+
+    function renderPortfolio() {
+      const analyzed = holdings.map(analyzedHolding);
+      const term = filter.value.trim().toLowerCase();
+      const visible = analyzed.filter((holding) => [
+        holding.symbol, holding.broker, holding.description, holding.signal.label,
+      ].some((value) => String(value || "").toLowerCase().includes(term)));
+      rows.replaceChildren(...visible.map(holdingRow));
+      empty.hidden = visible.length !== 0;
+      document.querySelector("#count").textContent = `${holdings.length} holding${holdings.length === 1 ? "" : "s"}`;
+      document.querySelector("#holdingCount").textContent = holdings.length;
+      document.querySelector("#profitableCount").textContent = analyzed.filter((holding) => holding.returnPercent > 0).length;
+      document.querySelector("#sellReviewCount").textContent = analyzed.filter((holding) => holding.signal.code === "sell-review").length;
+      document.querySelector("#riskReviewCount").textContent = analyzed.filter((holding) => holding.signal.code === "risk-review").length;
+      document.querySelector("#lastDownloaded").textContent = imports[0] ? formatTime(imports[0].downloaded_at) : "Never";
+    }
+
+    function holdingRow(holding) {
+      const row = document.createElement("tr");
+      const symbolCell = tableCell(holding.symbol, "symbol");
+      symbolCell.title = holding.description || holding.symbol;
+      const priceCell = tableCell(holding.quote.price === null ? "Unavailable" : `${holding.currency} ${numberFormat.format(holding.quote.price)}`);
+      priceCell.title = holding.quote.source;
+      const returnCell = tableCell(
+        holding.returnPercent === null ? "Unavailable" : `${holding.returnPercent >= 0 ? "+" : ""}${holding.returnPercent.toFixed(2)}%`,
+        holding.returnPercent === null ? "pl-unavailable" : holding.returnPercent > 0 ? "pl-profit" : holding.returnPercent < 0 ? "pl-loss" : "pl-neutral",
+      );
+      const signalCell = document.createElement("td");
+      const signal = document.createElement("span");
+      signal.className = `signal signal-${holding.signal.code}`;
+      signal.textContent = holding.signal.label;
+      signalCell.append(signal);
+      const actions = document.createElement("td");
+      actions.className = "row-actions";
+      const edit = document.createElement("button");
+      edit.type = "button";
+      edit.className = "secondary";
+      edit.textContent = "Edit";
+      edit.addEventListener("click", () => openEdit(holding));
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "delete";
+      remove.textContent = "Delete";
+      remove.addEventListener("click", () => deleteHolding(holding, remove));
+      actions.append(edit, remove);
+      row.append(
+        symbolCell,
+        tableCell(holding.broker),
+        tableCell(Number(holding.quantity).toLocaleString()),
+        tableCell(holding.buy_price === null ? "Not provided" : `${holding.currency} ${numberFormat.format(Number(holding.buy_price))}`),
+        tableCell(holding.bought_on ? formatDate(holding.bought_on) : "Not provided"),
+        priceCell,
+        returnCell,
+        tableCell(holding.timing),
+        signalCell,
+        tableCell(formatTime(holding.quote.at)),
+        actions,
+      );
+      return row;
+    }
+
+    function openEdit(holding) {
+      document.querySelector("#editId").value = holding.id;
+      document.querySelector("#editSymbol").textContent = holding.symbol;
+      document.querySelector("#editBuyPrice").value = holding.buy_price ?? "";
+      document.querySelector("#editBuyDate").value = holding.bought_on ?? "";
+      document.querySelector("#editTarget").value = holding.target_price ?? "";
+      document.querySelector("#editStop").value = holding.stop_loss ?? "";
+      document.querySelector("#editNotes").value = holding.notes ?? "";
+      editDialog.showModal();
+    }
+
+    document.querySelector("#cancelEdit").addEventListener("click", () => editDialog.close());
+    editForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const id = Number(document.querySelector("#editId").value);
+      setFormBusy(editForm, true);
+      const nullable = (selector) => document.querySelector(selector).value || null;
+      const { error } = await supabase
+        .from("user_portfolio_holdings")
+        .update({
+          buy_price: nullable("#editBuyPrice"),
+          bought_on: nullable("#editBuyDate"),
+          target_price: nullable("#editTarget"),
+          stop_loss: nullable("#editStop"),
+          notes: nullable("#editNotes"),
+        })
+        .eq("id", id)
+        .eq("user_id", user.id);
+      setFormBusy(editForm, false);
+      if (error) {
+        setMessage(message, error.message);
+        return;
+      }
+      editDialog.close();
+      setMessage(message, "Holding details updated.", true);
+      await loadPortfolio();
+    });
+
+    async function deleteHolding(holding, button) {
+      if (!confirm(`Delete ${holding.symbol} from your ${holding.broker} portfolio?`)) return;
+      button.disabled = true;
+      const { error } = await supabase
+        .from("user_portfolio_holdings")
+        .delete()
+        .eq("id", holding.id)
+        .eq("user_id", user.id);
+      if (error) {
+        button.disabled = false;
+        setMessage(message, error.message);
+        return;
+      }
+      setMessage(message, `${holding.symbol} was deleted from your imported portfolio.`, true);
+      await loadPortfolio();
+    }
+
+    function formatTime(value) {
+      return value ? new Date(value).toLocaleString() : "Unavailable";
+    }
+  </script>
+</body>
+</html>

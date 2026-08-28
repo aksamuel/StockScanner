@@ -118,34 +118,14 @@ def test_export_exceptions_dashboard(tmp_path):
     page = output.read_text(encoding="utf-8")
 
     assert result == str(output)
-    assert "<strong>2</strong>" in page
-    assert "ABC" in page
-    assert "Bought &amp; held" in page
-    assert "&lt;review&gt;" in page
-    assert "KPI Dashboard" in page
-    assert "Technical Analysis" in page
-    assert "Analysts Rating" in page
-    assert "Bought Selection" in page
-    assert (
-        '<span class="nav-current" aria-current="page">Exception List</span>'
-        in page
-    )
-    assert 'id="selectAll"' in page
-    assert 'class="ticker-select"' in page
-    assert 'id="tickerSymbol"' in page
-    assert 'id="tickerReason"' in page
-    assert 'id="addTicker"' in page
-    assert "stockscanner-add-exceptions: ${symbol}" in page
-    assert "stockscanner-exception-reason-base64: ${encodedReason}" in page
-    assert "Enter a reason for adding this ticker." in page
-    assert 'title: "[Add Exceptions] 1 ticker"' in page
-    assert 'id="deleteSelected"' in page
-    assert "[Remove Exceptions]" in page
-    assert page.index("ABC") < page.index("XYZ")
-    assert 'class="expired-date" title="Expired">31/Aug/2026' not in page
+    assert 'content="0; url=my-exceptions.html"' in page
+    assert 'window.location.replace("my-exceptions.html")' in page
+    assert "Open My Exceptions" in page
+    assert "github.com/aksamuel/StockScanner/issues" not in page
+    assert "ABC" not in page
 
 
-def test_expired_date_to_is_highlighted(tmp_path):
+def test_legacy_exception_page_does_not_publish_shared_csv_rows(tmp_path):
     exception_list = tmp_path / "exceptions.csv"
     exception_list.write_text(
         "Symbol,Date From,Date To,Reason\n"
@@ -163,8 +143,9 @@ def test_expired_date_to_is_highlighted(tmp_path):
     )
     page = output.read_text(encoding="utf-8")
 
-    assert 'class="expired-date" title="Expired">31/Jul/2026</td>' in page
-    assert 'class="expired-date" title="Expired">31/Aug/2026</td>' not in page
+    assert "OLD" not in page
+    assert "LIVE" not in page
+    assert "my-exceptions.html" in page
 
 
 def test_remove_exception_matches_complete_symbol_case_insensitively(tmp_path):
@@ -277,8 +258,13 @@ def test_scan_dashboard_supports_selecting_top_and_all_results():
 
     assert page.count('class="exception-select"') == 4
     assert page.count('class="select-all"') == 2
+    assert 'data-symbol="ABC"' in page
+    assert 'data-symbol="XYZ"' in page
     assert 'id="addExceptions"' in page
-    assert "[Add Exceptions]" in page
+    assert 'id="addBought"' in page
+    assert "stockscannerPersonalExceptions.add(symbols)" in page
+    assert "stockscannerBoughtSelections.add(selections)" in page
+    assert "github.com/aksamuel/StockScanner/issues" not in page
     assert "25.00%" in page
 
 
@@ -467,7 +453,7 @@ def test_three_report_pages_have_requested_columns_navigation_and_selection():
         )
         assert f'href="{current_href}">{current_label}</a>' not in page
         assert page.count('class="nav-current" aria-current="page"') == 1
-        assert 'href="exceptions.html">Exception List</a>' in page
+        assert 'href="my-exceptions.html">My Exceptions</a>' in page
 
     technical_headers = pages["technical"].split("<thead><tr>", 1)[1].split(
         "</tr></thead>", 1
@@ -840,7 +826,11 @@ def test_kpi_chart_renders_exactly_two_indexed_line_series():
         in page
     )
     assert '<span class="detail-current">($110.00)</span>' in page
-    assert "<th>Current Price</th>" not in page
+    assert (
+        "<th>Symbol</th><th>Suggested Entry</th>"
+        "<th>Support Low</th><th>Resistance Low</th>"
+        "<th>Difference</th><th>Change %</th>"
+    ) in page
     assert "<th>Support Low</th><th>Resistance Low</th>" in page
     assert '<td class="detail-support-low">$95.00</td>' in page
     assert '<td class="detail-resistance-low">$120.00</td>' in page
@@ -968,6 +958,31 @@ def test_top_twenty_details_highlights_entry_and_below_support_opportunities():
     assert '<span class="detail-current below-support">($80.00)</span>' in page
     assert ".below-support { color: #66bb6a;" in page
     assert ".entry-opportunity { background: #1b5e20;" in page
+
+
+def test_landing_kpis_open_filterable_recommendation_stock_lists():
+    page = _generate_html(
+        pd.DataFrame(
+            [
+                {"Rank": 1, "Symbol": "AAA", "Recommendation": "Strong Buy", "Score": 90},
+                {"Rank": 2, "Symbol": "BBB", "Recommendation": "Buy", "Score": 80},
+                {"Rank": 3, "Symbol": "CCC", "Recommendation": "Watch", "Score": 60},
+            ]
+        ),
+        "28 August 2026, 8:00 AM EDT",
+        page_key="landing",
+        chart_data=None,
+    )
+
+    for category in ("all", "strong-buy", "buy", "accumulate", "watch", "avoid"):
+        assert f'data-kpi-filter="{category}"' in page
+    assert 'id="kpiDetails"' in page
+    assert 'id="kpiStockSearch"' in page
+    assert '<tr data-kpi-category="strong-buy">' in page
+    assert '<tr data-kpi-category="buy">' in page
+    assert '<tr data-kpi-category="watch">' in page
+    assert "initializeKpiDrilldown();" in page
+    assert "function filterKpiStockRows()" in page
 
 
 def test_html_export_creates_three_stable_linked_pages(tmp_path, monkeypatch):

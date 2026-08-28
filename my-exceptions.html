@@ -18,6 +18,7 @@
         <a href="/StockScanner/index.html">Dashboard</a>
         <a href="/StockScanner/my-exceptions.html" aria-current="page">My exceptions</a>
         <a href="/StockScanner/my-bought-selection.html">My bought list</a>
+        <a href="/StockScanner/portfolio-analysis.html">Portfolio analysis</a>
       </nav>
     </div>
     <section class="panel" aria-labelledby="addTitle">
@@ -35,7 +36,8 @@
         <label class="wide">Reason
           <input id="reason" type="text" maxlength="500" placeholder="Optional reason">
         </label>
-        <button type="submit">Add exception</button>
+        <button id="submitException" type="submit">Add exception</button>
+        <button id="cancelEdit" class="secondary" type="button" hidden>Cancel edit</button>
       </form>
       <p id="message" role="status" aria-live="polite"></p>
     </section>
@@ -68,8 +70,11 @@
     const empty = document.querySelector("#empty");
     const message = document.querySelector("#message");
     const count = document.querySelector("#count");
+    const submitException = document.querySelector("#submitException");
+    const cancelEdit = document.querySelector("#cancelEdit");
     const user = await requireApprovedUser();
     let exceptions = [];
+    let editingId = null;
 
     if (user) {
       const today = new Date();
@@ -89,28 +94,42 @@
       }
       setFormBusy(form, true);
       const ticker = symbol.value.trim().toUpperCase();
-      const { error } = await supabase.from("user_exceptions").insert({
-        user_id: user.id,
-        symbol: ticker,
+      const values = {
         reason: reason.value.trim() || null,
         date_from: dateFrom.value,
         date_to: dateTo.value,
-      });
+      };
+      const operation = editingId
+        ? supabase.from("user_exceptions").update(values).eq("id", editingId).eq("user_id", user.id)
+        : supabase.from("user_exceptions").insert({ user_id: user.id, symbol: ticker, ...values });
+      const { error } = await operation;
       setFormBusy(form, false);
+      if (editingId) symbol.disabled = true;
       if (error) {
         setMessage(message, error.code === "23505" ? `${ticker} is already in your exception list.` : error.message);
         return;
       }
+      const wasEditing = Boolean(editingId);
+      resetForm();
+      setMessage(message, `${ticker} was ${wasEditing ? "updated" : "added to your exception list"}.`, true);
+      await loadExceptions();
+    });
+
+    cancelEdit.addEventListener("click", resetForm);
+
+    function resetForm() {
+      editingId = null;
       form.reset();
-      symbol.focus();
+      symbol.disabled = false;
+      submitException.textContent = "Add exception";
+      cancelEdit.hidden = true;
       const today = new Date();
       const afterThirtyDays = new Date(today);
       afterThirtyDays.setDate(afterThirtyDays.getDate() + 30);
       dateFrom.value = localDateValue(today);
       dateTo.value = localDateValue(afterThirtyDays);
-      setMessage(message, `${ticker} was added to your exception list.`, true);
-      await loadExceptions();
-    });
+      symbol.focus();
+    }
 
     filter.addEventListener("input", renderExceptions);
 
@@ -141,6 +160,21 @@
     function exceptionRow(item) {
       const row = document.createElement("tr");
       const action = document.createElement("td");
+      const edit = document.createElement("button");
+      edit.type = "button";
+      edit.className = "secondary";
+      edit.textContent = "Edit";
+      edit.addEventListener("click", () => {
+        editingId = item.id;
+        symbol.value = item.symbol;
+        symbol.disabled = true;
+        reason.value = item.reason || "";
+        dateFrom.value = item.date_from;
+        dateTo.value = item.date_to;
+        submitException.textContent = "Save changes";
+        cancelEdit.hidden = false;
+        reason.focus();
+      });
       const remove = document.createElement("button");
       remove.type = "button";
       remove.className = "delete";
@@ -160,7 +194,8 @@
         setMessage(message, `${item.symbol} was deleted from your exception list.`, true);
         await loadExceptions();
       });
-      action.append(remove);
+      action.className = "row-actions";
+      action.append(edit, remove);
       row.append(
         tableCell(item.symbol, "symbol"), tableCell(formatDate(item.date_from)),
         tableCell(formatDate(item.date_to)), tableCell(item.reason || "—"), action,

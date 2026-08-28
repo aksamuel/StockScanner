@@ -1,338 +1,30 @@
-"""Generate a static HTML dashboard for the stock exception list."""
+"""Generate a compatibility redirect to the user-owned Supabase exception page."""
 
-import csv
-import html
 import os
-from datetime import date, datetime
 
 from .config import EXCEPTION_LIST
-from .exception_list import sort_exception_rows
 
 
-def _load_rows(csv_path):
-    """Load non-empty exception rows while preserving the CSV columns."""
-    with open(csv_path, newline="", encoding="utf-8-sig") as csv_file:
-        reader = csv.DictReader(csv_file)
-        columns = reader.fieldnames or []
-        rows = [
-            {column: (row.get(column) or "").strip() for column in columns}
-            for row in reader
-            if any((value or "").strip() for value in row.values())
-        ]
-    return columns, sort_exception_rows(rows)
-
-
-def _parse_exception_date(value):
-    """Parse supported exception-list date formats."""
-    text = str(value or "").strip()
-    for date_format in ("%d/%b/%Y", "%d-%b-%y", "%d-%b-%Y"):
-        try:
-            return datetime.strptime(text, date_format).date()
-        except ValueError:
-            continue
-    return None
-
-
-def _generate_html(columns, rows, generated_at, today):
-    headers = '<th class="select-column"><input id="selectAll" type="checkbox" aria-label="Select all exceptions"></th>'
-    headers += "".join(f"<th>{html.escape(column)}</th>" for column in columns)
-    body_rows = []
-    for row in rows:
-        cells = []
-        for column in columns:
-            value = row.get(column, "")
-            css_class = ""
-            title = ""
-            if column == "Date To":
-                date_to = _parse_exception_date(value)
-                if date_to is not None and date_to < today:
-                    css_class = ' class="expired-date"'
-                    title = ' title="Expired"'
-            cells.append(
-                f"<td{css_class}{title}>{html.escape(value)}</td>"
-            )
-        symbol = row.get("Symbol", "").strip().upper()
-        selection = (
-            '<td class="select-column">'
-            f'<input class="ticker-select" type="checkbox" value="{html.escape(symbol)}" '
-            f'aria-label="Select {html.escape(symbol)}">'
-            "</td>"
-        )
-        body_rows.append(f"<tr>{selection}{''.join(cells)}</tr>")
-
-    table_body = "\n".join(body_rows)
-    return f"""<!DOCTYPE html>
+def _generate_html():
+    return """<!doctype html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>StockScanner Exception List</title>
-<style>
-* {{ box-sizing: border-box; }}
-body {{
-    margin: 0;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    background: #0f1923;
-    color: #e0e0e0;
-    line-height: 1.6;
-}}
-.container {{ max-width: 1200px; margin: 0 auto; padding: 20px; }}
-header {{
-    padding: 24px 0;
-    margin-bottom: 24px;
-    background: linear-gradient(135deg, #1a2a3a 0%, #0f1923 100%);
-    border-bottom: 2px solid #1f4e78;
-    text-align: center;
-}}
-h1 {{ margin: 0; color: #4fc3f7; font-size: 1.8rem; }}
-.subtitle {{ color: #90a4ae; margin-top: 4px; font-size: 0.9rem; }}
-.nav {{ margin-top: 14px; }}
-.nav a,
-.nav .nav-current {{
-    display: inline-block;
-    padding: 7px 14px;
-    color: #4fc3f7;
-    border: 1px solid #1f4e78;
-    border-radius: 6px;
-    text-decoration: none;
-}}
-.nav .nav-current {{
-    color: #607d8b;
-    background: #162534;
-    border-color: #263d50;
-    cursor: not-allowed;
-    opacity: 0.65;
-}}
-.summary {{
-    display: inline-block;
-    margin-bottom: 18px;
-    padding: 14px 20px;
-    background: #1a2a3a;
-    border: 1px solid #263d50;
-    border-radius: 8px;
-}}
-.summary strong {{ color: #4fc3f7; font-size: 1.4rem; }}
-#filter {{
-    width: min(100%, 360px);
-    padding: 10px 12px;
-    color: #e0e0e0;
-    background: #162534;
-    border: 1px solid #365069;
-    border-radius: 6px;
-}}
-.add-ticker {{
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-}}
-#tickerSymbol,
-#tickerReason {{
-    width: 150px;
-    padding: 9px 12px;
-    color: #e0e0e0;
-    background: #162534;
-    border: 1px solid #365069;
-    border-radius: 6px;
-}}
-#tickerSymbol {{
-    text-transform: uppercase;
-}}
-#tickerReason {{ width: min(100%, 320px); }}
-#addTicker {{
-    padding: 9px 14px;
-    color: #fff;
-    background: #1b5e20;
-    border: 1px solid #66bb6a;
-    border-radius: 5px;
-    cursor: pointer;
-}}
-#addTicker:hover {{ background: #2e7d32; }}
-.table-wrap {{ overflow-x: auto; border: 1px solid #263d50; border-radius: 8px; }}
-table {{ width: 100%; border-collapse: collapse; background: #1a2a3a; }}
-th, td {{ padding: 11px 14px; border-bottom: 1px solid #263d50; text-align: left; }}
-th {{ color: #4fc3f7; background: #162534; cursor: pointer; white-space: nowrap; }}
-tr:hover td {{ background: #203548; }}
-.expired-date {{
-    color: #fff;
-    background: #b71c1c;
-    font-weight: 700;
-}}
-tr:hover .expired-date {{ background: #c62828; }}
-.controls {{
-    display: flex;
-    flex-wrap: wrap;
-    gap: 12px;
-    justify-content: space-between;
-    margin-bottom: 14px;
-}}
-#deleteSelected {{
-    padding: 9px 14px;
-    color: #fff;
-    background: #7f1d1d;
-    border: 1px solid #ef5350;
-    border-radius: 5px;
-    cursor: pointer;
-}}
-#deleteSelected:hover:not(:disabled) {{ background: #b71c1c; }}
-#deleteSelected:disabled {{ cursor: not-allowed; opacity: 0.45; }}
-.select-column {{ width: 48px; text-align: center; }}
-.select-column input {{ width: 18px; height: 18px; cursor: pointer; accent-color: #ef5350; }}
-@media (max-width: 720px) {{
-    .container {{ padding: 12px; }}
-    header {{ padding: 18px 0; margin-bottom: 16px; }}
-    h1 {{ font-size: 1.45rem; }}
-    .nav a,
-    .nav .nav-current {{ margin: 3px 1px; padding: 7px 10px; }}
-    #tickerSymbol,
-    #tickerReason,
-    #addTicker {{ width: 100%; }}
-}}
-.empty {{ padding: 24px; color: #90a4ae; text-align: center; }}
-footer {{ margin-top: 30px; color: #607d8b; font-size: 0.8rem; text-align: center; }}
-</style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <meta http-equiv="refresh" content="0; url=my-exceptions.html">
+  <title>My exceptions | StockScanner</title>
+  <style>
+    :root { color-scheme: dark; }
+    body { margin: 0; padding: 40px 20px; color: #e0e0e0; background: #0f1923;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; text-align: center; }
+    a { color: #81d4fa; }
+  </style>
 </head>
 <body>
-<header>
-    <div class="container">
-        <h1>Stock Exception List</h1>
-        <div class="subtitle">Updated: {html.escape(generated_at)}</div>
-        <div class="nav">
-            <a href="index.html">KPI Dashboard</a>
-            <a href="technical.html">Technical Analysis</a>
-            <a href="analysts.html">Analysts Rating</a>
-            <a href="bought-selection.html">Bought Selection</a>
-            <span class="nav-current" aria-current="page">Exception List</span>
-        </div>
-    </div>
-</header>
-<main class="container">
-    <div class="summary"><strong>{len(rows)}</strong><br>Listed exceptions</div>
-    <div class="controls">
-        <input id="filter" type="search" placeholder="Filter exceptions..." aria-label="Filter exceptions">
-        <div class="add-ticker">
-            <input id="tickerSymbol" type="text" maxlength="15"
-                placeholder="Ticker symbol" aria-label="Ticker symbol">
-            <input id="tickerReason" type="text" maxlength="200"
-                placeholder="Reason" aria-label="Exception reason">
-            <button id="addTicker" type="button">Add Ticker</button>
-        </div>
-        <button id="deleteSelected" type="button" disabled>Delete Selected (0)</button>
-    </div>
-    <div class="table-wrap">
-        <table id="exceptions">
-            <thead><tr>{headers}</tr></thead>
-            <tbody>{table_body}</tbody>
-        </table>
-        <div id="empty" class="empty" hidden>No matching exceptions found.</div>
-    </div>
-</main>
-<footer>Generated from watchlists/exceptions.csv</footer>
-<script>
-const filter = document.getElementById("filter");
-const rows = [...document.querySelectorAll("#exceptions tbody tr")];
-const empty = document.getElementById("empty");
-const selectAll = document.getElementById("selectAll");
-const selections = [...document.querySelectorAll(".ticker-select")];
-const deleteSelected = document.getElementById("deleteSelected");
-const tickerSymbol = document.getElementById("tickerSymbol");
-const tickerReason = document.getElementById("tickerReason");
-const addTicker = document.getElementById("addTicker");
-
-function submitAddTicker() {{
-    const symbol = tickerSymbol.value.trim().toUpperCase();
-    const reason = tickerReason.value.trim();
-    if (!/^[A-Z0-9][A-Z0-9.-]{{0,14}}$/.test(symbol)) {{
-        alert("Enter a valid ticker symbol using letters, numbers, a dot, or a hyphen.");
-        tickerSymbol.focus();
-        return;
-    }}
-    if (!reason) {{
-        alert("Enter a reason for adding this ticker.");
-        tickerReason.focus();
-        return;
-    }}
-    const reasonBytes = new TextEncoder().encode(reason);
-    const encodedReason = btoa(
-        Array.from(reasonBytes, byte => String.fromCharCode(byte)).join("")
-    );
-    const body = [
-        "Please add this ticker to the StockScanner exception list for 30 days:",
-        "",
-        `- **${{symbol}}**`,
-        `- **Reason:** ${{reason}}`,
-        "",
-        `<!-- stockscanner-add-exceptions: ${{symbol}} -->`,
-        `<!-- stockscanner-exception-reason-base64: ${{encodedReason}} -->`,
-    ].join("\\n");
-    const query = new URLSearchParams({{
-        title: "[Add Exceptions] 1 ticker",
-        body,
-    }});
-    window.open(
-        `https://github.com/aksamuel/StockScanner/issues/new?${{query}}`,
-        "_blank",
-        "noopener",
-    );
-}}
-
-addTicker.addEventListener("click", submitAddTicker);
-tickerSymbol.addEventListener("keydown", event => {{
-    if (event.key === "Enter") submitAddTicker();
-}});
-tickerReason.addEventListener("keydown", event => {{
-    if (event.key === "Enter") submitAddTicker();
-}});
-
-function updateSelection() {{
-    const count = selections.filter(checkbox => checkbox.checked).length;
-    deleteSelected.disabled = count === 0;
-    deleteSelected.textContent = `Delete Selected (${{count}})`;
-    selectAll.checked = count === selections.length && count > 0;
-    selectAll.indeterminate = count > 0 && count < selections.length;
-}}
-
-selectAll.addEventListener("change", () => {{
-    selections.forEach(checkbox => checkbox.checked = selectAll.checked);
-    updateSelection();
-}});
-selections.forEach(checkbox => checkbox.addEventListener("change", updateSelection));
-
-deleteSelected.addEventListener("click", () => {{
-    const symbols = selections
-        .filter(checkbox => checkbox.checked)
-        .map(checkbox => checkbox.value);
-    if (!symbols.length || !confirm(`Submit a request to delete ${{symbols.length}} selected ticker(s)?`)) return;
-
-    const countLabel = symbols.length === 1 ? "1 ticker" : `${{symbols.length}} tickers`;
-    const body = [
-        `Please remove these tickers from the StockScanner exception list:`,
-        "",
-        ...symbols.map(symbol => `- **${{symbol}}**`),
-        "",
-        `<!-- stockscanner-remove-exceptions: ${{symbols.join(",")}} -->`,
-    ].join("\\n");
-    const query = new URLSearchParams({{
-        title: `[Remove Exceptions] ${{countLabel}}`,
-        body,
-    }});
-    window.open(
-        `https://github.com/aksamuel/StockScanner/issues/new?${{query}}`,
-        "_blank",
-        "noopener",
-    );
-}});
-
-filter.addEventListener("input", () => {{
-    const query = filter.value.trim().toLowerCase();
-    let visible = 0;
-    rows.forEach(row => {{
-        const show = row.textContent.toLowerCase().includes(query);
-        row.hidden = !show;
-        if (show) visible++;
-    }});
-    empty.hidden = visible !== 0;
-}});
-</script>
+  <p>The repository exception page has moved to your private Supabase list.</p>
+  <p><a href="my-exceptions.html">Open My Exceptions</a></p>
+  <script>window.location.replace("my-exceptions.html");</script>
 </body>
 </html>
 """
@@ -341,19 +33,13 @@ filter.addEventListener("input", () => {{
 def export_exceptions_dashboard(
     csv_path=EXCEPTION_LIST, output_path="exceptions.html", generated_at=None, today=None
 ):
-    """Write the exception-list dashboard and return its output path."""
-    columns, rows = _load_rows(csv_path)
-    if not columns:
-        raise ValueError(f"Exception list has no columns: {csv_path}")
-
-    generated_at = generated_at or datetime.now().strftime("%d %B %Y, %I:%M %p")
-    today = today or date.today()
+    """Write the compatibility redirect and return its output path."""
+    del csv_path, generated_at, today
     output_directory = os.path.dirname(output_path)
     if output_directory:
         os.makedirs(output_directory, exist_ok=True)
-
     with open(output_path, "w", encoding="utf-8") as output_file:
-        output_file.write(_generate_html(columns, rows, generated_at, today))
+        output_file.write(_generate_html())
     return output_path
 
 

@@ -432,7 +432,7 @@ NAV_ITEMS = (
     ("technical", "technical.html", "Technical Analysis"),
     ("analysts", "analysts.html", "Analysts Rating"),
     ("bought-selection", "bought-selection.html", "Bought Selection"),
-    ("exceptions", "exceptions.html", "Exception List"),
+    ("exceptions", "my-exceptions.html", "My Exceptions"),
 )
 
 
@@ -539,6 +539,22 @@ def _recommendation_priority(recommendation):
     return 0
 
 
+def _recommendation_bucket(recommendation):
+    """Return the KPI drill-down category for a scanner recommendation."""
+    normalized = str(recommendation).upper()
+    if "STRONG BUY" in normalized:
+        return "strong-buy"
+    if "BUY" in normalized:
+        return "buy"
+    if "ACCUMULATE" in normalized:
+        return "accumulate"
+    if "WATCH" in normalized:
+        return "watch"
+    if "AVOID" in normalized:
+        return "avoid"
+    return "other"
+
+
 def _trend_priority(trend):
     normalized = str(trend).casefold()
     if "strong uptrend" in normalized:
@@ -627,6 +643,21 @@ def _generate_html(dataframe, scan_time, page_key=None, chart_data=None):
     page_accent = config["accent"] if config else "#1f4e78"
     selection_enabled = config["selection"] if config else True
     navigation_html = _navigation_html(page_key)
+    kpi_rows_html = []
+    for position, (_, row) in enumerate(dataframe.iterrows(), start=1):
+        recommendation = row.get("Recommendation", "")
+        rank = row.get("Rank", position)
+        kpi_rows_html.append(
+            f'<tr data-kpi-category="{_recommendation_bucket(recommendation)}">'
+            f'<td>{_format_cell("Rank", rank)}</td>'
+            f'<td class="kpi-symbol">{_escape_html(row.get("Symbol", ""))}</td>'
+            f'<td>{_format_cell("Current Price", row.get("Current Price", ""))}</td>'
+            f'<td>{_escape_html(row.get("Sector", ""))}</td>'
+            f'<td class="{_recommendation_class(recommendation)}">'
+            f'{_escape_html(recommendation)}</td>'
+            f'<td>{_format_cell("Score", row.get("Score", ""))}</td>'
+            "</tr>"
+        )
     top_twenty_details = _build_top_twenty_details(dataframe)
     detail_rows = []
     for detail in top_twenty_details:
@@ -767,6 +798,7 @@ def _generate_html(dataframe, scan_time, page_key=None, chart_data=None):
             )
         top_rows_html.append(
             '<tr '
+            f'data-symbol="{symbol}" '
             f'data-current-price="{_data_number(row.get("Current Price"))}" '
             f'data-target-one="{_data_number(row.get("Target 1"))}" '
             f'data-scanner-rank="{_data_number(row.get("_scanner_rank"))}">'
@@ -825,6 +857,7 @@ def _generate_html(dataframe, scan_time, page_key=None, chart_data=None):
             )
         all_rows_html.append(
             '<tr '
+            f'data-symbol="{symbol}" '
             f'data-current-price="{_data_number(row.get("Current Price"))}" '
             f'data-target-one="{_data_number(row.get("Target 1"))}" '
             f'data-scanner-rank="{_data_number(row.get("_scanner_rank"))}">'
@@ -851,9 +884,15 @@ def _generate_html(dataframe, scan_time, page_key=None, chart_data=None):
     )
     add_exceptions_button = (
         '<button id="addExceptions" type="button" disabled>'
-        "Add Selected to Exceptions (0)</button>"
+        "Add Selected to My Exceptions (0)</button>"
         if selection_enabled
         else '<button id="addExceptions" type="button" hidden disabled></button>'
+    )
+    add_bought_button = (
+        '<button id="addBought" type="button" disabled>'
+        "Add Selected to My Bought List (0)</button>"
+        if selection_enabled
+        else '<button id="addBought" type="button" hidden disabled></button>'
     )
     target_sort_controls = (
         '<div class="target-sort-controls">'
@@ -958,15 +997,33 @@ def _generate_html(dataframe, scan_time, page_key=None, chart_data=None):
     dashboard_content = (
         f"""
     <div class="cards">
-        <div class="card"><div class="value">{summary['total_stocks']}</div><div class="label">Stocks Scanned</div></div>
-        <div class="card"><div class="value" style="color:#4caf50">{summary['strong_buy']}</div><div class="label">Strong Buy</div></div>
-        <div class="card"><div class="value" style="color:#66bb6a">{summary['buy']}</div><div class="label">Buy</div></div>
-        <div class="card"><div class="value" style="color:#fdd835">{summary['accumulate']}</div><div class="label">Accumulate</div></div>
-        <div class="card"><div class="value" style="color:#ffa726">{summary['watch']}</div><div class="label">Watch</div></div>
-        <div class="card"><div class="value" style="color:#ef5350">{summary['avoid']}</div><div class="label">Avoid</div></div>
+        <button class="card kpi-card" type="button" data-kpi-filter="all" data-kpi-label="Stocks Scanned" aria-controls="kpiDetails" aria-expanded="false"><span class="value">{summary['total_stocks']}</span><span class="label">Stocks Scanned</span></button>
+        <button class="card kpi-card" type="button" data-kpi-filter="strong-buy" data-kpi-label="Strong Buy" aria-controls="kpiDetails" aria-expanded="false"><span class="value" style="color:#4caf50">{summary['strong_buy']}</span><span class="label">Strong Buy</span></button>
+        <button class="card kpi-card" type="button" data-kpi-filter="buy" data-kpi-label="Buy" aria-controls="kpiDetails" aria-expanded="false"><span class="value" style="color:#66bb6a">{summary['buy']}</span><span class="label">Buy</span></button>
+        <button class="card kpi-card" type="button" data-kpi-filter="accumulate" data-kpi-label="Accumulate" aria-controls="kpiDetails" aria-expanded="false"><span class="value" style="color:#fdd835">{summary['accumulate']}</span><span class="label">Accumulate</span></button>
+        <button class="card kpi-card" type="button" data-kpi-filter="watch" data-kpi-label="Watch" aria-controls="kpiDetails" aria-expanded="false"><span class="value" style="color:#ffa726">{summary['watch']}</span><span class="label">Watch</span></button>
+        <button class="card kpi-card" type="button" data-kpi-filter="avoid" data-kpi-label="Avoid" aria-controls="kpiDetails" aria-expanded="false"><span class="value" style="color:#ef5350">{summary['avoid']}</span><span class="label">Avoid</span></button>
         <div class="card"><div class="value">{summary['average_score']}</div><div class="label">Avg Score</div></div>
         <div class="card"><div class="value">{summary['highest_score']}</div><div class="label">Best Score</div></div>
     </div>
+
+    <section id="kpiDetails" class="section kpi-details" aria-live="polite" hidden>
+        <div class="kpi-details-header">
+            <div>
+                <h2 id="kpiDetailsTitle">Stocks Scanned</h2>
+                <p id="kpiDetailsCount" class="kpi-details-count"></p>
+            </div>
+            <button id="closeKpiDetails" class="kpi-details-close" type="button">Close list</button>
+        </div>
+        <label class="kpi-search-label" for="kpiStockSearch">Filter this list</label>
+        <input id="kpiStockSearch" class="kpi-stock-search" type="search" placeholder="Symbol, sector, recommendation, or score">
+        <div class="table-wrapper">
+            <table id="kpiStockTable">
+                <thead><tr><th>Rank</th><th>Symbol</th><th>Current Price</th><th>Sector</th><th>Recommendation</th><th>Score</th></tr></thead>
+                <tbody>{''.join(kpi_rows_html)}</tbody>
+            </table>
+        </div>
+    </section>
 
     <div class="section">
         <h2>One-Year Performance: S&amp;P 500 vs Equal-Weight Top 20</h2>
@@ -1002,6 +1059,7 @@ def _generate_html(dataframe, scan_time, page_key=None, chart_data=None):
             <input type="text" id="filterInput" placeholder="Filter by symbol or sector..." onkeyup="filterTable()">
             {target_sort_controls}
             {add_exceptions_button}
+            {add_bought_button}
         </div>
 
         <div id="tab-top" class="tab-content active">
@@ -1079,8 +1137,48 @@ header .subtitle {{ color: #90a4ae; text-align: center; margin-top: 4px; font-si
     padding: 16px;
     text-align: center;
 }}
+.kpi-card {{
+    display: block;
+    width: 100%;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+}}
+.kpi-card:hover,
+.kpi-card:focus-visible {{ border-color: #4fc3f7; transform: translateY(-1px); }}
+.kpi-card[aria-expanded="true"] {{ border-color: #4fc3f7; box-shadow: 0 0 0 2px #4fc3f733; }}
 .card .value {{ font-size: 1.8rem; font-weight: 700; color: #4fc3f7; }}
 .card .label {{ font-size: 0.8rem; color: #90a4ae; margin-top: 4px; text-transform: uppercase; }}
+.kpi-card .value,
+.kpi-card .label {{ display: block; }}
+.kpi-details {{
+    padding: 18px;
+    border: 1px solid #3b5368;
+    border-radius: 8px;
+    background: #142433;
+}}
+.kpi-details[hidden] {{ display: none; }}
+.kpi-details-header {{ display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }}
+.kpi-details-count {{ color: #90a4ae; font-size: 0.85rem; }}
+.kpi-details-close {{
+    padding: 7px 12px;
+    border: 1px solid #546e7a;
+    border-radius: 6px;
+    color: #e0e0e0;
+    background: #24384a;
+    cursor: pointer;
+}}
+.kpi-search-label {{ display: block; margin: 12px 0 5px; color: #b0bec5; font-size: .8rem; }}
+.kpi-stock-search {{
+    width: min(100%, 380px);
+    margin-bottom: 12px;
+    padding: 8px 11px;
+    border: 1px solid #3b5368;
+    border-radius: 6px;
+    color: #fff;
+    background: #0f1923;
+}}
+.kpi-symbol {{ color: #81d4fa; font-weight: 700; }}
 .section {{ margin-bottom: 32px; }}
 .section h2 {{
     color: #4fc3f7;
@@ -1225,7 +1323,7 @@ tr:hover {{ background: #1e3348; }}
 }}
 .filter-bar input::placeholder {{ color: #607d8b; }}
 .filter-bar {{ justify-content: space-between; flex-wrap: wrap; }}
-#addExceptions {{
+#addExceptions, #addBought {{
     padding: 7px 14px;
     color: #fff;
     background: #1b5e20;
@@ -1233,8 +1331,8 @@ tr:hover {{ background: #1e3348; }}
     border-radius: 5px;
     cursor: pointer;
 }}
-#addExceptions:hover:not(:disabled) {{ background: #2e7d32; }}
-#addExceptions:disabled {{ cursor: not-allowed; opacity: 0.45; }}
+#addExceptions:hover:not(:disabled), #addBought:hover:not(:disabled) {{ background: #2e7d32; }}
+#addExceptions:disabled, #addBought:disabled {{ cursor: not-allowed; opacity: 0.45; }}
 #requestYahooRefresh {{
     padding: 7px 14px;
     color: #172217;
@@ -1298,13 +1396,54 @@ footer {{
 </footer>
 
 {chart_library}
+<script id="kpiBenchmarkData" type="application/json">{chart_json}</script>
 <script>
 // Chart
 document.addEventListener('DOMContentLoaded', function() {{
     loadDashboardSnapshotTimes();
     loadRefreshButtonSnapshotTime();
+    initializeKpiDrilldown();
     {chart_initialization}
 }});
+
+let activeKpiCategory = 'all';
+
+function initializeKpiDrilldown() {{
+    const panel = document.getElementById('kpiDetails');
+    if (!panel) return;
+    document.querySelectorAll('.kpi-card').forEach(card => {{
+        card.addEventListener('click', () => showKpiStocks(card));
+    }});
+    document.getElementById('closeKpiDetails').addEventListener('click', () => {{
+        panel.hidden = true;
+        document.querySelectorAll('.kpi-card').forEach(card => card.setAttribute('aria-expanded', 'false'));
+    }});
+    document.getElementById('kpiStockSearch').addEventListener('input', filterKpiStockRows);
+}}
+
+function showKpiStocks(card) {{
+    const panel = document.getElementById('kpiDetails');
+    activeKpiCategory = card.dataset.kpiFilter;
+    document.getElementById('kpiDetailsTitle').textContent = card.dataset.kpiLabel;
+    document.getElementById('kpiStockSearch').value = '';
+    document.querySelectorAll('.kpi-card').forEach(item => item.setAttribute('aria-expanded', String(item === card)));
+    panel.hidden = false;
+    filterKpiStockRows();
+    panel.scrollIntoView({{ behavior: 'smooth', block: 'start' }});
+}}
+
+function filterKpiStockRows() {{
+    const search = document.getElementById('kpiStockSearch').value.trim().toUpperCase();
+    let visible = 0;
+    document.querySelectorAll('#kpiStockTable tbody tr').forEach(row => {{
+        const categoryMatches = activeKpiCategory === 'all'
+            || row.dataset.kpiCategory === activeKpiCategory;
+        const searchMatches = !search || row.textContent.toUpperCase().includes(search);
+        row.hidden = !(categoryMatches && searchMatches);
+        if (!row.hidden) visible += 1;
+    }});
+    document.getElementById('kpiDetailsCount').textContent = `${{visible}} stock${{visible === 1 ? '' : 's'}} shown`;
+}}
 
 // Tabs
 function switchTab(name, clickedTab) {{
@@ -1337,7 +1476,7 @@ function renumberVisibleRanks(table) {{
     if (rankIndex < 0) return;
     let visibleRank = 0;
     table.querySelectorAll('tbody tr').forEach(row => {{
-        if (row.style.display !== 'none') {{
+        if (!row.hidden && row.style.display !== 'none') {{
             visibleRank += 1;
             row.children[rankIndex].textContent = visibleRank;
         }}
@@ -1560,9 +1699,10 @@ if (yahooRefreshButton) yahooRefreshButton.addEventListener('click', async () =>
     }}
 }});
 
-// Add selected scan results to the 30-day exception list
+// Save selected scan results to the authenticated user's Supabase lists.
 const exceptionSelections = [...document.querySelectorAll('.exception-select')];
 const addExceptions = document.getElementById('addExceptions');
+const addBought = document.getElementById('addBought');
 
 function selectedSymbols() {{
     return [...new Set(
@@ -1575,7 +1715,9 @@ function selectedSymbols() {{
 function updateExceptionSelection() {{
     const symbols = selectedSymbols();
     addExceptions.disabled = symbols.length === 0;
-    addExceptions.textContent = `Add Selected to Exceptions (${{symbols.length}})`;
+    addBought.disabled = symbols.length === 0;
+    addExceptions.textContent = `Add Selected to My Exceptions (${{symbols.length}})`;
+    addBought.textContent = `Add Selected to My Bought List (${{symbols.length}})`;
     document.querySelectorAll('.tab-content').forEach(tab => {{
         const checkboxes = [...tab.querySelectorAll('.exception-select')];
         const selected = checkboxes.filter(checkbox => checkbox.checked).length;
@@ -1606,31 +1748,60 @@ document.querySelectorAll('.select-all').forEach(selectAll => {{
     }});
 }});
 
-if (addExceptions) addExceptions.addEventListener('click', () => {{
+if (addExceptions) addExceptions.addEventListener('click', async () => {{
     const symbols = selectedSymbols();
     if (symbols.length > 50) {{
         alert('Select no more than 50 tickers per request.');
         return;
     }}
-    if (!symbols.length || !confirm(`Add ${{symbols.length}} selected ticker(s) to the exception list for 30 days?`)) return;
+    if (!symbols.length || !confirm(`Add ${{symbols.length}} selected ticker(s) to your exception list for 30 days?`)) return;
+    if (!window.stockscannerPersonalExceptions) {{
+        alert('Your authenticated Supabase session is still loading. Please try again.');
+        return;
+    }}
+    addExceptions.disabled = true;
+    try {{
+        const count = await window.stockscannerPersonalExceptions.add(symbols);
+        alert(`Added ${{count}} ticker(s) directly to your Supabase exception list.`);
+    }} catch (error) {{
+        alert(`Could not update your exception list: ${{error.message}}`);
+    }} finally {{
+        updateExceptionSelection();
+    }}
+}});
 
-    const countLabel = symbols.length === 1 ? '1 ticker' : `${{symbols.length}} tickers`;
-    const body = [
-        'Please add these tickers to the StockScanner exception list for 30 days:',
-        '',
-        ...symbols.map(symbol => `- **${{symbol}}**`),
-        '',
-        `<!-- stockscanner-add-exceptions: ${{symbols.join(',')}} -->`,
-    ].join('\\n');
-    const query = new URLSearchParams({{
-        title: `[Add Exceptions] ${{countLabel}}`,
-        body,
+if (addBought) addBought.addEventListener('click', async () => {{
+    const symbols = selectedSymbols();
+    if (!symbols.length || !confirm(
+        `Add ${{symbols.length}} selected ticker(s) to your bought list using the displayed price and suggested quantity?`
+    )) return;
+    if (!window.stockscannerBoughtSelections) {{
+        alert('Your authenticated Supabase session is still loading. Please try again.');
+        return;
+    }}
+    const selections = symbols.map(symbol => {{
+        const row = exceptionSelections.find(checkbox => checkbox.value === symbol)?.closest('tr');
+        const headers = [...row.closest('table').querySelectorAll('thead th')]
+            .map(header => header.textContent.trim());
+        const suggestedSharesIndex = headers.indexOf('Suggested Shares');
+        return {{
+            symbol,
+            quantity: suggestedSharesIndex >= 0
+                ? Number(row.cells[suggestedSharesIndex].textContent.replace(/,/g, '').trim())
+                : 1,
+            buy_price: Number(row.dataset.currentPrice),
+            notes: 'Added from scanner candidate list; verify the execution price and quantity.',
+        }};
     }});
-    window.open(
-        `https://github.com/aksamuel/StockScanner/issues/new?${{query}}`,
-        '_blank',
-        'noopener',
-    );
+    addBought.disabled = true;
+    try {{
+        const count = await window.stockscannerBoughtSelections.add(selections);
+        alert(`Added ${{count}} ticker(s) directly to your Supabase bought list. Verify the transaction details in My Bought List.`);
+    }} catch (error) {{
+        alert(`Could not update your bought list: ${{error.message}}`);
+    }} finally {{
+        updateExceptionSelection();
+    }}
 }});
 
 // Sortable columns

@@ -20,9 +20,19 @@ AI-powered features with ChatGPT integration were introduced in v2.11.0. 🤖
 - Analyst ratings and target upside as confirmation data
 - Percentage-based position sizing and risk controls
 - Excel reports and linked HTML dashboards
-- Hourly market-hours price snapshots
-- Time-bounded exception-list management
-- **NEW: AI-Powered Stock Analysis with ChatGPT** 🎯
+- Supabase Auth with administrator-controlled account approval
+- Admin-only activity and user-management pages
+- Per-user exception and bought-selection lists protected by RLS
+- On-demand user portfolio imports from IBKR Flex or a broker CSV
+- Rule-based portfolio profit/loss, holding-time, target, and stop reviews
+- Current profit/loss percentage for purchased positions
+- Bought-position time-to-profit status and benchmark-based breakeven-day scenarios
+- Daily Supabase NYSE universe refresh at 8:00 AM New York time
+- Latest-only hourly market-hours price storage
+- Responsive desktop and mobile dashboards with a collapsible left navigation drawer
+- Clickable KPI cards with searchable Strong Buy, Buy, Accumulate, Watch, Avoid,
+  and complete scanned-stock lists
+- AI-powered stock analysis with ChatGPT 🎯
   - Individual stock analysis and recommendations
   - AI-generated executive summaries for scan reports
   - Interactive chat interface for Q&A about stocks
@@ -87,9 +97,9 @@ print(answer)
 ### 1. Install Dependencies
 
 ```powershell
-.\.\.venv\Scripts\python.exe -m pip install --upgrade pip
-.\.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-.\.\.venv\Scripts\python.exe -m pip install -e .
+.\.venv\Scripts\python.exe -m pip install --upgrade pip
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m pip install -e .
 ```
 
 ### 2. Get OpenAI API Key
@@ -111,7 +121,7 @@ CHATGPT_ENABLED=true
 ### 4. Test the Integration
 
 ```powershell
-.\.\.venv\Scripts\python.exe -c "from stockscanner.openai_client import get_chatgpt_client; client = get_chatgpt_client(); print(client.chat('What is technical analysis?'))"
+.\.venv\Scripts\python.exe -c "from stockscanner.openai_client import get_chatgpt_client; client = get_chatgpt_client(); print(client.chat('What is technical analysis?'))"
 ```
 
 ## Windows Setup
@@ -128,17 +138,20 @@ Open PowerShell and run:
 ```powershell
 cd C:\StockScanner
 python -m venv .venv
-.\.\.venv\Scripts\python.exe -m pip install --upgrade pip
-.\.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-.\.\.venv\Scripts\python.exe -m pip install -e .
+.\.venv\Scripts\python.exe -m pip install --upgrade pip
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m pip install -e .
 ```
 
 ## Run a Full Local Scan
 
 ```powershell
 cd C:\StockScanner
-.\.\.venv\Scripts\python.exe -m stockscanner.cli --universe --force-download --parallel --workers 20 --portfolio 50000 --position-size 5 --risk 1 --html
+.\.venv\Scripts\python.exe -m stockscanner.cli --universe --universe-source download --parallel --workers 20 --portfolio 50000 --position-size 5 --risk 1 --html
 ```
+
+Production automation uses `--universe-source supabase`. The local `download`
+mode is retained for development and recovery tests.
 
 ## CLI Options
 
@@ -146,8 +159,12 @@ cd C:\StockScanner
 |---|---|---:|
 | `--universe` | Scan NYSE universe | Off |
 | `--limit N` | Limit universe for test | All |
+| `--universe-source download\|supabase` | Select local/live download or Supabase universe | `download` |
+| `--force-download` | Bypass a cached local universe file | Off |
 | `--parallel` | Enable parallel processing | Off |
 | `--workers N` | Parallel worker count | 10 |
+| `--batch-reports` | Generate batch and combined Excel reports | Off |
+| `--no-report` | Skip report files | Off |
 | `--html` | Generate HTML dashboards | Off |
 | `--quiet` | Suppress per-ticker output | Off |
 
@@ -160,7 +177,65 @@ Each run creates files under `reports\\YYYY-MM-DD\\`:
 | `index.html` | KPI Dashboard |
 | `technical.html` | Technical Analysis |
 | `analysts.html` | Analyst ratings |
-| `exceptions.html` | Exception list |
+| `bought-selection.html` | Scanner-generated bought candidates |
+| `exceptions.html` | Compatibility redirect to the signed-in user's exceptions |
+| `my-exceptions.html` | Signed-in user's personal exclusions |
+| `my-bought-selection.html` | Signed-in user's purchased positions and profit/loss |
+| `portfolio-analysis.html` | User-owned IBKR/CSV holdings and review signals |
+| `admin.html` | Admin-only activity and usage metrics |
+| `users.html` | Admin-only accept, block, and delete controls |
+| `login.html` | Sign-in and approved-user registration |
+
+On every protected page, use the compact **Menu** button at the upper left to
+open or close the shared navigation drawer. The drawer replaces the former
+header button rows, shows the signed-in user, includes personal-list and
+portfolio links, and shows administration links only to the configured admin.
+It closes from its close button, the page overlay, the Escape key, or after a
+page is selected.
+
+On the KPI Dashboard, select **Stocks Scanned**, **Strong Buy**, **Buy**,
+**Accumulate**, **Watch**, or **Avoid** to open the matching stock list. The
+drill-down includes rank, symbol, current price, sector, recommendation, and
+score, plus a text filter. Average Score and Best Score remain display-only.
+
+The personal Exception List and Bought Selection are intentionally separate:
+
+- **Exception List** means a ticker must not be considered by that user.
+- **Bought Selection** records a position the user owns or tracks, including
+  quantity, buy price, and current profit/loss.
+
+The bought list also shows days held and an estimated breakeven period for a
+losing position. The scenario compounds the Equal-weight Top 20's observed
+one-year daily return until the position would recover its buy price. It is a
+transparent reference scenario—not a forecast—and excludes fees, taxes,
+dividends, and company-specific risk. The exact first profitable date is not
+claimed because individual daily ticker histories are not retained.
+
+After authentication, the Top 20 applies the signed-in user's lists. Active
+personal exceptions and already-bought symbols are hidden by default, with
+separate controls to show them. The complete All Results table remains shared
+and unfiltered. Candidate-page actions write directly to Supabase; they no
+longer create GitHub issues.
+
+## Production data and schedules
+
+| Data | Supabase table | Retention | Schedule |
+|---|---|---|---|
+| NYSE universe | `public.nyse_tickers` | Current rows only | Weekdays at 8:00 AM New York time |
+| Hourly prices | `public.price_snapshots` | Latest `hourly_yahoo` row only | Market-hours workflow |
+| Personal exceptions | `public.user_exceptions` | Per user | User managed |
+| Purchased positions | `public.user_bought_selections` | Per user | User managed |
+| Imported broker holdings | `public.user_portfolio_holdings` | Latest per user and broker | On demand |
+| Portfolio import status | `public.user_portfolio_imports` | Latest per user and broker | On demand |
+
+IBKR download uses a server-side Flex Web Service token and query ID. Those
+secrets belong only in Supabase Edge Function secrets. The browser never
+receives them. The IBKR query should return Open Positions in CSV format and use
+tax-lot detail when buy dates are required.
+
+Backend workflows use `SUPABASE_SECRET_KEY` from the protected GitHub
+`github-pages` environment. That secret must never be placed in HTML,
+JavaScript, documentation examples, or source control.
 
 Live site: <https://aksamuel.github.io/StockScanner/>
 
@@ -168,8 +243,10 @@ Live site: <https://aksamuel.github.io/StockScanner/>
 
 ```powershell
 cd C:\StockScanner
-.\.\.venv\Scripts\python.exe -m pytest -q
+.\.venv\Scripts\python.exe -m pytest -q
 ```
+
+The current `v2.12.0` production package passes 96 tests.
 
 ## License
 

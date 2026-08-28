@@ -72,7 +72,9 @@ button {
   cursor: pointer;
 }
 button.delete { color: #fff; background: #c62828; }
+button.secondary { color: #e0e0e0; border-color: #546e7a; background: #24384a; }
 button:disabled { opacity: .58; cursor: wait; }
+.row-actions { display: flex; gap: 7px; }
 .list-toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -96,25 +98,7 @@ td.pl-unavailable { color: #90a4ae; }
 .empty { padding: 24px; color: #90a4ae; text-align: center; }
 #message { min-height: 24px; margin: 12px 0; color: #ffcc80; }
 #message.success { color: #a5d6a7; }
-.stockscanner-account {
-  position: fixed;
-  top: 10px;
-  right: 12px;
-  z-index: 99999;
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  padding: 7px 10px;
-  border: 1px solid #546e7a;
-  border-radius: 6px;
-  color: #eceff1;
-  background: #10212d;
-  font: 13px/1.2 sans-serif;
-}
-.stockscanner-account a { color: #81d4fa; }
-.stockscanner-account button { min-height: auto; padding: 4px 8px; }
 @media (max-width: 720px) {
-  body { padding: 112px 14px 32px; }
+  body { padding: 66px 14px 32px; }
   .wide { grid-column: span 1; }
-  .stockscanner-account span { display: none; }
 }
