@@ -2,10 +2,17 @@ name: Hourly Price Snapshot
 
 on:
   workflow_dispatch:
-  # Covers 09:35-16:35 New York in both EST and EDT. The Python script
+  # A workflow/code change performs one immediate, market-hours catch-up.
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/price-snapshot.yml"
+      - "stockscanner/price_snapshot.py"
+      - "stockscanner/supabase_snapshot.py"
+  # Covers 09:47-16:47 New York in both EST and EDT. The Python script
   # performs the authoritative 09:30-16:00 America/New_York runtime gate.
   schedule:
-    - cron: "35 13-21 * * 1-5"
+    - cron: "47 13-21 * * 1-5"
 
 permissions:
   contents: write
@@ -45,8 +52,12 @@ jobs:
       - name: Test snapshot code
         run: pytest -q tests/test_price_snapshot.py tests/test_supabase_snapshot.py
 
-      - name: Refresh backend Yahoo price snapshot
+      - name: Refresh prices through free provider failover
         id: refresh
+        env:
+          ALPACA_API_KEY_ID: ${{ secrets.ALPACA_API_KEY_ID }}
+          ALPACA_API_SECRET_KEY: ${{ secrets.ALPACA_API_SECRET_KEY }}
+          TWELVE_DATA_API_KEY: ${{ secrets.TWELVE_DATA_API_KEY }}
         run: |
           python -m stockscanner.price_snapshot
           if git diff --quiet -- prices.json; then

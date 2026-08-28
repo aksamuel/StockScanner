@@ -177,7 +177,7 @@ cascading. Blocked or rejected users cannot use the protected application pages.
 Apply both market-data migrations listed above, then keep
 `SUPABASE_SECRET_KEY` in the protected GitHub `github-pages` environment.
 The **Daily NYSE Ticker Universe** workflow refreshes `public.nyse_tickers`
-once each weekday at or after 8:00 AM New York time. It uses both possible UTC
+once each weekday at or after 8:07 AM New York time. It uses both possible UTC
 hours plus database date guards so daylight-saving changes and delayed GitHub
 jobs do not create duplicate downloads.
 
@@ -186,6 +186,26 @@ atomically replaces the table; ticker history is not retained. The same
 migration changes `public.price_snapshots` to retain only the latest
 `hourly_yahoo` payload, and the hourly workflow writes only when `prices.json`
 actually changed during that run.
+
+### Configure free hourly price providers
+
+Create an Alpaca Basic account and store its credentials in the protected
+GitHub `github-pages` environment as `ALPACA_API_KEY_ID` and
+`ALPACA_API_SECRET_KEY`. The workflow explicitly requests Alpaca's free IEX
+feed. Optionally add a Twelve Data Basic key as `TWELVE_DATA_API_KEY`; the code
+uses no more than eight Twelve Data symbols per run so the scheduled workflow
+stays below its free minute and daily quotas.
+
+The symbol list is split evenly between Alpaca and Yahoo. Missing or timed-out
+prices cross over to the other provider once, then up to eight remaining gaps
+use Twelve Data. Retries are intentionally bounded: an endless loop could
+exceed a free quota and still cannot guarantee a current quote for an inactive
+or unsupported security. A failed live symbol retains its prior stored price
+and is listed in the snapshot's `failures` object.
+
+Free-provider terms can restrict redistribution or public display. Confirm that
+the selected account plan permits the way the protected StockScanner site is
+used before enabling an optional provider.
 
 The `public.nyse_tickers` table is backend-only: `anon` and `authenticated`
 have no table privileges. The `service_role` can replace the current universe.
@@ -238,18 +258,21 @@ code or GitHub Pages.
 
 | Workflow | Purpose | Schedule |
 |---|---|---|
-| `ticker-universe.yml` | Atomically replaces `public.nyse_tickers` | Once per weekday at or after 8:00 AM New York time |
-| `scan.yml` | Runs the universe scan and publishes GitHub Pages | Weekdays at 13:00 UTC (9:00 AM EDT / 8:00 AM EST) and manual dispatch |
-| `price-snapshot.yml` | Updates the singleton hourly price payload | Weekday market-hours schedule and manual dispatch |
+| `ticker-universe.yml` | Atomically replaces `public.nyse_tickers` | Once per weekday at or after 8:07 AM New York time |
+| `scan.yml` | Runs the universe scan and publishes GitHub Pages | Weekdays at 9:17 AM New York time and manual dispatch |
+| `price-snapshot.yml` | Updates the singleton hourly price payload | Weekdays at :47 during market hours, push catch-up, and manual dispatch |
 | `invite-admin.yml` | Invites or promotes an administrator without handling a password | Manual only |
 
-GitHub cron is UTC-only. The ticker workflow schedules both possible UTC hours
-and uses a New York date/time guard to remain daylight-saving safe.
+GitHub cron is UTC-only. The ticker and scan workflows schedule both possible
+UTC hours and use New York date/time guards to remain daylight-saving safe.
+Non-zero minutes avoid GitHub Actions' busiest top-of-hour scheduling window.
 
 ## Security checklist
 
 - Use a publishable/anonymous key only in browser code.
 - Store `SUPABASE_SECRET_KEY` only in the protected GitHub environment.
+- Store Alpaca and Twelve Data API credentials only in the protected GitHub
+  environment; never add them to the repository or static site.
 - Keep RLS enabled on exposed `public` tables and use ownership predicates for
   personal rows.
 - Use `app_metadata`, not user-editable `user_metadata`, for authorization

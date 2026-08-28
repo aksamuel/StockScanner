@@ -976,6 +976,8 @@ def test_landing_kpis_open_filterable_recommendation_stock_lists():
 
     for category in ("all", "strong-buy", "buy", "accumulate", "watch", "avoid"):
         assert f'data-kpi-filter="{category}"' in page
+    for color in ("#4fc3f7", "#4caf50", "#66bb6a", "#fdd835", "#ffa726", "#ef5350"):
+        assert f'data-kpi-color="{color}"' in page
     assert 'id="kpiDetails"' in page
     assert 'id="kpiStockSearch"' in page
     assert '<tr data-kpi-category="strong-buy">' in page
@@ -983,6 +985,8 @@ def test_landing_kpis_open_filterable_recommendation_stock_lists():
     assert '<tr data-kpi-category="watch">' in page
     assert "initializeKpiDrilldown();" in page
     assert "function filterKpiStockRows()" in page
+    assert "card.dataset.kpiColor" in page
+    assert "color: var(--active-kpi-symbol-color)" in page
 
 
 def test_html_export_creates_three_stable_linked_pages(tmp_path, monkeypatch):
@@ -1240,7 +1244,13 @@ def test_intraday_snapshot_uses_latest_current_session_quote(monkeypatch):
 
     class FakeTicker:
         def history(self, **kwargs):
-            assert kwargs == {"period": "1d", "interval": "1m", "prepost": True}
+            assert kwargs == {
+                "period": "1d",
+                "interval": "1m",
+                "prepost": True,
+                "timeout": 10,
+                "raise_errors": True,
+            }
             return intraday
 
     monkeypatch.setattr(

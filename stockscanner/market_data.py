@@ -93,6 +93,8 @@ def download_intraday_snapshot(symbol, now=None):
         period="1d",
         interval="1m",
         prepost=True,
+        timeout=10,
+        raise_errors=True,
     )
     if intraday is None or intraday.empty:
         return None

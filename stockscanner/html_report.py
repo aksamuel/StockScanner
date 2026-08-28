@@ -997,12 +997,12 @@ def _generate_html(dataframe, scan_time, page_key=None, chart_data=None):
     dashboard_content = (
         f"""
     <div class="cards">
-        <button class="card kpi-card" type="button" data-kpi-filter="all" data-kpi-label="Stocks Scanned" aria-controls="kpiDetails" aria-expanded="false"><span class="value">{summary['total_stocks']}</span><span class="label">Stocks Scanned</span></button>
-        <button class="card kpi-card" type="button" data-kpi-filter="strong-buy" data-kpi-label="Strong Buy" aria-controls="kpiDetails" aria-expanded="false"><span class="value" style="color:#4caf50">{summary['strong_buy']}</span><span class="label">Strong Buy</span></button>
-        <button class="card kpi-card" type="button" data-kpi-filter="buy" data-kpi-label="Buy" aria-controls="kpiDetails" aria-expanded="false"><span class="value" style="color:#66bb6a">{summary['buy']}</span><span class="label">Buy</span></button>
-        <button class="card kpi-card" type="button" data-kpi-filter="accumulate" data-kpi-label="Accumulate" aria-controls="kpiDetails" aria-expanded="false"><span class="value" style="color:#fdd835">{summary['accumulate']}</span><span class="label">Accumulate</span></button>
-        <button class="card kpi-card" type="button" data-kpi-filter="watch" data-kpi-label="Watch" aria-controls="kpiDetails" aria-expanded="false"><span class="value" style="color:#ffa726">{summary['watch']}</span><span class="label">Watch</span></button>
-        <button class="card kpi-card" type="button" data-kpi-filter="avoid" data-kpi-label="Avoid" aria-controls="kpiDetails" aria-expanded="false"><span class="value" style="color:#ef5350">{summary['avoid']}</span><span class="label">Avoid</span></button>
+        <button class="card kpi-card" type="button" data-kpi-filter="all" data-kpi-label="Stocks Scanned" data-kpi-color="#4fc3f7" aria-controls="kpiDetails" aria-expanded="false"><span class="value">{summary['total_stocks']}</span><span class="label">Stocks Scanned</span></button>
+        <button class="card kpi-card" type="button" data-kpi-filter="strong-buy" data-kpi-label="Strong Buy" data-kpi-color="#4caf50" aria-controls="kpiDetails" aria-expanded="false"><span class="value" style="color:#4caf50">{summary['strong_buy']}</span><span class="label">Strong Buy</span></button>
+        <button class="card kpi-card" type="button" data-kpi-filter="buy" data-kpi-label="Buy" data-kpi-color="#66bb6a" aria-controls="kpiDetails" aria-expanded="false"><span class="value" style="color:#66bb6a">{summary['buy']}</span><span class="label">Buy</span></button>
+        <button class="card kpi-card" type="button" data-kpi-filter="accumulate" data-kpi-label="Accumulate" data-kpi-color="#fdd835" aria-controls="kpiDetails" aria-expanded="false"><span class="value" style="color:#fdd835">{summary['accumulate']}</span><span class="label">Accumulate</span></button>
+        <button class="card kpi-card" type="button" data-kpi-filter="watch" data-kpi-label="Watch" data-kpi-color="#ffa726" aria-controls="kpiDetails" aria-expanded="false"><span class="value" style="color:#ffa726">{summary['watch']}</span><span class="label">Watch</span></button>
+        <button class="card kpi-card" type="button" data-kpi-filter="avoid" data-kpi-label="Avoid" data-kpi-color="#ef5350" aria-controls="kpiDetails" aria-expanded="false"><span class="value" style="color:#ef5350">{summary['avoid']}</span><span class="label">Avoid</span></button>
         <div class="card"><div class="value">{summary['average_score']}</div><div class="label">Avg Score</div></div>
         <div class="card"><div class="value">{summary['highest_score']}</div><div class="label">Best Score</div></div>
     </div>
@@ -1152,6 +1152,7 @@ header .subtitle {{ color: #90a4ae; text-align: center; margin-top: 4px; font-si
 .kpi-card .value,
 .kpi-card .label {{ display: block; }}
 .kpi-details {{
+    --active-kpi-symbol-color: #4fc3f7;
     padding: 18px;
     border: 1px solid #3b5368;
     border-radius: 8px;
@@ -1178,7 +1179,7 @@ header .subtitle {{ color: #90a4ae; text-align: center; margin-top: 4px; font-si
     color: #fff;
     background: #0f1923;
 }}
-.kpi-symbol {{ color: #81d4fa; font-weight: 700; }}
+.kpi-symbol {{ color: var(--active-kpi-symbol-color); font-weight: 700; }}
 .section {{ margin-bottom: 32px; }}
 .section h2 {{
     color: #4fc3f7;
@@ -1424,6 +1425,7 @@ function initializeKpiDrilldown() {{
 function showKpiStocks(card) {{
     const panel = document.getElementById('kpiDetails');
     activeKpiCategory = card.dataset.kpiFilter;
+    panel.style.setProperty('--active-kpi-symbol-color', card.dataset.kpiColor || '#4fc3f7');
     document.getElementById('kpiDetailsTitle').textContent = card.dataset.kpiLabel;
     document.getElementById('kpiStockSearch').value = '';
     document.querySelectorAll('.kpi-card').forEach(item => item.setAttribute('aria-expanded', String(item === card)));

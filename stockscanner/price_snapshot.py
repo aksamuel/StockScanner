@@ -7,6 +7,7 @@ import json
 import math
 import os
 import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, time
 from html.parser import HTMLParser
 from pathlib import Path
@@ -14,6 +15,11 @@ from typing import Callable, Iterable
 from zoneinfo import ZoneInfo
 
 from .market_data import download_intraday_snapshot
+from .price_providers import (
+    TWELVE_DATA_FREE_SYMBOLS_PER_RUN,
+    download_alpaca_snapshots,
+    download_twelve_data_snapshots,
+)
 
 
 NEW_YORK = ZoneInfo("America/New_York")
@@ -236,9 +242,11 @@ def refresh_snapshot(
     *,
     now=None,
     downloader: Callable = download_intraday_snapshot,
+    alpaca_downloader: Callable = download_alpaca_snapshots,
+    twelve_data_downloader: Callable = download_twelve_data_snapshots,
     report_paths=None,
 ):
-    """Refresh displayed symbols during market hours, preserving failed values."""
+    """Refresh prices through bounded free-provider fallback attempts."""
     local = _new_york_time(now)
     if not is_regular_market_session(local):
         return {
@@ -252,30 +260,104 @@ def refresh_snapshot(
         previous["prices"] if previous is not None else bootstrap_prices(report_paths)
     )
     prices = dict(prior_prices)
-    failures = {}
-    updated = []
+    symbols = sorted(prior_prices)
+    updated_results = {}
+    provider_for_symbol = {}
+    attempt_errors = {symbol: [] for symbol in symbols}
     price_timestamps = []
 
-    for symbol in sorted(prior_prices):
+    def yahoo_batch(requested, *, now):
+        results = {}
+        errors = {}
+        if not requested:
+            return results, errors
+
+        def fetch(symbol):
+            return downloader(symbol, now=now)
+
+        # Four workers keep Yahoo pressure modest while preventing one slow
+        # symbol from serially delaying the entire half-list.
+        with ThreadPoolExecutor(max_workers=min(4, len(requested))) as executor:
+            futures = {executor.submit(fetch, symbol): symbol for symbol in requested}
+            for future in as_completed(futures):
+                symbol = futures[future]
+                try:
+                    results[symbol] = future.result()
+                except (
+                    LookupError,
+                    OSError,
+                    RuntimeError,
+                    TypeError,
+                    ValueError,
+                ) as exc:
+                    errors[symbol] = f"{type(exc).__name__}: {exc}"
+        return results, errors
+
+    def attempt(provider, requested, fetcher):
+        requested = [symbol for symbol in requested if symbol not in updated_results]
+        if not requested:
+            return
         try:
-            result = downloader(symbol, now=local)
-            price = _valid_price(result.get("price") if isinstance(result, dict) else None)
-            if price is None:
-                failures[symbol] = "Yahoo returned no valid intraday price"
-                continue
-            prices[symbol] = price
-            updated.append(symbol)
-            timestamp = _parse_price_timestamp(result.get("timestamp"))
-            if timestamp is not None:
-                price_timestamps.append(timestamp)
+            response = fetcher(requested, now=local)
+            if provider == "Yahoo":
+                response, errors = response
+            else:
+                errors = {}
         except (LookupError, OSError, RuntimeError, TypeError, ValueError) as exc:
-            failures[symbol] = f"{type(exc).__name__}: {exc}"
+            response = {}
+            errors = {
+                symbol: f"{type(exc).__name__}: {exc}" for symbol in requested
+            }
+
+        if not isinstance(response, dict):
+            response = {}
+        for symbol in requested:
+            result = response.get(symbol)
+            price = _valid_price(
+                result.get("price") if isinstance(result, dict) else None
+            )
+            if price is None:
+                detail = errors.get(symbol, "no valid current price")
+                attempt_errors[symbol].append(f"{provider}: {detail}")
+                continue
+            updated_results[symbol] = result
+            provider_for_symbol[symbol] = provider
+
+    # Alternate sorted symbols so each primary provider receives half of the
+    # list while retaining a stable split between workflow runs.
+    alpaca_primary = symbols[::2]
+    yahoo_primary = symbols[1::2]
+    attempt("Alpaca", alpaca_primary, alpaca_downloader)
+    attempt("Yahoo", yahoo_primary, yahoo_batch)
+
+    # Cross-provider fallback: every missing symbol is tried by the other
+    # primary provider exactly once. This is bounded to protect free quotas.
+    attempt("Alpaca", yahoo_primary, alpaca_downloader)
+    attempt("Yahoo", alpaca_primary, yahoo_batch)
+
+    unresolved = [symbol for symbol in symbols if symbol not in updated_results]
+    attempt(
+        "Twelve Data",
+        unresolved[:TWELVE_DATA_FREE_SYMBOLS_PER_RUN],
+        twelve_data_downloader,
+    )
+
+    failures = {
+        symbol: "; ".join(attempt_errors[symbol]) or "No provider returned a price"
+        for symbol in symbols
+        if symbol not in updated_results
+    }
+    for symbol, result in updated_results.items():
+        prices[symbol] = _valid_price(result.get("price"))
+        timestamp = _parse_price_timestamp(result.get("timestamp"))
+        if timestamp is not None:
+            price_timestamps.append(timestamp)
 
     for symbol, message in failures.items():
         print(f"Price refresh failed for {symbol}: {message}", file=sys.stderr)
-    if not updated:
+    if not updated_results:
         raise SnapshotError(
-            "Yahoo returned no valid intraday prices; the prior snapshot was preserved"
+            "All free price providers failed; the prior snapshot was preserved"
         )
 
     # In production, record when collection completed rather than when the
@@ -289,14 +371,21 @@ def refresh_snapshot(
         failures=failures,
         price_timestamp=max(price_timestamps) if price_timestamps else None,
     )
-    payload["updated_symbols"] = updated
+    provider_counts = {
+        provider: sum(1 for value in provider_for_symbol.values() if value == provider)
+        for provider in ("Alpaca", "Yahoo", "Twelve Data")
+    }
+    payload["collection_strategy"] = "free_split_with_bounded_failover"
+    payload["provider_counts"] = provider_counts
+    payload["updated_symbols"] = sorted(updated_results)
     _write_snapshot(payload, path)
 
     return {
         "published": True,
-        "updated": len(updated),
+        "updated": len(updated_results),
         "failed": len(failures),
         "symbols": len(prices),
+        "provider_counts": provider_counts,
         "path": str(path),
     }
 

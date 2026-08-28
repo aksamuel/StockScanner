@@ -77,11 +77,17 @@ def test_refresh_writes_json_and_preserves_failed_symbol_price(tmp_path, capsys)
         "updated": 1,
         "failed": 1,
         "symbols": 2,
+        "provider_counts": {"Alpaca": 0, "Yahoo": 1, "Twelve Data": 0},
         "path": str(snapshot_path),
     }
     assert payload["prices"] == {"AAA": 11.25, "BBB": 20.0}
     assert payload["updated_symbols"] == ["AAA"]
-    assert payload["failures"] == {"BBB": "RuntimeError: rate limited"}
+    assert "Yahoo: RuntimeError: rate limited" in payload["failures"]["BBB"]
+    assert payload["provider_counts"] == {
+        "Alpaca": 0,
+        "Yahoo": 1,
+        "Twelve Data": 0,
+    }
     assert payload["generated_at_new_york"].endswith("EDT")
     assert payload["price_timestamp_new_york"] == "13 August 2026, 09:59 AM EDT"
     assert "Price refresh failed for BBB" in capsys.readouterr().err
@@ -126,3 +132,83 @@ def test_refresh_bootstraps_symbols_from_generated_report(tmp_path):
     assert result["updated"] == 1
     assert payload["prices"] == {"XYZ": 43.75}
     assert payload["price_timestamp_new_york"] is None
+
+
+def test_refresh_splits_primary_work_and_cross_fails_over(tmp_path):
+    snapshot_path = tmp_path / "prices.json"
+    write_snapshot_from_results(
+        [
+            {"Symbol": symbol, "Current Price": price}
+            for symbol, price in zip(["AAA", "BBB", "CCC", "DDD"], range(10, 14))
+        ],
+        snapshot_path,
+        ny_time(9),
+    )
+    alpaca_calls = []
+    yahoo_calls = []
+
+    def alpaca(symbols, now):
+        alpaca_calls.append(list(symbols))
+        return {
+            symbol: {"price": 20 + index, "timestamp": now.isoformat()}
+            for index, symbol in enumerate(symbols)
+            if symbol in {"AAA", "DDD"}
+        }
+
+    def yahoo(symbol, now):
+        yahoo_calls.append(symbol)
+        if symbol in {"BBB", "CCC"}:
+            return {"price": 30 + len(yahoo_calls), "timestamp": now.isoformat()}
+        return None
+
+    result = refresh_snapshot(
+        snapshot_path,
+        now=ny_time(10),
+        downloader=yahoo,
+        alpaca_downloader=alpaca,
+        twelve_data_downloader=lambda symbols, now: {},
+    )
+    payload = json.loads(snapshot_path.read_text(encoding="utf-8"))
+
+    assert alpaca_calls == [["AAA", "CCC"], ["DDD"]]
+    assert yahoo_calls == ["BBB", "DDD", "CCC"]
+    assert result["updated"] == 4
+    assert result["failed"] == 0
+    assert result["provider_counts"] == {
+        "Alpaca": 2,
+        "Yahoo": 2,
+        "Twelve Data": 0,
+    }
+    assert payload["collection_strategy"] == "free_split_with_bounded_failover"
+
+
+def test_refresh_caps_twelve_data_fallback_at_eight_free_credits(tmp_path):
+    snapshot_path = tmp_path / "prices.json"
+    symbols = [f"S{index:02d}" for index in range(12)]
+    write_snapshot_from_results(
+        [{"Symbol": symbol, "Current Price": 10} for symbol in symbols],
+        snapshot_path,
+        ny_time(9),
+    )
+    twelve_calls = []
+
+    def twelve_data(requested, now):
+        twelve_calls.append(list(requested))
+        return {
+            symbol: {"price": 12.5, "timestamp": now.isoformat()}
+            for symbol in requested
+        }
+
+    result = refresh_snapshot(
+        snapshot_path,
+        now=ny_time(10),
+        downloader=lambda symbol, now: None,
+        alpaca_downloader=lambda symbols, now: {},
+        twelve_data_downloader=twelve_data,
+    )
+
+    assert len(twelve_calls) == 1
+    assert len(twelve_calls[0]) == 8
+    assert result["provider_counts"]["Twelve Data"] == 8
+    assert result["updated"] == 8
+    assert result["failed"] == 4

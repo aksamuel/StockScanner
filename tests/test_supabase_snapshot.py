@@ -44,7 +44,7 @@ def test_snapshot_record_derives_counts():
     assert record["prices"] == {"AAA": 10.25, "BBB": 20.5}
 
 
-def test_store_snapshot_uses_secret_key_only_as_apikey_header():
+def test_store_snapshot_updates_singleton_using_secret_apikey_header():
     captured = {}
 
     def opener(request, timeout):
@@ -65,12 +65,42 @@ def test_store_snapshot_uses_secret_key_only_as_apikey_header():
 
     request = captured["request"]
     assert request.full_url.endswith(
-        "/rest/v1/price_snapshots?on_conflict=source"
+        "/rest/v1/price_snapshots?source=eq.hourly_yahoo"
     )
+    assert request.method == "PATCH"
     assert request.get_header("Apikey") == "sb_secret_test"
     assert request.get_header("Authorization") is None
     assert json.loads(request.data) == snapshot_record(sample_payload())
     assert stored["id"] == 7
+
+
+def test_store_snapshot_inserts_when_singleton_does_not_exist():
+    requests = []
+    responses = iter(
+        [
+            FakeResponse(b"[]"),
+            FakeResponse(
+                json.dumps(
+                    [{"id": 8, "generated_at": sample_payload()["generated_at"]}]
+                ).encode("utf-8")
+            ),
+        ]
+    )
+
+    def opener(request, timeout):
+        requests.append((request, timeout))
+        return next(responses)
+
+    stored = store_snapshot(
+        sample_payload(),
+        supabase_url="https://example.supabase.co",
+        secret_key="sb_secret_test",
+        opener=opener,
+    )
+
+    assert [request.method for request, _timeout in requests] == ["PATCH", "POST"]
+    assert requests[1][0].full_url.endswith("/rest/v1/price_snapshots")
+    assert stored["id"] == 8
 
 
 def test_store_snapshot_requires_backend_credentials():

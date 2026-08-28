@@ -13,7 +13,7 @@ AI-powered features with ChatGPT integration were introduced in v2.11.0. 🤖
 ## Features
 
 - Full NYSE universe and custom watchlist scanning
-- Parallel Yahoo Finance market-data requests
+- Split Alpaca Basic/IEX and Yahoo hourly price collection with bounded failover
 - Technical scoring, signals, trends, RSI, MACD, and moving averages
 - Support and resistance zones based on completed daily candles
 - Intraday price overlays without changing daily indicators
@@ -27,7 +27,7 @@ AI-powered features with ChatGPT integration were introduced in v2.11.0. 🤖
 - Rule-based portfolio profit/loss, holding-time, target, and stop reviews
 - Current profit/loss percentage for purchased positions
 - Bought-position time-to-profit status and benchmark-based breakeven-day scenarios
-- Daily Supabase NYSE universe refresh at 8:00 AM New York time
+- Daily Supabase NYSE universe refresh at 8:07 AM New York time
 - Latest-only hourly market-hours price storage
 - Responsive desktop and mobile dashboards with a collapsible left navigation drawer
 - Clickable KPI cards with searchable Strong Buy, Buy, Accumulate, Watch, Avoid,
@@ -221,8 +221,8 @@ longer create GitHub issues.
 
 | Data | Supabase table | Retention | Schedule |
 |---|---|---|---|
-| NYSE universe | `public.nyse_tickers` | Current rows only | Weekdays at 8:00 AM New York time |
-| Hourly prices | `public.price_snapshots` | Latest `hourly_yahoo` row only | Market-hours workflow |
+| NYSE universe | `public.nyse_tickers` | Current rows only | Weekdays at 8:07 AM New York time |
+| Hourly prices | `public.price_snapshots` | Latest `hourly_yahoo` row only | Weekdays at :47 during market hours |
 | Personal exceptions | `public.user_exceptions` | Per user | User managed |
 | Purchased positions | `public.user_bought_selections` | Per user | User managed |
 | Imported broker holdings | `public.user_portfolio_holdings` | Latest per user and broker | On demand |
@@ -237,6 +237,18 @@ Backend workflows use `SUPABASE_SECRET_KEY` from the protected GitHub
 `github-pages` environment. That secret must never be placed in HTML,
 JavaScript, documentation examples, or source control.
 
+The hourly job assigns alternating symbols to Alpaca Basic/IEX and Yahoo. Any
+missing or timed-out symbol is retried once through the other primary provider.
+Up to eight remaining symbols can use Twelve Data, matching its free
+eight-credit-per-minute allowance. Add `ALPACA_API_KEY_ID`,
+`ALPACA_API_SECRET_KEY`, and optionally `TWELVE_DATA_API_KEY` as protected
+`github-pages` environment secrets; none belongs in browser code. If a key is
+absent, that provider is skipped and the remaining configured providers run.
+
+The production universe scan is scheduled for 9:17 AM New York time. Candidate
+UTC hours plus New York-time gates keep both daily jobs correct across daylight
+saving changes; non-zero minutes reduce GitHub's top-of-hour scheduling delays.
+
 Live site: <https://aksamuel.github.io/StockScanner/>
 
 ## Testing
@@ -246,7 +258,7 @@ cd C:\StockScanner
 .\.venv\Scripts\python.exe -m pytest -q
 ```
 
-The current `v2.12.0` production package passes 96 tests.
+The current local `v2.12.0` package passes 101 tests.
 
 ## License
 

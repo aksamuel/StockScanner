@@ -1,12 +1,15 @@
 # Stock Scanner CI Workflow — v2.10.3
-# Runs the stock scanner at 9:00 AM New York time on NYSE trading days (Mon-Fri)
+# Runs the stock scanner at 9:17 AM New York time on NYSE trading days (Mon-Fri)
 # or on-demand via the GitHub mobile app / Actions tab.
 # Generates an HTML dashboard and deploys it to GitHub Pages.
 
 name: Stock Scanner
 run-name: >-
   Stock Scanner (${{ github.event_name == 'workflow_dispatch'
-    && 'manual Yahoo refresh' || 'scheduled scan' }})
+    && 'manual Yahoo refresh'
+    || github.event_name == 'schedule'
+    && 'scheduled scan'
+    || 'site deployment' }})
 
 on:
   # Deploy Auth-related changes without waiting for a scheduled market scan.
@@ -47,7 +50,7 @@ on:
       workers:
         description: "Number of parallel workers"
         type: string
-        default: "20"
+        default: "8"
       portfolio:
         description: "Total portfolio value in dollars"
         type: string
@@ -61,10 +64,10 @@ on:
         type: string
         default: "1"
 
-  # 9:00 AM New York time on NYSE trading days (Mon-Fri)
-  # 13:00 UTC = 9:00 AM EDT (summer), 8:00 AM EST (winter)
+  # GitHub cron is UTC-only. These two non-peak UTC slots cover 09:17 in
+  # both EDT and EST; the gate job below rejects the off-season duplicate.
   schedule:
-    - cron: "0 13 * * 1-5"
+    - cron: "17 13,14 * * 1-5"
 
 permissions:
   contents: write
@@ -76,7 +79,30 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  schedule-gate:
+    runs-on: ubuntu-latest
+    outputs:
+      should_run: ${{ steps.gate.outputs.should_run }}
+      new_york_time: ${{ steps.gate.outputs.new_york_time }}
+    steps:
+      - name: Check 9 AM New York schedule window
+        id: gate
+        shell: bash
+        run: |
+          NEW_YORK_TIME=$(TZ=America/New_York date '+%Y-%m-%d %H:%M:%S %Z')
+          NEW_YORK_HOUR=$(TZ=America/New_York date '+%H')
+          echo "new_york_time=$NEW_YORK_TIME" >> "$GITHUB_OUTPUT"
+          if [ "$GITHUB_EVENT_NAME" != "schedule" ] || [ "$NEW_YORK_HOUR" = "09" ]; then
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+            echo "Scanner is due at $NEW_YORK_TIME."
+          else
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping the off-season UTC slot at $NEW_YORK_TIME."
+          fi
+
   build:
+    needs: schedule-gate
+    if: needs.schedule-gate.outputs.should_run == 'true'
     runs-on: ubuntu-latest
     environment:
       name: github-pages
@@ -132,7 +158,7 @@ jobs:
             --universe \
             --universe-source supabase \
             --parallel \
-            --workers ${{ inputs.workers || 20 }} \
+            --workers ${{ inputs.workers || 8 }} \
             --portfolio ${{ inputs.portfolio || 50000 }} \
             --position-size ${{ inputs.position_size || 5 }} \
             --risk ${{ inputs.risk || 1 }} \
@@ -145,7 +171,7 @@ jobs:
         run: |
           python -m stockscanner.cli \
             --parallel \
-            --workers ${{ inputs.workers || 20 }} \
+            --workers ${{ inputs.workers || 8 }} \
             --portfolio ${{ inputs.portfolio || 50000 }} \
             --position-size ${{ inputs.position_size || 5 }} \
             --risk ${{ inputs.risk || 1 }} \

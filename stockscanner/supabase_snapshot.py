@@ -7,7 +7,6 @@ import json
 import os
 from pathlib import Path
 from urllib.error import HTTPError, URLError
-from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 
@@ -58,18 +57,17 @@ def store_snapshot(
     opener=urlopen,
     timeout=DEFAULT_TIMEOUT_SECONDS,
 ):
-    """Upsert one snapshot through Supabase's REST Data API."""
+    """Replace the singleton snapshot through Supabase's REST Data API."""
     if not supabase_url:
         raise SupabaseSnapshotError("SUPABASE_URL is required")
     if not secret_key:
         raise SupabaseSnapshotError("SUPABASE_SECRET_KEY is required")
 
-    query = urlencode({"on_conflict": "source"})
-    endpoint = f"{supabase_url.rstrip('/')}/rest/v1/price_snapshots?{query}"
+    endpoint = f"{supabase_url.rstrip('/')}/rest/v1/price_snapshots"
     headers = {
         "apikey": secret_key,
         "Content-Type": "application/json",
-        "Prefer": "resolution=merge-duplicates,return=representation",
+        "Prefer": "return=representation",
         "User-Agent": "StockScanner-GitHub-Actions/1.0",
     }
     # Legacy service_role keys are JWTs and still require Authorization. New
@@ -77,28 +75,43 @@ def store_snapshot(
     if not secret_key.startswith("sb_secret_"):
         headers["Authorization"] = f"Bearer {secret_key}"
 
-    request = Request(
-        endpoint,
-        data=json.dumps(snapshot_record(payload)).encode("utf-8"),
-        headers=headers,
-        method="POST",
-    )
-    try:
-        with opener(request, timeout=timeout) as response:
-            body = response.read().decode("utf-8")
-    except HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="replace")
-        raise SupabaseSnapshotError(
-            f"Supabase returned HTTP {exc.code}: {detail}"
-        ) from exc
-    except (OSError, URLError) as exc:
-        raise SupabaseSnapshotError(f"Unable to reach Supabase: {exc}") from exc
+    encoded = json.dumps(snapshot_record(payload)).encode("utf-8")
 
-    try:
-        stored = json.loads(body)
-    except json.JSONDecodeError as exc:
-        raise SupabaseSnapshotError("Supabase returned invalid JSON") from exc
-    if not isinstance(stored, list) or not stored:
+    def send(request):
+        try:
+            with opener(request, timeout=timeout) as response:
+                body = response.read().decode("utf-8")
+        except HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")
+            raise SupabaseSnapshotError(
+                f"Supabase returned HTTP {exc.code}: {detail}"
+            ) from exc
+        except (OSError, URLError) as exc:
+            raise SupabaseSnapshotError(f"Unable to reach Supabase: {exc}") from exc
+        try:
+            result = json.loads(body)
+        except json.JSONDecodeError as exc:
+            raise SupabaseSnapshotError("Supabase returned invalid JSON") from exc
+        if not isinstance(result, list):
+            raise SupabaseSnapshotError("Supabase returned an invalid record list")
+        return result
+
+    # Updating the known singleton avoids PostgREST's on_conflict schema-cache
+    # dependency. The workflow is serialized, so an insert is required only
+    # when the table has not yet been initialized.
+    stored = send(
+        Request(
+            f"{endpoint}?source=eq.hourly_yahoo",
+            data=encoded,
+            headers=headers,
+            method="PATCH",
+        )
+    )
+    if not stored:
+        stored = send(
+            Request(endpoint, data=encoded, headers=headers, method="POST")
+        )
+    if not stored:
         raise SupabaseSnapshotError("Supabase did not confirm the stored snapshot")
     return stored[0]
 

@@ -242,11 +242,20 @@ def test_workflows_use_supabase_and_dst_safe_new_york_schedule():
     ticker_workflow = open(
         ".github/workflows/ticker-universe.yml", encoding="utf-8"
     ).read()
+    price_workflow = open(
+        ".github/workflows/price-snapshot.yml", encoding="utf-8"
+    ).read()
 
     assert "--universe-source supabase" in scan_workflow
     assert "--force-download" not in scan_workflow
-    assert 'cron: "0 12,13 * * 1-5"' in ticker_workflow
+    assert 'cron: "17 13,14 * * 1-5"' in scan_workflow
+    assert "Check 9 AM New York schedule window" in scan_workflow
+    assert 'default: "8"' in scan_workflow
+    assert 'cron: "7 12,13 * * 1-5"' in ticker_workflow
     assert "SUPABASE_SECRET_KEY" in ticker_workflow
+    assert 'cron: "47 13-21 * * 1-5"' in price_workflow
+    assert 'branches: [main]' in price_workflow
+    assert '"stockscanner/price_snapshot.py"' in price_workflow
 
 
 def test_migration_keeps_only_current_tickers_and_hourly_prices():
