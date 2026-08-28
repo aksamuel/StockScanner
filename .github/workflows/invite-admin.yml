@@ -1,0 +1,40 @@
+name: Invite StockScanner Admin
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: invite-stockscanner-admin
+  cancel-in-progress: false
+
+jobs:
+  invite:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment:
+      name: github-pages
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: .github/scripts/package-lock.json
+
+      - name: Install locked Supabase client
+        working-directory: .github/scripts
+        run: npm ci --ignore-scripts --no-audit
+
+      - name: Invite or promote administrator
+        env:
+          ADMIN_EMAIL: aaksamuel@zohomail.com
+          ADMIN_REDIRECT_URL: https://aksamuel.github.io/StockScanner/login.html
+          SUPABASE_URL: https://cszzbkssxxgwgafwuonc.supabase.co
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: node .github/scripts/invite-admin.mjs
