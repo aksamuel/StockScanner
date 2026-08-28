@@ -251,6 +251,9 @@ def test_workflows_use_supabase_and_dst_safe_new_york_schedule():
     assert 'cron: "17 13,14 * * 1-5"' in scan_workflow
     assert "Check 9 AM New York schedule window" in scan_workflow
     assert 'default: "8"' in scan_workflow
+    assert "git pull --rebase -X theirs origin main" in scan_workflow
+    assert "git push origin HEAD:main" in scan_workflow
+    assert "Unable to publish generated reports after 3 attempts" in scan_workflow
     assert 'cron: "7 12,13 * * 1-5"' in ticker_workflow
     assert "SUPABASE_SECRET_KEY" in ticker_workflow
     assert 'cron: "47 13-21 * * 1-5"' in price_workflow

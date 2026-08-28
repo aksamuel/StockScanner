@@ -234,7 +234,20 @@ jobs:
             echo "No report changes to commit."
           else
             git commit -m "Update published stock scanner reports"
-            git push
+            # The hourly snapshot can update main while a full scan is running.
+            # Rebase the generated report commit and retry a bounded number of
+            # times instead of failing the Pages deployment on that safe race.
+            for attempt in 1 2 3; do
+              git pull --rebase -X theirs origin main
+              if git push origin HEAD:main; then
+                break
+              fi
+              if [ "$attempt" -eq 3 ]; then
+                echo "Unable to publish generated reports after 3 attempts." >&2
+                exit 1
+              fi
+              sleep $((attempt * 5))
+            done
           fi
 
       - name: Upload reports artifact
