@@ -28,7 +28,7 @@ Run the scanner with:
 Production baseline:
   - Branch: main
   - Stable branch: stable/v2.13.0
-  - Stable tag: v2.13.0
+  - Release label: v2.13.0
   - Release verification: 113 tests passed
 
 Production data:
