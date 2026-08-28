@@ -259,4 +259,5 @@ def test_migration_keeps_only_current_tickers_and_hourly_prices():
     assert "check (source = 'hourly_yahoo')" in migration
     assert "create unique index price_snapshots_source_key" in migration
     assert "delete from public.nyse_tickers" in migration
+    assert "where symbol is not null" in migration
     assert "create table public.nyse_ticker_downloads" not in migration

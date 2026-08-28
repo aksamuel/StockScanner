@@ -93,7 +93,10 @@ begin
     raise exception 'ticker list cannot be empty';
   end if;
 
-  delete from public.nyse_tickers;
+  -- Supabase's safe-update guard requires an explicit predicate. Symbol is a
+  -- non-null primary key, so this still removes every current row.
+  delete from public.nyse_tickers
+  where symbol is not null;
 
   insert into public.nyse_tickers (
     symbol,
