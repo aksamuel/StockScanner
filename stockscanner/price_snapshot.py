@@ -123,6 +123,8 @@ def _snapshot_payload(
     source,
     failures=None,
     price_timestamp=None,
+    daily_prices=None,
+    intraday_series=None,
 ):
     local = _new_york_time(generated_at)
     yahoo_time = _parse_price_timestamp(price_timestamp)
@@ -132,7 +134,8 @@ def _snapshot_payload(
         if (price := _valid_price(value)) is not None
     }
     return {
-        "schema_version": 1,
+        "schema_version": 2,
+        "market_date": local.date().isoformat(),
         "generated_at": local.isoformat(),
         "generated_at_new_york": local.strftime("%d %B %Y, %I:%M %p %Z"),
         "price_timestamp": yahoo_time.isoformat() if yahoo_time else None,
@@ -145,8 +148,44 @@ def _snapshot_payload(
         "source": source,
         "symbol_count": len(normalized),
         "prices": dict(sorted(normalized.items())),
+        "daily_prices": dict(sorted((daily_prices or {}).items())),
+        "intraday_series": dict(sorted((intraday_series or {}).items())),
         "failures": dict(sorted((failures or {}).items())),
     }
+
+
+def _current_intraday_series(previous, updated_results, generated_at):
+    """Keep only today's bounded hourly points in the singleton payload."""
+    local = _new_york_time(generated_at)
+    previous_series = previous.get("intraday_series", {}) if previous else {}
+    series = {}
+    for symbol, points in previous_series.items():
+        if not isinstance(points, list):
+            continue
+        today_points = []
+        for point in points:
+            if not isinstance(point, dict):
+                continue
+            timestamp = _parse_price_timestamp(point.get("timestamp"))
+            price = _valid_price(point.get("price"))
+            if timestamp and timestamp.date() == local.date() and price is not None:
+                today_points.append({"timestamp": timestamp.isoformat(), "price": price})
+        if today_points:
+            series[symbol] = today_points[-16:]
+
+    for symbol, result in updated_results.items():
+        price = _valid_price(result.get("price"))
+        if price is None:
+            continue
+        timestamp = _parse_price_timestamp(result.get("timestamp")) or local
+        if timestamp.date() != local.date():
+            continue
+        point = {"timestamp": timestamp.isoformat(), "price": price}
+        points = series.setdefault(symbol, [])
+        points = [item for item in points if item["timestamp"] != point["timestamp"]]
+        points.append(point)
+        series[symbol] = sorted(points, key=lambda item: item["timestamp"])[-16:]
+    return series
 
 
 def _write_snapshot(payload, path):
@@ -266,6 +305,19 @@ def refresh_snapshot(
         previous["prices"] if previous is not None else bootstrap_prices(report_paths)
     )
     prices = dict(prior_prices)
+    previous_generated_at = _parse_price_timestamp(
+        previous.get("generated_at") if previous else None
+    )
+    same_market_day = bool(
+        previous_generated_at and previous_generated_at.date() == local.date()
+    )
+    # The singleton must never carry comparison values over from an older
+    # New York trading date. Symbols not refreshed today remain unavailable.
+    daily_prices = (
+        dict(previous.get("daily_prices", {}))
+        if previous and same_market_day
+        else {}
+    )
     portfolio_symbols = normalize_portfolio_symbols(additional_symbols or [])
     symbols = sorted(set(prior_prices).union(portfolio_symbols))
     updated_results = {}
@@ -356,6 +408,9 @@ def refresh_snapshot(
     }
     for symbol, result in updated_results.items():
         prices[symbol] = _valid_price(result.get("price"))
+        daily_close = _valid_price(result.get("daily_close"))
+        if daily_close is not None:
+            daily_prices[symbol] = daily_close
         timestamp = _parse_price_timestamp(result.get("timestamp"))
         if timestamp is not None:
             price_timestamps.append(timestamp)
@@ -371,12 +426,15 @@ def refresh_snapshot(
     # potentially long series of Yahoo requests started. Tests and callers
     # that inject ``now`` retain deterministic timestamps.
     generated_at = local if now is not None else datetime.now(NEW_YORK)
+    intraday_series = _current_intraday_series(previous, updated_results, generated_at)
     payload = _snapshot_payload(
         prices,
         generated_at,
         source="hourly_yahoo",
         failures=failures,
         price_timestamp=max(price_timestamps) if price_timestamps else None,
+        daily_prices=daily_prices,
+        intraday_series=intraday_series,
     )
     provider_counts = {
         provider: sum(1 for value in provider_for_symbol.values() if value == provider)

@@ -91,6 +91,7 @@ def download_alpaca_snapshots(
             latest_trade = snapshot.get("latestTrade") or {}
             minute_bar = snapshot.get("minuteBar") or {}
             daily_bar = snapshot.get("dailyBar") or {}
+            previous_daily_bar = snapshot.get("prevDailyBar") or {}
             price = latest_trade.get("p")
             timestamp = latest_trade.get("t")
             if price is None:
@@ -99,7 +100,11 @@ def download_alpaca_snapshots(
             if price is None:
                 price = daily_bar.get("c")
                 timestamp = daily_bar.get("t")
-            results[original] = {"price": price, "timestamp": timestamp}
+            results[original] = {
+                "price": price,
+                "daily_close": previous_daily_bar.get("c"),
+                "timestamp": timestamp,
+            }
     return results
 
 

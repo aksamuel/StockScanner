@@ -24,10 +24,14 @@ def snapshot_record(payload):
 
     prices = payload.get("prices")
     failures = payload.get("failures", {})
+    daily_prices = payload.get("daily_prices", {})
+    intraday_series = payload.get("intraday_series", {})
     if not isinstance(prices, dict) or not prices:
         raise SupabaseSnapshotError("Snapshot must contain a non-empty prices object")
     if not isinstance(failures, dict):
         raise SupabaseSnapshotError("Snapshot failures must be a JSON object")
+    if not isinstance(daily_prices, dict) or not isinstance(intraday_series, dict):
+        raise SupabaseSnapshotError("Daily prices and intraday series must be JSON objects")
     if not payload.get("generated_at") or not payload.get("source"):
         raise SupabaseSnapshotError("Snapshot requires generated_at and source")
     if payload["source"] != "hourly_yahoo":
@@ -37,6 +41,8 @@ def snapshot_record(payload):
 
     updated_symbols = payload.get("updated_symbols", [])
     return {
+        "market_date": payload.get("market_date")
+        or str(payload["generated_at"])[:10],
         "generated_at": payload["generated_at"],
         "price_timestamp": payload.get("price_timestamp"),
         "timezone": payload.get("timezone", "America/New_York"),
@@ -45,6 +51,8 @@ def snapshot_record(payload):
         "updated_count": len(updated_symbols) if isinstance(updated_symbols, list) else 0,
         "failed_count": len(failures),
         "prices": prices,
+        "daily_prices": daily_prices,
+        "intraday_series": intraday_series,
         "failures": failures,
     }
 

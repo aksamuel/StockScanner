@@ -28,7 +28,10 @@ def test_alpaca_uses_iex_batch_and_maps_share_class_symbols():
         captured["timeout"] = timeout
         return FakeResponse(
             {
-                "AAA": {"latestTrade": {"p": 10.25, "t": "2026-08-28T14:00:00Z"}},
+                "AAA": {
+                    "latestTrade": {"p": 10.25, "t": "2026-08-28T14:00:00Z"},
+                    "prevDailyBar": {"c": 10.0},
+                },
                 "BRK.B": {"minuteBar": {"c": 500.5, "t": "2026-08-28T14:00:00Z"}},
             }
         )
@@ -46,6 +49,7 @@ def test_alpaca_uses_iex_batch_and_maps_share_class_symbols():
     assert request.get_header("Apca-api-key-id") == "test-id"
     assert request.get_header("Apca-api-secret-key") == "test-secret"
     assert results["AAA"]["price"] == 10.25
+    assert results["AAA"]["daily_close"] == 10.0
     assert results["BRK-B"]["price"] == 500.5
 
 

@@ -8,6 +8,8 @@ on:
     paths:
       - ".github/workflows/price-snapshot.yml"
       - "stockscanner/price_snapshot.py"
+      - "stockscanner/price_providers.py"
+      - "stockscanner/market_data.py"
       - "stockscanner/portfolio_symbols.py"
       - "stockscanner/supabase_snapshot.py"
   # Covers 09:47-16:47 New York in both EST and EDT. The Python script

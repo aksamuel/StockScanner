@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Hourly and daily prices | StockScanner</title>
+  <link rel="stylesheet" href="/StockScanner/personal-lists.css">
+  <style>
+    main { width: 100%; }
+    .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 14px; }
+    .summary-card { padding: 14px; border: 1px solid #334b5f; border-radius: 8px; background: #1a2a3a; }
+    .summary-card span { display: block; color: #90a4ae; font-size: .78rem; }
+    .summary-card strong { display: block; margin-top: 4px; color: #b3e5fc; font-size: 1.08rem; }
+    .price-table { min-width: 820px; }
+    tbody tr { cursor: pointer; }
+    tbody tr:hover, tbody tr:focus { outline: 2px solid #4fc3f7; outline-offset: -2px; }
+    tbody tr[aria-selected="true"] { background: #203c50; }
+    .change-positive { color: #66bb6a; font-weight: 750; }
+    .change-negative { color: #ef5350; font-weight: 750; }
+    .change-neutral { color: #e0e0e0; font-weight: 750; }
+    .chart-panel { margin-top: 18px; }
+    .chart-heading { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px; }
+    .chart-heading h2 { margin: 0; color: #b3e5fc; font-size: 1.08rem; }
+    .chart-heading p { margin: 0; color: #90a4ae; font-size: .82rem; }
+    .chart-wrap { width: 100%; margin-top: 12px; overflow-x: auto; }
+    #spikeChart { display: block; width: 100%; min-width: 620px; height: auto; border-radius: 7px; background: #10212d; }
+    .chart-baseline { stroke: #78909c; stroke-width: 1.5; }
+    .chart-axis-label { fill: #b0bec5; font-size: 12px; }
+    .chart-close-label { fill: #b3e5fc; font-size: 13px; font-weight: 700; }
+    .chart-empty { fill: #90a4ae; font-size: 16px; }
+    .spike-positive { fill: #43a047; }
+    .spike-negative { fill: #e53935; }
+    #chartData { margin: 10px 0 0; color: #b0bec5; font-size: .82rem; }
+    @media (max-width: 720px) { .summary-grid { grid-template-columns: 1fr 1fr; } }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="page-header">
+      <div>
+        <h1>Hourly and daily stock prices</h1>
+        <p class="subtitle">Latest intraday price beside the most recent completed daily close. Select a symbol to inspect today's price spikes.</p>
+      </div>
+    </div>
+
+    <section class="summary-grid" aria-label="Market price summary">
+      <div class="summary-card"><span>Symbols</span><strong id="symbolCount">—</strong></div>
+      <div class="summary-card"><span>Hourly price time</span><strong id="priceTime">—</strong></div>
+      <div class="summary-card"><span>Data status</span><strong id="dataStatus">Loading</strong></div>
+    </section>
+
+    <section class="panel chart-panel" aria-labelledby="chartTitle">
+      <div class="chart-heading">
+        <h2 id="chartTitle">Select a stock</h2>
+        <p>Bar height = percentage move from the latest completed daily close</p>
+      </div>
+      <div class="chart-wrap">
+        <svg id="spikeChart" viewBox="0 0 900 320" role="img" aria-labelledby="chartTitle chartDescription"></svg>
+      </div>
+      <p id="chartDescription" class="subtitle">Green bars are above the daily close; red bars are below it. Values remain available without hover.</p>
+      <ol id="chartData" aria-label="Intraday price points"></ol>
+    </section>
+
+    <div class="list-toolbar">
+      <span id="tableCount" class="count">0 symbols</span>
+      <input id="filter" class="filter" type="search" placeholder="Filter by symbol" aria-label="Filter stock prices by symbol">
+    </div>
+    <p id="message" role="status" aria-live="polite"></p>
+    <div class="table-wrap">
+      <table class="price-table">
+        <thead><tr><th>Symbol</th><th>Hourly price</th><th>Daily close</th><th>Intraday change</th><th>Hourly points today</th></tr></thead>
+        <tbody id="priceRows"></tbody>
+      </table>
+      <div id="empty" class="empty" hidden>No matching prices are available.</div>
+    </div>
+  </main>
+  <script type="module" src="/StockScanner/auth.js" data-stockscanner-auth></script>
+  <script type="module">
+    import { requireApprovedUser, setMessage, supabase, tableCell } from "/StockScanner/personal-lists.js";
+    import { drawSpikeChart, intradayPoints, marketRows } from "/StockScanner/market-prices.js";
+
+    const priceFormat = new Intl.NumberFormat(undefined, { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 4 });
+    const percentFormat = new Intl.NumberFormat(undefined, { signDisplay: "always", minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const filter = document.querySelector("#filter");
+    const rowsElement = document.querySelector("#priceRows");
+    const empty = document.querySelector("#empty");
+    const message = document.querySelector("#message");
+    const tableCount = document.querySelector("#tableCount");
+    const symbolCount = document.querySelector("#symbolCount");
+    const priceTime = document.querySelector("#priceTime");
+    const dataStatus = document.querySelector("#dataStatus");
+    const chartTitle = document.querySelector("#chartTitle");
+    const chart = document.querySelector("#spikeChart");
+    const chartData = document.querySelector("#chartData");
+    const user = await requireApprovedUser();
+    let snapshot = null;
+    let priceRows = [];
+    let selectedSymbol = null;
+
+    if (user) await loadPrices();
+    filter.addEventListener("input", renderTable);
+
+    async function loadPrices() {
+      const { data, error } = await supabase
+        .from("price_snapshots")
+        .select("market_date,prices,daily_prices,intraday_series,price_timestamp,generated_at,updated_count,failed_count")
+        .eq("source", "hourly_yahoo")
+        .maybeSingle();
+      if (error || !data) {
+        setMessage(message, error?.message || "The hourly price snapshot is not available yet.");
+        dataStatus.textContent = "Unavailable";
+        return;
+      }
+      snapshot = data;
+      priceRows = marketRows(snapshot);
+      selectedSymbol = priceRows.find((row) => snapshot.intraday_series?.[row.symbol]?.length)?.symbol || priceRows[0]?.symbol || null;
+      symbolCount.textContent = priceRows.length.toLocaleString();
+      priceTime.textContent = new Date(data.price_timestamp || data.generated_at).toLocaleString();
+      dataStatus.textContent = data.failed_count ? `Partial · ${data.failed_count} failed` : "Complete";
+      renderTable();
+      renderChart();
+    }
+
+    function renderTable() {
+      const term = filter.value.trim().toUpperCase();
+      const visible = priceRows.filter((row) => row.symbol.includes(term));
+      rowsElement.replaceChildren(...visible.map(priceRow));
+      tableCount.textContent = `${visible.length.toLocaleString()} of ${priceRows.length.toLocaleString()} symbols`;
+      empty.hidden = visible.length !== 0;
+    }
+
+    function priceRow(item) {
+      const row = document.createElement("tr");
+      row.tabIndex = 0;
+      row.setAttribute("aria-selected", String(item.symbol === selectedSymbol));
+      row.append(
+        tableCell(item.symbol, "symbol"),
+        tableCell(item.hourlyPrice === null ? "Unavailable" : priceFormat.format(item.hourlyPrice)),
+        tableCell(item.dailyPrice === null ? "Unavailable" : priceFormat.format(item.dailyPrice)),
+        tableCell(
+          item.changePercent === null ? "Unavailable" : `${percentFormat.format(item.changePercent)}%`,
+          item.changePercent === null ? "" : item.changePercent > 0 ? "change-positive" : item.changePercent < 0 ? "change-negative" : "change-neutral",
+        ),
+        tableCell(String(intradayPoints(snapshot, item.symbol).length)),
+      );
+      const select = () => {
+        selectedSymbol = item.symbol;
+        renderTable();
+        renderChart();
+      };
+      row.addEventListener("click", select);
+      row.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") { event.preventDefault(); select(); }
+      });
+      return row;
+    }
+
+    function renderChart() {
+      if (!selectedSymbol) return;
+      const points = intradayPoints(snapshot, selectedSymbol);
+      const dailyPrice = Number(snapshot.daily_prices?.[selectedSymbol]);
+      chartTitle.textContent = `${selectedSymbol} intraday price spikes`;
+      drawSpikeChart(chart, points, dailyPrice, (value) => priceFormat.format(value));
+      chartData.replaceChildren(...points.map((point) => {
+        const item = document.createElement("li");
+        const change = Number.isFinite(point.changePercent) ? `${percentFormat.format(point.changePercent)}%` : "daily comparison unavailable";
+        item.textContent = `${new Date(point.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}: ${priceFormat.format(point.price)} (${change})`;
+        return item;
+      }));
+    }
+  </script>
+</body>
+</html>

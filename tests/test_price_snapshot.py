@@ -61,6 +61,7 @@ def test_refresh_writes_json_and_preserves_failed_symbol_price(tmp_path, capsys)
         if symbol == "AAA":
             return {
                 "price": 11.25,
+                "daily_close": 10.5,
                 "timestamp": "2026-08-13T09:59:00-04:00",
             }
         raise RuntimeError("rate limited")
@@ -81,6 +82,11 @@ def test_refresh_writes_json_and_preserves_failed_symbol_price(tmp_path, capsys)
         "path": str(snapshot_path),
     }
     assert payload["prices"] == {"AAA": 11.25, "BBB": 20.0}
+    assert payload["daily_prices"] == {"AAA": 10.5}
+    assert payload["market_date"] == "2026-08-13"
+    assert payload["intraday_series"]["AAA"] == [
+        {"timestamp": "2026-08-13T09:59:00-04:00", "price": 11.25}
+    ]
     assert payload["updated_symbols"] == ["AAA"]
     assert "Yahoo: RuntimeError: rate limited" in payload["failures"]["BBB"]
     assert payload["provider_counts"] == {
@@ -249,6 +255,75 @@ def test_refresh_adds_user_held_symbols_outside_the_scanner_universe(tmp_path):
     }
     assert payload["requested_symbol_count"] == 3
     assert payload["portfolio_symbol_count"] == 3
+
+
+def test_refresh_keeps_only_current_day_intraday_points(tmp_path):
+    snapshot_path = tmp_path / "prices.json"
+    write_snapshot_from_results(
+        [{"Symbol": "AAA", "Current Price": 10}],
+        snapshot_path,
+        ny_time(9, day=12),
+    )
+    payload = json.loads(snapshot_path.read_text(encoding="utf-8"))
+    payload["intraday_series"] = {
+        "AAA": [{"timestamp": "2026-08-12T15:00:00-04:00", "price": 10.1}]
+    }
+    snapshot_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    refresh_snapshot(
+        snapshot_path,
+        now=ny_time(10, day=13),
+        alpaca_downloader=lambda symbols, now: {
+            symbol: {
+                "price": 10.5,
+                "daily_close": 10.0,
+                "timestamp": now.isoformat(),
+            }
+            for symbol in symbols
+        },
+        downloader=lambda symbol, now: None,
+        twelve_data_downloader=lambda symbols, now: {},
+    )
+    payload = json.loads(snapshot_path.read_text(encoding="utf-8"))
+
+    assert payload["intraday_series"] == {
+        "AAA": [{"timestamp": "2026-08-13T10:00:00-04:00", "price": 10.5}]
+    }
+    assert payload["daily_prices"] == {"AAA": 10.0}
+
+
+def test_new_market_day_drops_unrefreshed_daily_comparisons(tmp_path):
+    snapshot_path = tmp_path / "prices.json"
+    write_snapshot_from_results(
+        [
+            {"Symbol": "AAA", "Current Price": 10},
+            {"Symbol": "BBB", "Current Price": 20},
+        ],
+        snapshot_path,
+        ny_time(15, day=12),
+    )
+    payload = json.loads(snapshot_path.read_text(encoding="utf-8"))
+    payload["daily_prices"] = {"AAA": 9.5, "BBB": 19.5}
+    snapshot_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    refresh_snapshot(
+        snapshot_path,
+        now=ny_time(10, day=13),
+        alpaca_downloader=lambda symbols, now: {
+            "AAA": {
+                "price": 10.25,
+                "daily_close": 10.0,
+                "timestamp": now.isoformat(),
+            }
+        },
+        downloader=lambda symbol, now: None,
+        twelve_data_downloader=lambda symbols, now: {},
+    )
+    payload = json.loads(snapshot_path.read_text(encoding="utf-8"))
+
+    assert payload["market_date"] == "2026-08-13"
+    assert payload["daily_prices"] == {"AAA": 10.0}
+    assert "BBB" not in payload["intraday_series"]
 
 
 def test_failed_new_held_symbol_is_reported_without_invalid_stored_price(tmp_path):

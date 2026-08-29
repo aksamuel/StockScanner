@@ -12,10 +12,15 @@ from stockscanner.supabase_snapshot import (
 def sample_payload():
     return {
         "generated_at": "2026-08-21T15:50:48-04:00",
+        "market_date": "2026-08-21",
         "price_timestamp": "2026-08-21T15:52:00-04:00",
         "timezone": "America/New_York",
         "source": "hourly_yahoo",
         "prices": {"AAA": 10.25, "BBB": 20.5},
+        "daily_prices": {"AAA": 10.0, "BBB": 21.0},
+        "intraday_series": {
+            "AAA": [{"timestamp": "2026-08-21T15:00:00-04:00", "price": 10.25}]
+        },
         "updated_symbols": ["AAA"],
         "failures": {"BBB": "rate limited"},
     }
@@ -39,9 +44,12 @@ def test_snapshot_record_derives_counts():
     record = snapshot_record(sample_payload())
 
     assert record["symbol_count"] == 2
+    assert record["market_date"] == "2026-08-21"
     assert record["updated_count"] == 1
     assert record["failed_count"] == 1
     assert record["prices"] == {"AAA": 10.25, "BBB": 20.5}
+    assert record["daily_prices"] == {"AAA": 10.0, "BBB": 21.0}
+    assert record["intraday_series"]["AAA"][0]["price"] == 10.25
 
 
 def test_store_snapshot_updates_singleton_using_secret_apikey_header():

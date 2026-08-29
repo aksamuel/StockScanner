@@ -89,7 +89,8 @@ def download_intraday_snapshot(symbol, now=None):
     else:
         now = now.astimezone(NEW_YORK)
 
-    intraday = yf.Ticker(symbol).history(
+    ticker = yf.Ticker(symbol)
+    intraday = ticker.history(
         period="1d",
         interval="1m",
         prepost=True,
@@ -114,8 +115,14 @@ def download_intraday_snapshot(symbol, now=None):
         volume = pd.to_numeric(valid["Volume"], errors="coerce").fillna(0).sum()
     else:
         volume = 0
+    metadata = {}
+    try:
+        metadata = ticker.get_history_metadata() or {}
+    except (AttributeError, KeyError, TypeError, ValueError):
+        pass
     return {
         "price": float(valid["Close"].iloc[-1]),
+        "daily_close": metadata.get("chartPreviousClose"),
         "volume": float(volume),
         "timestamp": timestamp.isoformat(),
     }
