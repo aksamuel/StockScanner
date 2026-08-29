@@ -300,20 +300,47 @@ def test_portfolio_kpis_filter_the_holdings_table_accessibly():
     for filter_name in ("all", "profitable", "sell", "partial-sell", "hold"):
         assert f'data-portfolio-filter="{filter_name}"' in page
     assert page.count('class="metric metric-filter"') == 5
-    assert page.count('aria-controls="rows"') == 5
+    assert page.count('aria-controls="brokerTables"') == 5
     assert 'let portfolioFilter = "all"' in page
     assert "analyzed.filter(matchesPortfolioFilter).filter" in page
     assert 'holding.returnPercent > 0' in page
     assert 'holding.decision.code === portfolioFilter' in page
     assert 'button.setAttribute("aria-pressed", active ? "true" : "false")' in page
     assert 'portfolioFilter === selectedFilter && selectedFilter !== "all"' in page
-    assert "No holdings match the selected filters." in page
+    assert "No holdings from this broker match the selected filters." in page
+
+
+def test_portfolio_renders_each_broker_in_a_separate_kpi_filtered_table():
+    page = read("portfolio-analysis.html")
+
+    assert 'id="brokerTables"' in page
+    assert 'id="portfolioTableTemplate"' in page
+    assert 'class="broker-group"' in page
+    assert "renderBrokerTables(analyzed, visible)" in page
+    assert "new Set(analyzed.map((holding) => holding.broker))" in page
+    assert "visible.filter((holding) => holding.broker === broker)" in page
+    assert "No holdings from this broker match the selected filters." in page
+    assert "brokerTables.replaceChildren(...sections)" in page
+    assert 'brokerTables.addEventListener("click"' in page
+    assert '.eq("user_id", user.id)' in page
+
+
+def test_manual_broker_name_overrides_detection_and_form_resets_after_upload():
+    page = read("portfolio-analysis.html")
+    manual_broker = 'document.querySelector("#broker").value.trim().toUpperCase()'
+    detection = "detectedPortfolioBroker(csvSource)"
+    upload = page[page.index("csvForm.addEventListener"):page.index("async function loadPortfolio")]
+
+    assert upload.index(manual_broker) < upload.index(detection)
+    assert "csvForm.reset();" in upload
 
 
 def test_portfolio_table_places_action_after_symbol_and_broker_last():
     page = read("portfolio-analysis.html")
     header = page[page.index("<thead>"):page.index("</thead>")]
-    row_append = page[page.index("row.append("):page.index("return row;", page.index("row.append("))]
+    holding_row = page.index("function holdingRow")
+    row_append_start = page.index("row.append(", holding_row)
+    row_append = page[row_append_start:page.index("return row;", row_append_start)]
 
     assert header.index('data-sort-key="symbol"') < header.index('data-sort-key="action"')
     assert header.index('data-sort-key="action"') < header.index('data-sort-key="quantity"')

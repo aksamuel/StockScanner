@@ -30,6 +30,12 @@
     .subtle { color: #90a4ae; font-size: .88rem; }
     .warning { color: #ffcc80; }
     .table-wrap { margin-top: 12px; }
+    .broker-tables { display: grid; gap: 24px; }
+    .broker-group { min-width: 0; }
+    .broker-group-header { display: flex; flex-wrap: wrap; gap: 10px; align-items: baseline; justify-content: space-between; }
+    .broker-group-header h2 { margin: 0; color: #b3e5fc; font-size: 1.15rem; }
+    .broker-result-count { color: #90a4ae; font-size: .86rem; }
+    .broker-empty td { padding: 22px 12px; color: #90a4ae; text-align: center; }
     .portfolio-table { min-width: 1680px; }
     .portfolio-table td { vertical-align: top; }
     .sort-button {
@@ -113,11 +119,11 @@
     </section>
 
     <section class="metrics" aria-label="Portfolio summary">
-      <button class="metric metric-filter" type="button" data-portfolio-filter="all" aria-pressed="true" aria-controls="rows">Holdings<strong id="holdingCount">0</strong></button>
-      <button class="metric metric-filter" type="button" data-portfolio-filter="profitable" aria-pressed="false" aria-controls="rows">Currently profitable<strong id="profitableCount">0</strong></button>
-      <button class="metric metric-filter" type="button" data-portfolio-filter="sell" aria-pressed="false" aria-controls="rows">Sell reviews<strong id="sellDecisionCount">0</strong></button>
-      <button class="metric metric-filter" type="button" data-portfolio-filter="partial-sell" aria-pressed="false" aria-controls="rows">Partial-sell reviews<strong id="partialSellCount">0</strong></button>
-      <button class="metric metric-filter" type="button" data-portfolio-filter="hold" aria-pressed="false" aria-controls="rows">Hold / monitor<strong id="holdCount">0</strong></button>
+      <button class="metric metric-filter" type="button" data-portfolio-filter="all" aria-pressed="true" aria-controls="brokerTables">Holdings<strong id="holdingCount">0</strong></button>
+      <button class="metric metric-filter" type="button" data-portfolio-filter="profitable" aria-pressed="false" aria-controls="brokerTables">Currently profitable<strong id="profitableCount">0</strong></button>
+      <button class="metric metric-filter" type="button" data-portfolio-filter="sell" aria-pressed="false" aria-controls="brokerTables">Sell reviews<strong id="sellDecisionCount">0</strong></button>
+      <button class="metric metric-filter" type="button" data-portfolio-filter="partial-sell" aria-pressed="false" aria-controls="brokerTables">Partial-sell reviews<strong id="partialSellCount">0</strong></button>
+      <button class="metric metric-filter" type="button" data-portfolio-filter="hold" aria-pressed="false" aria-controls="brokerTables">Hold / monitor<strong id="holdCount">0</strong></button>
       <div class="metric">Last downloaded<strong id="lastDownloaded">Never</strong></div>
     </section>
 
@@ -125,30 +131,39 @@
       <span id="count" class="count" aria-live="polite">0 holdings</span>
       <input id="filter" class="filter" type="search" placeholder="Filter by ticker, broker, or signal" aria-label="Filter portfolio holdings">
     </div>
-    <div class="table-wrap">
-      <table class="portfolio-table">
-        <thead>
-          <tr>
-            <th scope="col" data-sort-column="symbol" aria-sort="ascending"><button class="sort-button" type="button" data-sort-key="symbol">Symbol</button></th>
-            <th scope="col" data-sort-column="action" aria-sort="none"><button class="sort-button" type="button" data-sort-key="action">Action review</button></th>
-            <th scope="col" data-sort-column="quantity" aria-sort="none"><button class="sort-button" type="button" data-sort-key="quantity">Quantity</button></th>
-            <th scope="col" data-sort-column="buy_price" aria-sort="none"><button class="sort-button" type="button" data-sort-key="buy_price">Buy price</button></th>
-            <th scope="col" data-sort-column="bought_on" aria-sort="none"><button class="sort-button" type="button" data-sort-key="bought_on">Buy date</button></th>
-            <th scope="col" data-sort-column="present_price" aria-sort="none"><button class="sort-button" type="button" data-sort-key="present_price">Present price</button></th>
-            <th scope="col" data-sort-column="return_percent" aria-sort="none"><button class="sort-button" type="button" data-sort-key="return_percent">Profit / Loss %</button></th>
-            <th scope="col" data-sort-column="target" aria-sort="none"><button class="sort-button" type="button" data-sort-key="target">Review target</button></th>
-            <th scope="col" data-sort-column="concentration" aria-sort="none"><button class="sort-button" type="button" data-sort-key="concentration">Concentration</button></th>
-            <th scope="col" data-sort-column="scanner" aria-sort="none"><button class="sort-button" type="button" data-sort-key="scanner">Daily scanner</button></th>
-            <th scope="col" data-sort-column="held_days" aria-sort="none"><button class="sort-button" type="button" data-sort-key="held_days">Time to profit</button></th>
-            <th scope="col" data-sort-column="price_updated" aria-sort="none"><button class="sort-button" type="button" data-sort-key="price_updated">Price updated</button></th>
-            <th scope="col" data-sort-column="broker" aria-sort="none"><button class="sort-button" type="button" data-sort-key="broker">Broker</button></th>
-            <th scope="col">Manage</th>
-          </tr>
-        </thead>
-        <tbody id="rows"></tbody>
-      </table>
-      <div id="empty" class="empty" hidden>No portfolio holdings have been imported.</div>
-    </div>
+    <div id="brokerTables" class="broker-tables"></div>
+    <div id="empty" class="empty" hidden>No portfolio holdings have been imported.</div>
+    <template id="portfolioTableTemplate">
+      <section class="broker-group">
+        <div class="broker-group-header">
+          <h2></h2>
+          <span class="broker-result-count"></span>
+        </div>
+        <div class="table-wrap">
+          <table class="portfolio-table">
+            <thead>
+              <tr>
+                <th scope="col" data-sort-column="symbol" aria-sort="ascending"><button class="sort-button" type="button" data-sort-key="symbol">Symbol</button></th>
+                <th scope="col" data-sort-column="action" aria-sort="none"><button class="sort-button" type="button" data-sort-key="action">Action review</button></th>
+                <th scope="col" data-sort-column="quantity" aria-sort="none"><button class="sort-button" type="button" data-sort-key="quantity">Quantity</button></th>
+                <th scope="col" data-sort-column="buy_price" aria-sort="none"><button class="sort-button" type="button" data-sort-key="buy_price">Buy price</button></th>
+                <th scope="col" data-sort-column="bought_on" aria-sort="none"><button class="sort-button" type="button" data-sort-key="bought_on">Buy date</button></th>
+                <th scope="col" data-sort-column="present_price" aria-sort="none"><button class="sort-button" type="button" data-sort-key="present_price">Present price</button></th>
+                <th scope="col" data-sort-column="return_percent" aria-sort="none"><button class="sort-button" type="button" data-sort-key="return_percent">Profit / Loss %</button></th>
+                <th scope="col" data-sort-column="target" aria-sort="none"><button class="sort-button" type="button" data-sort-key="target">Review target</button></th>
+                <th scope="col" data-sort-column="concentration" aria-sort="none"><button class="sort-button" type="button" data-sort-key="concentration">Concentration</button></th>
+                <th scope="col" data-sort-column="scanner" aria-sort="none"><button class="sort-button" type="button" data-sort-key="scanner">Daily scanner</button></th>
+                <th scope="col" data-sort-column="held_days" aria-sort="none"><button class="sort-button" type="button" data-sort-key="held_days">Time to profit</button></th>
+                <th scope="col" data-sort-column="price_updated" aria-sort="none"><button class="sort-button" type="button" data-sort-key="price_updated">Price updated</button></th>
+                <th scope="col" data-sort-column="broker" aria-sort="none"><button class="sort-button" type="button" data-sort-key="broker">Broker</button></th>
+                <th scope="col">Manage</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+    </template>
     <p id="message" role="status" aria-live="polite"></p>
   </main>
 
@@ -184,7 +199,8 @@
     import { daysHeld, detectedPortfolioBroker, holdingReturnPercent, portfolioActionDecision, portfolioConcentrationPercent, portfolioRowsFromCsv, profitTimingLabel, recommendedTargetPrice } from "/StockScanner/portfolio-analysis.js";
 
     const user = await requireApprovedUser();
-    const rows = document.querySelector("#rows");
+    const brokerTables = document.querySelector("#brokerTables");
+    const portfolioTableTemplate = document.querySelector("#portfolioTableTemplate");
     const empty = document.querySelector("#empty");
     const message = document.querySelector("#message");
     const filter = document.querySelector("#filter");
@@ -215,13 +231,13 @@
         renderPortfolio();
       });
     });
-    document.querySelectorAll(".sort-button").forEach((button) => {
-      button.addEventListener("click", () => {
-        const selectedKey = button.dataset.sortKey;
-        sortDirection = selectedKey === sortKey && sortDirection === "ascending" ? "descending" : "ascending";
-        sortKey = selectedKey;
-        renderPortfolio();
-      });
+    brokerTables.addEventListener("click", (event) => {
+      const button = event.target.closest(".sort-button");
+      if (!button) return;
+      const selectedKey = button.dataset.sortKey;
+      sortDirection = selectedKey === sortKey && sortDirection === "ascending" ? "descending" : "ascending";
+      sortKey = selectedKey;
+      renderPortfolio();
     });
 
     ibkrImport.addEventListener("click", async () => {
@@ -250,8 +266,8 @@
       setFormBusy(csvForm, true);
       try {
         const csvSource = await file.text();
-        const broker = detectedPortfolioBroker(csvSource)
-          || document.querySelector("#broker").value.trim().toUpperCase();
+        const broker = document.querySelector("#broker").value.trim().toUpperCase()
+          || detectedPortfolioBroker(csvSource);
         if (!broker) throw new Error("Enter a broker name for this CSV format.");
         const parsedRows = portfolioRowsFromCsv(csvSource);
         const { data, error } = await supabase.rpc("replace_my_portfolio_holdings", {
@@ -263,6 +279,7 @@
         const result = data?.[0] || {};
         csvStatus.textContent = `Previous ${broker} holdings replaced with ${result.replaced_count ?? parsedRows.length} current holding${parsedRows.length === 1 ? "" : "s"} at ${formatTime(result.downloaded_at)}. Analysis refreshed.`;
         csvStatus.classList.add("success");
+        csvForm.reset();
         await loadPortfolio();
       } catch (error) {
         csvStatus.classList.remove("success");
@@ -460,11 +477,10 @@
         holding.decision.label, holding.target?.source, ...holding.decision.reasons,
       ].some((value) => String(value || "").toLowerCase().includes(term)));
       visible.sort(compareHoldings);
-      updateSortHeaders();
       updatePortfolioFilterButtons();
-      rows.replaceChildren(...visible.map(holdingRow));
-      empty.hidden = visible.length !== 0;
-      empty.textContent = holdings.length ? "No holdings match the selected filters." : "No portfolio holdings have been imported.";
+      renderBrokerTables(analyzed, visible);
+      updateSortHeaders();
+      empty.hidden = holdings.length !== 0;
       document.querySelector("#count").textContent = visible.length === holdings.length && !term
         ? `${holdings.length} holding${holdings.length === 1 ? "" : "s"}`
         : `${visible.length} of ${holdings.length} holdings shown`;
@@ -474,6 +490,37 @@
       document.querySelector("#partialSellCount").textContent = analyzed.filter((holding) => holding.decision.code === "partial-sell").length;
       document.querySelector("#holdCount").textContent = analyzed.filter((holding) => holding.decision.code === "hold").length;
       document.querySelector("#lastDownloaded").textContent = imports[0] ? formatTime(imports[0].downloaded_at) : "Never";
+    }
+
+    function renderBrokerTables(analyzed, visible) {
+      const brokers = [...new Set(analyzed.map((holding) => holding.broker))]
+        .sort((left, right) => left.localeCompare(right, undefined, { sensitivity: "base" }));
+      const sections = brokers.map((broker, index) => {
+        const fragment = portfolioTableTemplate.content.cloneNode(true);
+        const section = fragment.querySelector(".broker-group");
+        const heading = section.querySelector("h2");
+        const resultCount = section.querySelector(".broker-result-count");
+        const body = section.querySelector("tbody");
+        const brokerHoldings = visible.filter((holding) => holding.broker === broker);
+        const headingId = `brokerHeading-${index}`;
+        heading.id = headingId;
+        heading.textContent = broker;
+        section.setAttribute("aria-labelledby", headingId);
+        resultCount.textContent = `${brokerHoldings.length} matching holding${brokerHoldings.length === 1 ? "" : "s"}`;
+        if (brokerHoldings.length) {
+          body.replaceChildren(...brokerHoldings.map(holdingRow));
+        } else {
+          const row = document.createElement("tr");
+          row.className = "broker-empty";
+          const cell = document.createElement("td");
+          cell.colSpan = 14;
+          cell.textContent = "No holdings from this broker match the selected filters.";
+          row.append(cell);
+          body.append(row);
+        }
+        return section;
+      });
+      brokerTables.replaceChildren(...sections);
     }
 
     function matchesPortfolioFilter(holding) {
@@ -536,7 +583,7 @@
     }
 
     function updateSortHeaders() {
-      document.querySelectorAll("th[data-sort-column]").forEach((header) => {
+      brokerTables.querySelectorAll("th[data-sort-column]").forEach((header) => {
         const active = header.dataset.sortColumn === sortKey;
         header.setAttribute("aria-sort", active ? sortDirection : "none");
         const button = header.querySelector(".sort-button");
