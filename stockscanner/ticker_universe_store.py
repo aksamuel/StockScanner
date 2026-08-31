@@ -7,6 +7,7 @@ import json
 import os
 import re
 from datetime import datetime, timezone
+from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
@@ -184,6 +185,8 @@ def load_latest_ticker_universe(
     opener=urlopen,
     timeout=DEFAULT_TIMEOUT_SECONDS,
     page_size=1000,
+    required_market_date=None,
+    minimum_symbols=None,
 ):
     """Load the current normalized NYSE universe from Supabase."""
     metadata = latest_ticker_refresh(
@@ -219,6 +222,22 @@ def load_latest_ticker_universe(
 
     if not rows:
         raise TickerUniverseStoreError("Supabase NYSE ticker universe is empty")
+
+    if required_market_date is not None:
+        refreshed_at = datetime.fromisoformat(
+            str(metadata["refreshed_at"]).replace("Z", "+00:00")
+        )
+        refreshed_date = refreshed_at.astimezone(NEW_YORK).date()
+        if refreshed_date != required_market_date:
+            raise TickerUniverseStoreError(
+                "Today's New York ticker universe is unavailable "
+                f"(latest refresh: {refreshed_date.isoformat()})"
+            )
+    if minimum_symbols is not None and len(rows) < minimum_symbols:
+        raise TickerUniverseStoreError(
+            f"Ticker universe has only {len(rows)} symbols; "
+            f"at least {minimum_symbols} are required"
+        )
 
     frame = pd.DataFrame(rows).rename(
         columns={
@@ -308,6 +327,11 @@ def main(argv=None):
         action="store_true",
         help="Refresh immediately, bypassing the daily time and duplicate guards.",
     )
+    parser.add_argument(
+        "--github-output",
+        type=Path,
+        help="Append stored/date outputs for a GitHub Actions step.",
+    )
     args = parser.parse_args(argv)
 
     try:
@@ -319,6 +343,12 @@ def main(argv=None):
     except TickerUniverseStoreError as exc:
         parser.error(str(exc))
 
+    if args.github_output:
+        with args.github_output.open("a", encoding="utf-8") as output:
+            output.write(f"stored={str(result.get('stored', False)).lower()}\n")
+            output.write(
+                f"new_york_date={result.get('new_york_date') or str(result.get('refreshed_at', ''))[:10]}\n"
+            )
     print(json.dumps(result, sort_keys=True))
     return 0
 

@@ -464,7 +464,7 @@ def _format_cell(column, value):
     return _escape_html(value)
 
 
-def _build_summary(dataframe):
+def _build_summary(dataframe, scan_summary=None):
     """Build summary statistics from the dataframe."""
     total_stocks = len(dataframe)
     average_score = dataframe["Score"].mean() if "Score" in dataframe.columns else 0
@@ -479,7 +479,7 @@ def _build_summary(dataframe):
     def _count(label):
         return int(sum(v for k, v in recommendation_counts.items() if label in str(k).upper()))
 
-    return {
+    summary = {
         "total_stocks": total_stocks,
         "strong_buy": _count("STRONG BUY"),
         "buy": _count("BUY") - _count("STRONG BUY"),
@@ -490,6 +490,16 @@ def _build_summary(dataframe):
         "average_score": round(average_score, 2),
         "highest_score": round(highest_score, 2),
     }
+    summary.update(scan_summary or {})
+    summary.setdefault("universe_count", total_stocks)
+    summary.setdefault("download_failure", 0)
+    summary.setdefault("insufficient_history", 0)
+    summary.setdefault("indicator_failure", 0)
+    summary.setdefault("price_below_minimum", 0)
+    summary.setdefault("liquidity_below_minimum", 0)
+    summary.setdefault("analysis_failure", 0)
+    summary.setdefault("analysed", total_stocks)
+    return summary
 
 
 def _sort_analysts_by_support_proximity(dataframe):
@@ -625,13 +635,19 @@ def _sort_technical_by_hierarchy(dataframe):
     return sorted_data
 
 
-def _generate_html(dataframe, scan_time, page_key=None, chart_data=None):
+def _generate_html(
+    dataframe,
+    scan_time,
+    page_key=None,
+    chart_data=None,
+    scan_summary=None,
+):
     """Generate the complete HTML dashboard string."""
     if page_key == "analysts":
         dataframe = _sort_analysts_by_support_proximity(dataframe)
     elif page_key == "technical":
         dataframe = _sort_technical_by_hierarchy(dataframe)
-    summary = _build_summary(dataframe)
+    summary = _build_summary(dataframe, scan_summary=scan_summary)
     top_df = dataframe.head(TOP_RESULTS)
     config = PAGE_CONFIGS.get(page_key)
     display_columns = (
@@ -997,7 +1013,7 @@ def _generate_html(dataframe, scan_time, page_key=None, chart_data=None):
     dashboard_content = (
         f"""
     <div class="cards">
-        <button class="card kpi-card" type="button" data-kpi-filter="all" data-kpi-label="Stocks Scanned" data-kpi-color="#4fc3f7" aria-controls="kpiDetails" aria-expanded="false"><span class="value">{summary['total_stocks']}</span><span class="label">Stocks Scanned</span></button>
+        <button class="card kpi-card" type="button" data-kpi-filter="all" data-kpi-label="Successfully Analysed" data-kpi-color="#4fc3f7" aria-controls="kpiDetails" aria-expanded="false"><span class="value">{summary['total_stocks']}</span><span class="label">Successfully Analysed</span></button>
         <button class="card kpi-card" type="button" data-kpi-filter="strong-buy" data-kpi-label="Strong Buy" data-kpi-color="#4caf50" aria-controls="kpiDetails" aria-expanded="false"><span class="value" style="color:#4caf50">{summary['strong_buy']}</span><span class="label">Strong Buy</span></button>
         <button class="card kpi-card" type="button" data-kpi-filter="buy" data-kpi-label="Buy" data-kpi-color="#66bb6a" aria-controls="kpiDetails" aria-expanded="false"><span class="value" style="color:#66bb6a">{summary['buy']}</span><span class="label">Buy</span></button>
         <button class="card kpi-card" type="button" data-kpi-filter="accumulate" data-kpi-label="Accumulate" data-kpi-color="#fdd835" aria-controls="kpiDetails" aria-expanded="false"><span class="value" style="color:#fdd835">{summary['accumulate']}</span><span class="label">Accumulate</span></button>
@@ -1006,11 +1022,19 @@ def _generate_html(dataframe, scan_time, page_key=None, chart_data=None):
         <div class="card"><div class="value">{summary['average_score']}</div><div class="label">Avg Score</div></div>
         <div class="card"><div class="value">{summary['highest_score']}</div><div class="label">Best Score</div></div>
     </div>
+    <div class="cards scan-health" aria-label="Daily scan processing summary">
+        <div class="card"><div class="value">{summary['universe_count']}</div><div class="label">Universe Received</div></div>
+        <div class="card"><div class="value">{summary['download_failure']}</div><div class="label">Download Failures</div></div>
+        <div class="card"><div class="value">{summary['insufficient_history']}</div><div class="label">Insufficient History</div></div>
+        <div class="card"><div class="value">{summary['price_below_minimum']}</div><div class="label">Below $1</div></div>
+        <div class="card"><div class="value">{summary['liquidity_below_minimum']}</div><div class="label">Below Liquidity</div></div>
+        <div class="card"><div class="value">{summary['analysis_failure'] + summary['indicator_failure']}</div><div class="label">Analysis Failures</div></div>
+    </div>
 
     <section id="kpiDetails" class="section kpi-details" aria-live="polite" hidden>
         <div class="kpi-details-header">
             <div>
-                <h2 id="kpiDetailsTitle">Stocks Scanned</h2>
+                <h2 id="kpiDetailsTitle">Successfully Analysed</h2>
                 <p id="kpiDetailsCount" class="kpi-details-count"></p>
             </div>
             <button id="closeKpiDetails" class="kpi-details-close" type="button">Close list</button>
@@ -1840,7 +1864,7 @@ document.querySelectorAll('th:not(.no-sort)').forEach(th => {{
     return html
 
 
-def export_html_report(results, quiet=False):
+def export_html_report(results, quiet=False, scan_summary=None):
     """Export scan results as linked KPI and analysis pages.
 
     Each page is self-contained except for Chart.js, which is loaded from a CDN.
@@ -1884,6 +1908,7 @@ def export_html_report(results, quiet=False):
             scan_time,
             page_key=page_key,
             chart_data=chart_data if page_key == "landing" else None,
+            scan_summary=scan_summary,
         )
         for page_key in pages
     }

@@ -40,7 +40,7 @@
     <div class="page-header">
       <div>
         <h1>Hourly and daily stock prices</h1>
-        <p class="subtitle">Latest intraday price beside the most recent completed daily close. Select a symbol to inspect today's price spikes.</p>
+        <p class="subtitle">Latest intraday price, previous close, and today's post-market close. Select a symbol to inspect today's price spikes.</p>
       </div>
     </div>
 
@@ -48,17 +48,18 @@
       <div class="summary-card"><span>Symbols</span><strong id="symbolCount">—</strong></div>
       <div class="summary-card"><span>Hourly price time</span><strong id="priceTime">—</strong></div>
       <div class="summary-card"><span>Data status</span><strong id="dataStatus">Loading</strong></div>
+      <div class="summary-card"><span>Purchased-stock coverage</span><strong id="coverageStatus">—</strong></div>
     </section>
 
     <section class="panel chart-panel" aria-labelledby="chartTitle">
       <div class="chart-heading">
         <h2 id="chartTitle">Select a stock</h2>
-        <p>Bar height = percentage move from the latest completed daily close</p>
+        <p>Bar height = percentage move from the previous trading-day close</p>
       </div>
       <div class="chart-wrap">
         <svg id="spikeChart" viewBox="0 0 900 320" role="img" aria-labelledby="chartTitle chartDescription"></svg>
       </div>
-      <p id="chartDescription" class="subtitle">Green bars are above the daily close; red bars are below it. Values remain available without hover.</p>
+      <p id="chartDescription" class="subtitle">Green bars are above the previous close; red bars are below it. Values remain available without hover.</p>
       <ol id="chartData" aria-label="Intraday price points"></ol>
     </section>
 
@@ -69,7 +70,7 @@
     <p id="message" role="status" aria-live="polite"></p>
     <div class="table-wrap">
       <table class="price-table">
-        <thead><tr><th>Symbol</th><th>Hourly price</th><th>Daily close</th><th>Intraday change</th><th>Hourly points today</th></tr></thead>
+        <thead><tr><th>Symbol</th><th>Current price</th><th>Previous close</th><th>Today's market close</th><th>Intraday change</th><th>Hourly points today</th></tr></thead>
         <tbody id="priceRows"></tbody>
       </table>
       <div id="empty" class="empty" hidden>No matching prices are available.</div>
@@ -90,6 +91,7 @@
     const symbolCount = document.querySelector("#symbolCount");
     const priceTime = document.querySelector("#priceTime");
     const dataStatus = document.querySelector("#dataStatus");
+    const coverageStatus = document.querySelector("#coverageStatus");
     const chartTitle = document.querySelector("#chartTitle");
     const chart = document.querySelector("#spikeChart");
     const chartData = document.querySelector("#chartData");
@@ -104,7 +106,7 @@
     async function loadPrices() {
       const { data, error } = await supabase
         .from("price_snapshots")
-        .select("market_date,prices,daily_prices,intraday_series,price_timestamp,generated_at,updated_count,failed_count")
+        .select("market_date,prices,previous_close_prices,market_close_prices,daily_prices,intraday_series,price_timestamp,generated_at,updated_count,failed_count,portfolio_symbol_count,portfolio_updated_count,portfolio_missing_symbols,portfolio_coverage_percent,stale_symbols,collection_kind")
         .eq("source", "hourly_yahoo")
         .maybeSingle();
       if (error || !data) {
@@ -118,6 +120,9 @@
       symbolCount.textContent = priceRows.length.toLocaleString();
       priceTime.textContent = new Date(data.price_timestamp || data.generated_at).toLocaleString();
       dataStatus.textContent = data.failed_count ? `Partial · ${data.failed_count} failed` : "Complete";
+      coverageStatus.textContent = data.portfolio_symbol_count
+        ? `${Number(data.portfolio_coverage_percent).toFixed(2)}% · ${data.portfolio_updated_count}/${data.portfolio_symbol_count}`
+        : "No purchased symbols";
       renderTable();
       renderChart();
     }
@@ -137,7 +142,8 @@
       row.append(
         tableCell(item.symbol, "symbol"),
         tableCell(item.hourlyPrice === null ? "Unavailable" : priceFormat.format(item.hourlyPrice)),
-        tableCell(item.dailyPrice === null ? "Unavailable" : priceFormat.format(item.dailyPrice)),
+        tableCell(item.previousClose === null ? "Unavailable" : priceFormat.format(item.previousClose)),
+        tableCell(item.marketClosePrice === null ? "Pending close" : priceFormat.format(item.marketClosePrice)),
         tableCell(
           item.changePercent === null ? "Unavailable" : `${percentFormat.format(item.changePercent)}%`,
           item.changePercent === null ? "" : item.changePercent > 0 ? "change-positive" : item.changePercent < 0 ? "change-negative" : "change-neutral",
@@ -159,12 +165,12 @@
     function renderChart() {
       if (!selectedSymbol) return;
       const points = intradayPoints(snapshot, selectedSymbol);
-      const dailyPrice = Number(snapshot.daily_prices?.[selectedSymbol]);
+      const previousClose = Number(snapshot.previous_close_prices?.[selectedSymbol] ?? snapshot.daily_prices?.[selectedSymbol]);
       chartTitle.textContent = `${selectedSymbol} intraday price spikes`;
-      drawSpikeChart(chart, points, dailyPrice, (value) => priceFormat.format(value));
+      drawSpikeChart(chart, points, previousClose, (value) => priceFormat.format(value));
       chartData.replaceChildren(...points.map((point) => {
         const item = document.createElement("li");
-        const change = Number.isFinite(point.changePercent) ? `${percentFormat.format(point.changePercent)}%` : "daily comparison unavailable";
+        const change = Number.isFinite(point.changePercent) ? `${percentFormat.format(point.changePercent)}%` : "previous-close comparison unavailable";
         item.textContent = `${new Date(point.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}: ${priceFormat.format(point.price)} (${change})`;
         return item;
       }));

@@ -249,13 +249,21 @@ def test_workflows_use_supabase_and_dst_safe_new_york_schedule():
     assert "--universe-source supabase" in scan_workflow
     assert "--force-download" not in scan_workflow
     assert 'cron: "17 13,14 * * 1-5"' in scan_workflow
-    assert "Check 9 AM New York schedule window" in scan_workflow
+    assert 'cron: "47 14,15 * * 1-5"' in scan_workflow
+    assert "Check primary or fallback New York schedule window" in scan_workflow
+    assert "stockscanner.scanner_run_state acquire" in scan_workflow
+    assert "stockscanner.scanner_run_state finish" in scan_workflow
+    assert "needs.build.outputs.publish_ready == 'true'" in scan_workflow
     assert 'default: "8"' in scan_workflow
     assert "git pull --rebase -X theirs origin main" in scan_workflow
     assert "git push origin HEAD:main" in scan_workflow
     assert "Unable to publish generated reports after 3 attempts" in scan_workflow
     assert 'cron: "7 12,13 * * 1-5"' in ticker_workflow
     assert "SUPABASE_SECRET_KEY" in ticker_workflow
+    assert "--github-output \"$GITHUB_OUTPUT\"" in ticker_workflow
+    assert "steps.refresh.outputs.stored == 'true'" in ticker_workflow
+    assert "Trigger full scanner after successful ticker refresh" in ticker_workflow
+    assert "Unable to dispatch the scanner after 3 attempts" in ticker_workflow
     assert 'cron: "47 13-21 * * 1-5"' in price_workflow
     assert 'branches: [main]' in price_workflow
     assert '"stockscanner/price_snapshot.py"' in price_workflow

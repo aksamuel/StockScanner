@@ -33,7 +33,7 @@ def test_refresh_outside_market_hours_does_not_write(tmp_path):
     result = refresh_snapshot(snapshot_path, now=ny_time(9))
 
     assert result["published"] is False
-    assert result["reason"] == "outside_regular_market_session"
+    assert result["reason"] == "outside_price_collection_window"
     assert not snapshot_path.exists()
 
 
@@ -73,16 +73,17 @@ def test_refresh_writes_json_and_preserves_failed_symbol_price(tmp_path, capsys)
     )
     payload = json.loads(snapshot_path.read_text(encoding="utf-8"))
 
-    assert result == {
-        "published": True,
-        "updated": 1,
-        "failed": 1,
-        "symbols": 2,
-        "provider_counts": {"Alpaca": 0, "Yahoo": 1, "Twelve Data": 0},
-        "path": str(snapshot_path),
-    }
+    assert result["published"] is True
+    assert result["updated"] == 1
+    assert result["failed"] == 1
+    assert result["symbols"] == 2
+    assert result["provider_counts"] == {"Alpaca": 0, "Yahoo": 1, "Twelve Data": 0}
+    assert result["portfolio_missing"] == 0
+    assert result["collection_kind"] == "intraday"
+    assert result["path"] == str(snapshot_path)
     assert payload["prices"] == {"AAA": 11.25, "BBB": 20.0}
     assert payload["daily_prices"] == {"AAA": 10.5}
+    assert payload["previous_close_prices"] == {"AAA": 10.5}
     assert payload["market_date"] == "2026-08-13"
     assert payload["intraday_series"]["AAA"] == [
         {"timestamp": "2026-08-13T09:59:00-04:00", "price": 11.25}
@@ -324,6 +325,56 @@ def test_new_market_day_drops_unrefreshed_daily_comparisons(tmp_path):
     assert payload["market_date"] == "2026-08-13"
     assert payload["daily_prices"] == {"AAA": 10.0}
     assert "BBB" not in payload["intraday_series"]
+
+
+def test_market_close_becomes_next_day_previous_close(tmp_path):
+    snapshot_path = tmp_path / "prices.json"
+    write_snapshot_from_results(
+        [{"Symbol": "AAA", "Current Price": 10}],
+        snapshot_path,
+        ny_time(15, day=12),
+    )
+    payload = json.loads(snapshot_path.read_text(encoding="utf-8"))
+    payload["market_close_prices"] = {"AAA": 10.75}
+    snapshot_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    refresh_snapshot(
+        snapshot_path,
+        now=ny_time(10, day=13),
+        alpaca_downloader=lambda symbols, now: {
+            "AAA": {"price": 11, "timestamp": now.isoformat()}
+        },
+        downloader=lambda symbol, now: None,
+        twelve_data_downloader=lambda symbols, now: {},
+    )
+    payload = json.loads(snapshot_path.read_text(encoding="utf-8"))
+
+    assert payload["previous_close_prices"] == {"AAA": 10.75}
+    assert payload["market_close_prices"] == {}
+
+
+def test_post_close_run_records_current_market_close(tmp_path):
+    snapshot_path = tmp_path / "prices.json"
+    write_snapshot_from_results(
+        [{"Symbol": "AAA", "Current Price": 10}],
+        snapshot_path,
+        ny_time(15),
+    )
+
+    result = refresh_snapshot(
+        snapshot_path,
+        now=ny_time(16, 15),
+        close_run=True,
+        alpaca_downloader=lambda symbols, now: {
+            "AAA": {"price": 10.8, "timestamp": now.isoformat()}
+        },
+        downloader=lambda symbol, now: None,
+        twelve_data_downloader=lambda symbols, now: {},
+    )
+    payload = json.loads(snapshot_path.read_text(encoding="utf-8"))
+
+    assert result["collection_kind"] == "market_close"
+    assert payload["market_close_prices"] == {"AAA": 10.8}
 
 
 def test_failed_new_held_symbol_is_reported_without_invalid_stored_price(tmp_path):

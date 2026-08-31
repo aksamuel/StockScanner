@@ -4,6 +4,7 @@ import pytest
 
 from stockscanner.supabase_snapshot import (
     SupabaseSnapshotError,
+    fetch_snapshot,
     snapshot_record,
     store_snapshot,
 )
@@ -80,6 +81,25 @@ def test_store_snapshot_updates_singleton_using_secret_apikey_header():
     assert request.get_header("Authorization") is None
     assert json.loads(request.data) == snapshot_record(sample_payload())
     assert stored["id"] == 7
+
+
+def test_fetch_snapshot_downloads_singleton_with_secret_apikey_header():
+    captured = {}
+
+    def opener(request, timeout):
+        captured["request"] = request
+        return FakeResponse(json.dumps([sample_payload()]).encode("utf-8"))
+
+    stored = fetch_snapshot(
+        supabase_url="https://example.supabase.co/",
+        secret_key="sb_secret_test",
+        opener=opener,
+    )
+
+    assert stored["market_date"] == "2026-08-21"
+    assert "source=eq.hourly_yahoo" in captured["request"].full_url
+    assert captured["request"].get_header("Apikey") == "sb_secret_test"
+    assert captured["request"].get_header("Authorization") is None
 
 
 def test_store_snapshot_inserts_when_singleton_does_not_exist():

@@ -15,7 +15,8 @@ def test_market_price_page_is_approved_user_only_and_reads_singleton():
     assert "requireApprovedUser()" in page
     assert '.from("price_snapshots")' in page
     assert '.eq("source", "hourly_yahoo")' in page
-    assert "daily_prices" in page
+    assert "previous_close_prices" in page
+    assert "market_close_prices" in page
     assert "intraday_series" in page
     assert "SUPABASE_SECRET_KEY" not in page
     assert "sb_secret_" not in page
@@ -25,8 +26,9 @@ def test_market_price_page_has_accessible_table_and_spike_chart():
     page = read("market-prices.html")
     logic = read("market-prices.js")
 
-    assert "Hourly price" in page
-    assert "Daily close" in page
+    assert "Current price" in page
+    assert "Previous close" in page
+    assert "Today's market close" in page
     assert 'id="spikeChart"' in page
     assert 'role="img"' in page
     assert 'aria-label="Intraday price points"' in page
@@ -34,7 +36,7 @@ def test_market_price_page_has_accessible_table_and_spike_chart():
     assert "spike-negative" in page
     assert 'setAttribute("aria-selected"' in page
     assert 'event.key === "Enter"' in page
-    assert "percentage move from the latest completed daily close" in page
+    assert "percentage move from the previous trading-day close" in page
     assert "Math.abs(value)" in logic
 
 

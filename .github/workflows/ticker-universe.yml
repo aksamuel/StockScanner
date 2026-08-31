@@ -47,6 +47,7 @@ jobs:
         run: pytest -q tests/test_ticker_universe_store.py
 
       - name: Replace the current Supabase ticker universe
+        id: refresh
         env:
           SUPABASE_URL: https://cszzbkssxxgwgafwuonc.supabase.co
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
@@ -55,10 +56,23 @@ jobs:
           if [ "${{ github.event_name }}" != "schedule" ]; then
             FORCE_FLAG="--force"
           fi
-          python -m stockscanner.ticker_universe_store $FORCE_FLAG
+          python -m stockscanner.ticker_universe_store \
+            $FORCE_FLAG \
+            --github-output "$GITHUB_OUTPUT"
 
-      - name: Regenerate production reports after release bootstrap
-        if: github.event_name == 'push'
+      - name: Trigger full scanner after successful ticker refresh
+        if: steps.refresh.outputs.stored == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh workflow run scan.yml --ref main -f mode=universe
+        shell: bash
+        run: |
+          for attempt in 1 2 3; do
+            if gh workflow run scan.yml --ref main -f mode=universe; then
+              exit 0
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              echo "Unable to dispatch the scanner after 3 attempts." >&2
+              exit 1
+            fi
+            sleep $((attempt * 10))
+          done

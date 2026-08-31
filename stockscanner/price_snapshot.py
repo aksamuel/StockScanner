@@ -30,6 +30,7 @@ from .portfolio_symbols import (
 NEW_YORK = ZoneInfo("America/New_York")
 MARKET_OPEN = time(9, 30)
 MARKET_CLOSE = time(16, 0)
+CLOSE_COLLECTION_END = time(18, 0)
 REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_SNAPSHOT_PATH = REPOSITORY_ROOT / "prices.json"
 
@@ -94,6 +95,17 @@ def is_regular_market_session(moment=None):
     )
 
 
+def is_price_collection_window(moment=None, *, close_run=False):
+    """Allow regular snapshots in-session and a dedicated post-close snapshot."""
+    local = _new_york_time(moment)
+    if local.weekday() >= 5:
+        return False
+    local_time = local.time().replace(tzinfo=None)
+    if close_run:
+        return MARKET_CLOSE <= local_time <= CLOSE_COLLECTION_END
+    return MARKET_OPEN <= local_time < MARKET_CLOSE
+
+
 def _valid_price(value):
     try:
         price = float(value)
@@ -123,7 +135,8 @@ def _snapshot_payload(
     source,
     failures=None,
     price_timestamp=None,
-    daily_prices=None,
+    previous_close_prices=None,
+    market_close_prices=None,
     intraday_series=None,
 ):
     local = _new_york_time(generated_at)
@@ -134,7 +147,7 @@ def _snapshot_payload(
         if (price := _valid_price(value)) is not None
     }
     return {
-        "schema_version": 2,
+        "schema_version": 3,
         "market_date": local.date().isoformat(),
         "generated_at": local.isoformat(),
         "generated_at_new_york": local.strftime("%d %B %Y, %I:%M %p %Z"),
@@ -148,7 +161,11 @@ def _snapshot_payload(
         "source": source,
         "symbol_count": len(normalized),
         "prices": dict(sorted(normalized.items())),
-        "daily_prices": dict(sorted((daily_prices or {}).items())),
+        "previous_close_prices": dict(sorted((previous_close_prices or {}).items())),
+        "market_close_prices": dict(sorted((market_close_prices or {}).items())),
+        # Retained temporarily for older deployed clients. It is explicitly the
+        # previous close, not the current trading day's closing price.
+        "daily_prices": dict(sorted((previous_close_prices or {}).items())),
         "intraday_series": dict(sorted((intraday_series or {}).items())),
         "failures": dict(sorted((failures or {}).items())),
     }
@@ -290,13 +307,14 @@ def refresh_snapshot(
     twelve_data_downloader: Callable = download_twelve_data_snapshots,
     report_paths=None,
     additional_symbols=None,
+    close_run=False,
 ):
     """Refresh scanner and held-symbol prices through bounded free providers."""
     local = _new_york_time(now)
-    if not is_regular_market_session(local):
+    if not is_price_collection_window(local, close_run=close_run):
         return {
             "published": False,
-            "reason": "outside_regular_market_session",
+            "reason": "outside_price_collection_window",
             "generated_at_new_york": local.strftime("%d %B %Y, %I:%M %p %Z"),
         }
 
@@ -311,10 +329,19 @@ def refresh_snapshot(
     same_market_day = bool(
         previous_generated_at and previous_generated_at.date() == local.date()
     )
-    # The singleton must never carry comparison values over from an older
-    # New York trading date. Symbols not refreshed today remain unavailable.
-    daily_prices = (
-        dict(previous.get("daily_prices", {}))
+    # On a new market date, yesterday's recorded market close becomes today's
+    # previous close. Provider daily-close values below fill or correct it.
+    previous_close_prices = {}
+    if previous:
+        if same_market_day:
+            previous_close_prices = dict(
+                previous.get("previous_close_prices")
+                or previous.get("daily_prices", {})
+            )
+        else:
+            previous_close_prices = dict(previous.get("market_close_prices", {}))
+    market_close_prices = (
+        dict(previous.get("market_close_prices", {}))
         if previous and same_market_day
         else {}
     )
@@ -408,12 +435,14 @@ def refresh_snapshot(
     }
     for symbol, result in updated_results.items():
         prices[symbol] = _valid_price(result.get("price"))
-        daily_close = _valid_price(result.get("daily_close"))
-        if daily_close is not None:
-            daily_prices[symbol] = daily_close
+        previous_close = _valid_price(result.get("daily_close"))
+        if previous_close is not None:
+            previous_close_prices[symbol] = previous_close
         timestamp = _parse_price_timestamp(result.get("timestamp"))
         if timestamp is not None:
             price_timestamps.append(timestamp)
+        if close_run and (timestamp is None or timestamp.date() == local.date()):
+            market_close_prices[symbol] = prices[symbol]
 
     for symbol, message in failures.items():
         print(f"Price refresh failed for {symbol}: {message}", file=sys.stderr)
@@ -433,7 +462,8 @@ def refresh_snapshot(
         source="hourly_yahoo",
         failures=failures,
         price_timestamp=max(price_timestamps) if price_timestamps else None,
-        daily_prices=daily_prices,
+        previous_close_prices=previous_close_prices,
+        market_close_prices=market_close_prices,
         intraday_series=intraday_series,
     )
     provider_counts = {
@@ -443,7 +473,19 @@ def refresh_snapshot(
     payload["collection_strategy"] = "free_split_with_bounded_failover"
     payload["requested_symbol_count"] = len(symbols)
     payload["portfolio_symbol_count"] = len(portfolio_symbols)
+    portfolio_updated = sorted(set(portfolio_symbols).intersection(updated_results))
+    portfolio_missing = sorted(set(portfolio_symbols).difference(updated_results))
+    payload["portfolio_updated_count"] = len(portfolio_updated)
+    payload["portfolio_missing_symbols"] = portfolio_missing
+    payload["portfolio_coverage_percent"] = round(
+        100 * len(portfolio_updated) / len(portfolio_symbols), 2
+    ) if portfolio_symbols else 100.0
     payload["provider_counts"] = provider_counts
+    payload["provider_by_symbol"] = dict(sorted(provider_for_symbol.items()))
+    payload["stale_symbols"] = sorted(
+        symbol for symbol in failures if symbol in prices
+    )
+    payload["collection_kind"] = "market_close" if close_run else "intraday"
     payload["updated_symbols"] = sorted(updated_results)
     _write_snapshot(payload, path)
 
@@ -453,6 +495,9 @@ def refresh_snapshot(
         "failed": len(failures),
         "symbols": len(prices),
         "provider_counts": provider_counts,
+        "portfolio_updated": len(portfolio_updated),
+        "portfolio_missing": len(portfolio_missing),
+        "collection_kind": payload["collection_kind"],
         "path": str(path),
     }
 
@@ -465,6 +510,12 @@ def main(argv=None):
         default=DEFAULT_SNAPSHOT_PATH,
         help="Snapshot JSON path (default: repository prices.json)",
     )
+    parser.add_argument(
+        "--mode",
+        choices=("auto", "hourly", "close"),
+        default="auto",
+        help="Collection window; auto uses close mode from 4 PM New York.",
+    )
     args = parser.parse_args(argv)
     try:
         supabase_url = os.environ.get("SUPABASE_URL", "")
@@ -475,9 +526,14 @@ def main(argv=None):
                 supabase_url=supabase_url,
                 secret_key=secret_key,
             )
+        local_now = datetime.now(NEW_YORK)
+        close_run = args.mode == "close" or (
+            args.mode == "auto" and local_now.time().replace(tzinfo=None) >= MARKET_CLOSE
+        )
         result = refresh_snapshot(
             args.output,
             additional_symbols=portfolio_symbols,
+            close_run=close_run,
         )
     except (PortfolioSymbolError, SnapshotError) as exc:
         parser.error(str(exc))

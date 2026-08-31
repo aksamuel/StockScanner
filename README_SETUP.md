@@ -1,4 +1,4 @@
-# StockScanner v2.13.0 setup and operations
+# StockScanner v2.14.0 setup and operations
 
 Windows PowerShell commands to create and activate a virtual environment, install dependencies from `requirements.txt`, and verify installation.
 
@@ -147,10 +147,13 @@ Apply the migrations in timestamp order:
 5. `20260828094500_fix_ticker_replace_delete.sql`
 6. `20260828120000_add_user_portfolio_imports.sql`
 7. `20260828123000_enable_personal_exception_updates.sql`
+8. `20260831193000_add_scanner_daily_run_state.sql`
+9. `20260831213000_market_price_reliability.sql`
+10. `20260831214500_document_backend_only_rls.sql`
 
-The last migration updates the ticker replacement function for Supabase's
-safe-update requirement. It prevents the `DELETE requires a WHERE clause`
-error while keeping replacement atomic.
+The final two migrations add backend-only daily-scan and price-collection
+leases, scanner/price telemetry, previous-close and market-close fields, and
+purchased-position coverage. Apply them before deploying v2.14.0 workflows.
 
 ## Activate invite-only Supabase authentication
 
@@ -182,10 +185,11 @@ hours plus database date guards so daylight-saving changes and delayed GitHub
 jobs do not create duplicate downloads.
 
 The production universe scan reads the current rows from Supabase. Each refresh
-atomically replaces the table; ticker history is not retained. The same
-migration changes `public.price_snapshots` to retain only the latest
-`hourly_yahoo` payload, and the hourly workflow writes only when `prices.json`
-actually changed during that run.
+atomically replaces the table; ticker history is not retained. The market-data
+migrations keep one singleton `public.price_snapshots` row. Within that row,
+intraday samples are limited to the current New York market date. The workflow
+writes directly to Supabase; it does not commit `prices.json` or trigger a Pages
+deployment.
 
 ### Configure free hourly price providers
 
@@ -271,13 +275,31 @@ code or GitHub Pages.
 | Workflow | Purpose | Schedule |
 |---|---|---|
 | `ticker-universe.yml` | Atomically replaces `public.nyse_tickers` | Once per weekday at or after 8:07 AM New York time |
-| `scan.yml` | Runs the universe scan and publishes GitHub Pages | Weekdays at 9:17 AM New York time and manual dispatch |
-| `price-snapshot.yml` | Updates the singleton hourly price payload | Weekdays at :47 during market hours, push catch-up, and manual dispatch |
+| `scan.yml` | Runs the universe scan and publishes GitHub Pages | After a successful ticker refresh, with 9:17 AM primary and 10:47 AM fallback schedules |
+| `price-snapshot.yml` | Updates hourly/current, previous-close, and market-close prices directly in Supabase | Weekday candidate slots during market hours and the close window, plus manual dispatch |
 | `invite-admin.yml` | Invites or promotes an administrator without handling a password | Manual only |
 
-GitHub cron is UTC-only. The ticker and scan workflows schedule both possible
-UTC hours and use New York date/time guards to remain daylight-saving safe.
-Non-zero minutes avoid GitHub Actions' busiest top-of-hour scheduling window.
+GitHub cron is UTC-only. The ticker and scan workflows schedule candidate UTC
+hours and use New York date/time guards to remain daylight-saving safe. The
+scanner uses `public.scanner_run_state` as a backend-only atomic daily lease,
+requires today's refreshed universe with at least 2,000 rows, and batch-caches
+daily histories before analysis. `public.price_collection_runs` similarly
+deduplicates each hourly/close slot. Failed scans can be retried by the next
+fallback and never publish partial reports. Non-zero minutes avoid GitHub
+Actions' busiest top-of-hour window.
+
+### Verify a production release
+
+1. Confirm the ticker-universe workflow replaced at least 2,000 rows for the
+   current New York market date.
+2. Confirm the universe scan completed and the dashboard shows exclusion
+   counts rather than treating every universe symbol as successfully analysed.
+3. Confirm `public.price_snapshots` has one row, current-day intraday samples,
+   previous-close data, and purchased-position coverage.
+4. Confirm no unresolved **StockScanner price coverage incomplete** issue was
+   created by the hourly workflow.
+5. Run the complete test suite and review Supabase Security and Performance
+   Advisors before tagging the release.
 
 ## Security checklist
 

@@ -1,13 +1,13 @@
-# StockScanner v2.13.0
+# StockScanner v2.14.0
 
 [![Stock Scanner](https://github.com/aksamuel/StockScanner/actions/workflows/scan.yml/badge.svg)](https://github.com/aksamuel/StockScanner/actions/workflows/scan.yml)
 
 StockScanner scans a watchlist or the NYSE universe, calculates technical and
 analyst signals, sizes positions, and produces Excel and GitHub Pages reports.
 
-**Stable release: v2.13.0** — conservative automatic portfolio targets, a 7%
-profit-review threshold, Supabase-backed current market data, and responsive
-production dashboards.
+**Stable release: v2.14.0** — reliable daily-universe scanning, current and
+previous-close market prices, purchased-position coverage, Supabase-only
+hourly storage, and operational run telemetry.
 
 AI-powered features with ChatGPT integration were introduced in v2.11.0. 🤖
 
@@ -29,7 +29,10 @@ AI-powered features with ChatGPT integration were introduced in v2.11.0. 🤖
 - Current profit/loss percentage for purchased positions
 - Bought-position time-to-profit status and benchmark-based breakeven-day scenarios
 - Daily Supabase NYSE universe refresh at 8:07 AM New York time
-- Latest-only hourly market-hours price storage
+- One-market-day intraday price storage, including the latest hourly quote,
+  previous close, and current market close
+- Daily scanner health counts for downloads, history, price/liquidity filters,
+  and analysis failures
 - Responsive desktop and mobile dashboards with a collapsible left navigation drawer
 - Clickable KPI cards with searchable Strong Buy, Buy, Accumulate, Watch, Avoid,
   and complete scanned-stock lists
@@ -194,7 +197,7 @@ portfolio links, and shows administration links only to the configured admin.
 It closes from its close button, the page overlay, the Escape key, or after a
 page is selected.
 
-On the KPI Dashboard, select **Stocks Scanned**, **Strong Buy**, **Buy**,
+On the KPI Dashboard, select **Successfully Analysed**, **Strong Buy**, **Buy**,
 **Accumulate**, **Watch**, or **Avoid** to open the matching stock list. The
 drill-down includes rank, symbol, current price, sector, recommendation, and
 score, plus a text filter. Average Score and Best Score remain display-only.
@@ -223,7 +226,9 @@ longer create GitHub issues.
 | Data | Supabase table | Retention | Schedule |
 |---|---|---|---|
 | NYSE universe | `public.nyse_tickers` | Current rows only | Weekdays at 8:07 AM New York time |
-| Hourly prices | `public.price_snapshots` | Latest `hourly_yahoo` row only | Weekdays at :47 during market hours |
+| Hourly prices | `public.price_snapshots` | One singleton row; one New York market day | Weekdays during market hours plus a closing-price window |
+| Price-run telemetry | `public.price_collection_runs` | Operational slot records | Every hourly or close attempt |
+| Scanner-run telemetry | `public.scanner_run_state` | Operational daily lease | Every universe-scan attempt |
 | Personal exceptions | `public.user_exceptions` | Per user | User managed |
 | Purchased positions | `public.user_bought_selections` | Per user | User managed |
 | Imported broker holdings | `public.user_portfolio_holdings` | Latest per user and broker | On demand |
@@ -257,9 +262,21 @@ eight-credit-per-minute allowance. Add `ALPACA_API_KEY_ID`,
 `github-pages` environment secrets; none belongs in browser code. If a key is
 absent, that provider is skipped and the remaining configured providers run.
 
-The production universe scan is scheduled for 9:17 AM New York time. Candidate
-UTC hours plus New York-time gates keep both daily jobs correct across daylight
-saving changes; non-zero minutes reduce GitHub's top-of-hour scheduling delays.
+Hourly collection writes directly to Supabase and does not commit generated
+price JSON or redeploy GitHub Pages. Each run first reads the singleton row,
+updates it, and writes it back. When the New York market date changes, prior
+intraday samples are discarded while the prior close is retained as the new
+day's comparison baseline. A separate close run records today's market close.
+Per-slot database leases make delayed or duplicate GitHub cron events safe.
+
+The production universe scan normally starts immediately after the confirmed
+8:07 AM ticker refresh. A 9:17 AM schedule remains as the primary safety net,
+with a 10:47 AM fallback if GitHub delays or misses an earlier cron event. An
+atomic Supabase daily-run lease prevents these triggers from producing duplicate
+reports. The scanner refuses a stale universe or fewer than 2,000 NYSE rows,
+batch-caches one year of daily history, and reports why symbols were excluded.
+Failed runs release the date for the next fallback; partial reports are kept
+only as workflow artifacts and never replace the last successful site.
 
 Live site: <https://aksamuel.github.io/StockScanner/>
 
@@ -270,7 +287,8 @@ cd C:\StockScanner
 .\.venv\Scripts\python.exe -m pytest -q
 ```
 
-The current local `v2.13.0` package passes 113 tests.
+The `v2.14.0` release is verified by the complete automated test suite before
+deployment.
 
 ## License
 

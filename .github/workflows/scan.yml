@@ -65,16 +65,22 @@ on:
         description: "Risk % per trade"
         type: string
         default: "1"
+      force:
+        description: "Force a new universe scan even if today already completed"
+        type: boolean
+        default: false
 
-  # GitHub cron is UTC-only. These two non-peak UTC slots cover 09:17 in
-  # both EDT and EST; the gate job below rejects the off-season duplicate.
+  # Candidate 09:17 slots are the primary schedule. Candidate 10:47 slots are
+  # fallbacks for GitHub scheduler delays; the Supabase lease rejects duplicates.
   schedule:
     - cron: "17 13,14 * * 1-5"
+    - cron: "47 14,15 * * 1-5"
 
 permissions:
   contents: write
   pages: write
   id-token: write
+  issues: write
 
 concurrency:
   group: "pages"
@@ -87,14 +93,14 @@ jobs:
       should_run: ${{ steps.gate.outputs.should_run }}
       new_york_time: ${{ steps.gate.outputs.new_york_time }}
     steps:
-      - name: Check 9 AM New York schedule window
+      - name: Check primary or fallback New York schedule window
         id: gate
         shell: bash
         run: |
           NEW_YORK_TIME=$(TZ=America/New_York date '+%Y-%m-%d %H:%M:%S %Z')
           NEW_YORK_HOUR=$(TZ=America/New_York date '+%H')
           echo "new_york_time=$NEW_YORK_TIME" >> "$GITHUB_OUTPUT"
-          if [ "$GITHUB_EVENT_NAME" != "schedule" ] || [ "$NEW_YORK_HOUR" = "09" ]; then
+          if [ "$GITHUB_EVENT_NAME" != "schedule" ] || [ "$NEW_YORK_HOUR" = "09" ] || [ "$NEW_YORK_HOUR" = "10" ]; then
             echo "should_run=true" >> "$GITHUB_OUTPUT"
             echo "Scanner is due at $NEW_YORK_TIME."
           else
@@ -108,6 +114,10 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: github-pages
+    outputs:
+      lock_acquired: ${{ steps.daily-lock.outputs.acquired || 'false' }}
+      market_date: ${{ steps.daily-lock.outputs.market_date }}
+      publish_ready: ${{ steps.publish-ready.outputs.ready || 'false' }}
 
     steps:
       - name: Checkout repository
@@ -133,7 +143,30 @@ jobs:
           pip install -r requirements.txt
           pip install -e .
 
+      - name: Acquire daily universe-scan lease
+        id: daily-lock
+        if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.event.inputs.mode == 'universe')
+        env:
+          SUPABASE_URL: https://cszzbkssxxgwgafwuonc.supabase.co
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        shell: bash
+        run: |
+          FORCE_FLAG=""
+          if [ "${{ github.event.inputs.force }}" = "true" ]; then
+            FORCE_FLAG="--force"
+          fi
+          python -m stockscanner.scanner_run_state acquire \
+            --workflow-run-id "${{ github.run_id }}" \
+            --trigger-source "${{ github.event_name }}" \
+            --github-output "$GITHUB_OUTPUT" \
+            $FORCE_FLAG
+
+      - name: Explain duplicate daily scan
+        if: steps.daily-lock.outcome == 'success' && steps.daily-lock.outputs.acquired != 'true'
+        run: echo "A successful or active universe scan already exists for this New York market date."
+
       - name: Prime KPI S&P 500 history
+        if: github.event.inputs.mode == 'watchlist' || steps.daily-lock.outputs.acquired == 'true'
         run: |
           for attempt in 1 2 3; do
             if python -c "from stockscanner.market_data import download_data; data = download_data('^GSPC', force=True, period='1y'); assert data is not None and not data.empty, 'S&P 500 history is unavailable'"; then
@@ -146,8 +179,43 @@ jobs:
             sleep 20
           done
 
+      - name: Batch-cache NYSE daily history
+        if: steps.daily-lock.outputs.acquired == 'true'
+        env:
+          SUPABASE_URL: https://cszzbkssxxgwgafwuonc.supabase.co
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          SCAN_LIMIT: ${{ inputs.limit || '0' }}
+        run: |
+          python - <<'PY'
+          import os
+          from datetime import datetime
+          from zoneinfo import ZoneInfo
+          from stockscanner.market_data import download_data_bulk
+          from stockscanner.ticker_universe_store import load_latest_ticker_universe
+
+          tickers = load_latest_ticker_universe(
+              supabase_url=os.environ["SUPABASE_URL"],
+              secret_key=os.environ["SUPABASE_SECRET_KEY"],
+              required_market_date=datetime.now(ZoneInfo("America/New_York")).date(),
+              minimum_symbols=2000,
+          )
+          symbols = tickers["Symbol"].tolist()
+          limit = int(os.environ.get("SCAN_LIMIT", "0") or 0)
+          if limit > 0:
+              symbols = symbols[:limit]
+          cached = download_data_bulk(
+              symbols,
+              force=True,
+              period="1y",
+              chunk_size=100,
+              pause_between_chunks=1,
+              progress=True,
+          )
+          print(f"Batch history cached for {len(cached)} of {len(symbols)} NYSE symbols.")
+          PY
+
       - name: Run scanner (universe mode)
-        if: github.event.inputs.mode == 'universe' || github.event_name == 'schedule'
+        if: steps.daily-lock.outputs.acquired == 'true'
         env:
           SUPABASE_URL: https://cszzbkssxxgwgafwuonc.supabase.co
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
@@ -181,7 +249,7 @@ jobs:
             --quiet
 
       - name: Deploy Dashboard as landing page
-        if: ${{ always() }}
+        if: github.event_name == 'push' || github.event.inputs.mode == 'watchlist' || steps.daily-lock.outputs.acquired == 'true'
         run: |
           touch .nojekyll
           touch reports/.nojekyll
@@ -217,7 +285,7 @@ jobs:
           fi
 
       - name: Apply Supabase Auth guard
-        if: ${{ always() }}
+        if: github.event_name == 'push' || github.event.inputs.mode == 'watchlist' || steps.daily-lock.outputs.acquired == 'true'
         run: |
           python tools/inject_auth.py \
             index.html \
@@ -227,7 +295,7 @@ jobs:
             exceptions.html
 
       - name: Commit generated report pages
-        if: ${{ always() }}
+        if: github.event_name == 'push' || github.event.inputs.mode == 'watchlist' || steps.daily-lock.outputs.acquired == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -261,17 +329,23 @@ jobs:
           retention-days: 30
 
       - name: Configure Pages
-        if: ${{ always() }}
+        if: github.event_name == 'push' || github.event.inputs.mode == 'watchlist' || steps.daily-lock.outputs.acquired == 'true'
         uses: actions/configure-pages@v3
 
       - name: Upload reports artifact for Pages
-        if: ${{ always() }}
+        if: github.event_name == 'push' || github.event.inputs.mode == 'watchlist' || steps.daily-lock.outputs.acquired == 'true'
         uses: actions/upload-pages-artifact@v5
         with:
           path: .
 
+      - name: Mark deployment artifact ready
+        id: publish-ready
+        if: github.event_name == 'push' || github.event.inputs.mode == 'watchlist' || steps.daily-lock.outputs.acquired == 'true'
+        run: echo "ready=true" >> "$GITHUB_OUTPUT"
+
   deploy:
     needs: build
+    if: needs.build.outputs.publish_ready == 'true'
     runs-on: ubuntu-latest
     environment:
       name: github-pages
@@ -281,3 +355,71 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deploy
         uses: actions/deploy-pages@v4
+
+  finalize-daily-run:
+    needs: [build, deploy]
+    if: always() && needs.build.outputs.lock_acquired == 'true'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Finish daily universe-scan lease
+        env:
+          SUPABASE_URL: https://cszzbkssxxgwgafwuonc.supabase.co
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          DEPLOY_RESULT: ${{ needs.deploy.result }}
+        shell: bash
+        run: |
+          STATUS="failed"
+          if [ "$DEPLOY_RESULT" = "success" ]; then
+            STATUS="completed"
+            python -m stockscanner.scanner_run_state finish \
+              --market-date "${{ needs.build.outputs.market_date }}" \
+              --workflow-run-id "${{ github.run_id }}" \
+              --status "$STATUS"
+          else
+            python -m stockscanner.scanner_run_state finish \
+              --market-date "${{ needs.build.outputs.market_date }}" \
+              --workflow-run-id "${{ github.run_id }}" \
+              --status "$STATUS" \
+              --error "GitHub Pages deployment result: $DEPLOY_RESULT"
+          fi
+
+      - name: Open one failure issue for the market date
+        if: always() && needs.deploy.result != 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MARKET_DATE: ${{ needs.build.outputs.market_date }}
+        shell: bash
+        run: |
+          TITLE="StockScanner scheduled scan failed: $MARKET_DATE"
+          EXISTING=$(gh issue list --state open --search "$TITLE in:title" --json title --jq ".[] | select(.title == \"$TITLE\") | .title")
+          if [ -z "$EXISTING" ]; then
+            gh issue create \
+              --title "$TITLE" \
+              --body "The daily scan or Pages deployment failed. Review: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}. A later fallback schedule may retry automatically."
+          fi
+
+      - name: Close a recovered failure issue
+        if: always() && needs.deploy.result == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MARKET_DATE: ${{ needs.build.outputs.market_date }}
+        shell: bash
+        run: |
+          TITLE="StockScanner scheduled scan failed: $MARKET_DATE"
+          gh issue list --state open --search "$TITLE in:title" --json number,title \
+            --jq ".[] | select(.title == \"$TITLE\") | .number" | \
+          while read -r ISSUE_NUMBER; do
+            if [ -n "$ISSUE_NUMBER" ]; then
+              gh issue close "$ISSUE_NUMBER" --comment "Recovered by successful run ${{ github.run_id }}."
+            fi
+          done

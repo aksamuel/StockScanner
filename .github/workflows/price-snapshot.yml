@@ -2,7 +2,12 @@ name: Hourly Price Snapshot
 
 on:
   workflow_dispatch:
-  # A workflow/code change performs one immediate, market-hours catch-up.
+    inputs:
+      mode:
+        description: "Price collection mode"
+        type: choice
+        options: [auto, hourly, close]
+        default: auto
   push:
     branches: [main]
     paths:
@@ -12,20 +17,21 @@ on:
       - "stockscanner/market_data.py"
       - "stockscanner/portfolio_symbols.py"
       - "stockscanner/supabase_snapshot.py"
-  # Covers 09:47-16:47 New York in both EST and EDT. The Python script
-  # performs the authoritative 09:30-16:00 America/New_York runtime gate.
+      - "stockscanner/price_run_state.py"
+      - "supabase/migrations/**"
+  # Redundant UTC candidates cover New York market and close windows through
+  # daylight-saving changes. New York gates and database leases reject
+  # duplicate and off-season candidates.
   schedule:
     - cron: "47 13-21 * * 1-5"
+    - cron: "17 20,21 * * 1-5"
 
 permissions:
-  contents: write
-  pages: write
-  id-token: write
+  contents: read
+  issues: write
 
-# Share the full scanner's Pages lock so report and snapshot deployments cannot
-# overlap or publish artifacts built from conflicting repository revisions.
 concurrency:
-  group: "pages"
+  group: "hourly-price-snapshot"
   cancel-in-progress: false
 
 jobs:
@@ -33,13 +39,9 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: github-pages
-    outputs:
-      snapshot_changed: ${{ steps.commit.outputs.changed }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
 
       - name: Set up Python 3.11
         uses: actions/setup-python@v6
@@ -53,64 +55,141 @@ jobs:
           pip install -e ".[dev]"
 
       - name: Test snapshot code
-        run: pytest -q tests/test_price_snapshot.py tests/test_portfolio_symbols.py tests/test_supabase_snapshot.py
+        run: pytest -q tests/test_price_snapshot.py tests/test_price_run_state.py tests/test_portfolio_symbols.py tests/test_supabase_snapshot.py
+
+      - name: Resolve New York collection window
+        id: window
+        env:
+          REQUESTED_MODE: ${{ github.event.inputs.mode || 'auto' }}
+        run: |
+          python - <<'PY'
+          import os
+          from datetime import datetime, time
+          from zoneinfo import ZoneInfo
+
+          now = datetime.now(ZoneInfo("America/New_York"))
+          mode = os.environ["REQUESTED_MODE"]
+          if mode == "auto":
+              mode = "close" if now.time() >= time(16, 0) else "hourly"
+          valid = now.weekday() < 5 and (
+              time(9, 30) <= now.time() < time(16, 0)
+              if mode == "hourly"
+              else time(16, 0) <= now.time() <= time(18, 0)
+          )
+          slot = f"{now.date().isoformat()}:{'close' if mode == 'close' else now.strftime('%H')}"
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"valid={str(valid).lower()}\n")
+              output.write(f"mode={mode}\n")
+              output.write(f"market_date={now.date().isoformat()}\n")
+              output.write(f"slot={slot}\n")
+          PY
+
+      - name: Acquire collection slot
+        id: lease
+        if: steps.window.outputs.valid == 'true'
+        env:
+          SUPABASE_URL: https://cszzbkssxxgwgafwuonc.supabase.co
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          python -m stockscanner.price_run_state acquire \
+            --slot "${{ steps.window.outputs.slot }}" \
+            --market-date "${{ steps.window.outputs.market_date }}" \
+            --workflow-run-id "${{ github.run_id }}" \
+            --github-output "$GITHUB_OUTPUT"
+
+      - name: Download current singleton from Supabase
+        if: steps.lease.outputs.acquired == 'true'
+        env:
+          SUPABASE_URL: https://cszzbkssxxgwgafwuonc.supabase.co
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          if ! python -m stockscanner.supabase_snapshot --download "$RUNNER_TEMP/prices.json"; then
+            echo "Bootstrapping an uninitialized singleton from the repository."
+            cp prices.json "$RUNNER_TEMP/prices.json"
+          fi
 
       - name: Refresh prices through free provider failover
-        id: refresh
+        if: steps.lease.outputs.acquired == 'true'
         env:
+          SUPABASE_URL: https://cszzbkssxxgwgafwuonc.supabase.co
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           ALPACA_API_KEY_ID: ${{ secrets.ALPACA_API_KEY_ID }}
           ALPACA_API_SECRET_KEY: ${{ secrets.ALPACA_API_SECRET_KEY }}
           TWELVE_DATA_API_KEY: ${{ secrets.TWELVE_DATA_API_KEY }}
-          SUPABASE_URL: https://cszzbkssxxgwgafwuonc.supabase.co
-          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
         run: |
-          python -m stockscanner.price_snapshot
-          if git diff --quiet -- prices.json; then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-          fi
+          python -m stockscanner.price_snapshot \
+            --output "$RUNNER_TEMP/prices.json" \
+            --mode "${{ steps.window.outputs.mode }}"
 
-      - name: Store snapshot in Supabase
-        if: steps.refresh.outputs.changed == 'true'
+      - name: Store singleton in Supabase
+        if: steps.lease.outputs.acquired == 'true'
         env:
           SUPABASE_URL: https://cszzbkssxxgwgafwuonc.supabase.co
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
-        run: python -m stockscanner.supabase_snapshot --input prices.json
+        run: python -m stockscanner.supabase_snapshot --input "$RUNNER_TEMP/prices.json"
 
-      - name: Commit snapshot only when changed
-        id: commit
+      - name: Read purchased-stock coverage
+        id: coverage
+        if: steps.lease.outputs.acquired == 'true'
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add prices.json
-          if git diff --cached --quiet; then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-            echo "No in-session snapshot changes to commit."
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          payload = json.loads((Path(os.environ["RUNNER_TEMP"]) / "prices.json").read_text())
+          missing = payload.get("portfolio_missing_symbols", [])
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"complete={str(not missing).lower()}\n")
+              output.write(f"missing_count={len(missing)}\n")
+              output.write(f"missing_symbols={','.join(missing)}\n")
+          PY
+
+      - name: Finish collection slot
+        if: steps.lease.outputs.acquired == 'true'
+        env:
+          SUPABASE_URL: https://cszzbkssxxgwgafwuonc.supabase.co
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          python -m stockscanner.price_run_state finish \
+            --slot "${{ steps.window.outputs.slot }}" \
+            --workflow-run-id "${{ github.run_id }}" \
+            --status completed
+
+      - name: Report incomplete purchased-stock coverage
+        if: steps.coverage.outputs.complete == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MISSING_COUNT: ${{ steps.coverage.outputs.missing_count }}
+          MISSING_SYMBOLS: ${{ steps.coverage.outputs.missing_symbols }}
+        run: |
+          TITLE="Hourly prices missing purchased stocks"
+          EXISTING=$(gh issue list --state open --search "$TITLE in:title" --json number,title --jq ".[] | select(.title == \"$TITLE\") | .number" | head -1)
+          BODY="${MISSING_COUNT} purchased symbols were not refreshed: ${MISSING_SYMBOLS}. Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          if [ -n "$EXISTING" ]; then
+            gh issue comment "$EXISTING" --body "$BODY"
           else
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-            git commit -m "Update hourly price snapshot"
-            git push
+            gh issue create --title "$TITLE" --body "$BODY"
           fi
+          exit 1
 
-      - name: Configure Pages
-        if: steps.commit.outputs.changed == 'true'
-        uses: actions/configure-pages@v3
+      - name: Close recovered coverage issue
+        if: steps.coverage.outputs.complete == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TITLE="Hourly prices missing purchased stocks"
+          gh issue list --state open --search "$TITLE in:title" --json number,title \
+            --jq ".[] | select(.title == \"$TITLE\") | .number" | \
+          while read -r ISSUE_NUMBER; do
+            [ -z "$ISSUE_NUMBER" ] || gh issue close "$ISSUE_NUMBER" --comment "All purchased symbols refreshed successfully."
+          done
 
-      - name: Upload site artifact for Pages
-        if: steps.commit.outputs.changed == 'true'
-        uses: actions/upload-pages-artifact@v5
-        with:
-          path: .
-
-  deploy:
-    needs: refresh
-    if: needs.refresh.outputs.snapshot_changed == 'true'
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+      - name: Release failed collection slot
+        if: failure() && steps.lease.outputs.acquired == 'true' && steps.coverage.outputs.complete != 'false'
+        env:
+          SUPABASE_URL: https://cszzbkssxxgwgafwuonc.supabase.co
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          python -m stockscanner.price_run_state finish \
+            --slot "${{ steps.window.outputs.slot }}" \
+            --workflow-run-id "${{ github.run_id }}" \
+            --status failed

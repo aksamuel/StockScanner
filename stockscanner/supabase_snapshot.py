@@ -25,13 +25,23 @@ def snapshot_record(payload):
     prices = payload.get("prices")
     failures = payload.get("failures", {})
     daily_prices = payload.get("daily_prices", {})
+    previous_close_prices = payload.get("previous_close_prices", daily_prices)
+    market_close_prices = payload.get("market_close_prices", {})
     intraday_series = payload.get("intraday_series", {})
     if not isinstance(prices, dict) or not prices:
         raise SupabaseSnapshotError("Snapshot must contain a non-empty prices object")
     if not isinstance(failures, dict):
         raise SupabaseSnapshotError("Snapshot failures must be a JSON object")
-    if not isinstance(daily_prices, dict) or not isinstance(intraday_series, dict):
-        raise SupabaseSnapshotError("Daily prices and intraday series must be JSON objects")
+    if not all(
+        isinstance(value, dict)
+        for value in (
+            daily_prices,
+            previous_close_prices,
+            market_close_prices,
+            intraday_series,
+        )
+    ):
+        raise SupabaseSnapshotError("Price comparisons and intraday series must be JSON objects")
     if not payload.get("generated_at") or not payload.get("source"):
         raise SupabaseSnapshotError("Snapshot requires generated_at and source")
     if payload["source"] != "hourly_yahoo":
@@ -52,9 +62,52 @@ def snapshot_record(payload):
         "failed_count": len(failures),
         "prices": prices,
         "daily_prices": daily_prices,
+        "previous_close_prices": previous_close_prices,
+        "market_close_prices": market_close_prices,
         "intraday_series": intraday_series,
         "failures": failures,
+        "requested_symbol_count": payload.get("requested_symbol_count", len(prices)),
+        "portfolio_symbol_count": payload.get("portfolio_symbol_count", 0),
+        "portfolio_updated_count": payload.get("portfolio_updated_count", 0),
+        "portfolio_missing_symbols": payload.get("portfolio_missing_symbols", []),
+        "portfolio_coverage_percent": payload.get("portfolio_coverage_percent", 100),
+        "provider_counts": payload.get("provider_counts", {}),
+        "provider_by_symbol": payload.get("provider_by_symbol", {}),
+        "stale_symbols": payload.get("stale_symbols", []),
+        "collection_kind": payload.get("collection_kind", "intraday"),
     }
+
+
+def fetch_snapshot(
+    *,
+    supabase_url,
+    secret_key,
+    opener=urlopen,
+    timeout=DEFAULT_TIMEOUT_SECONDS,
+):
+    """Download the singleton so intraday state is never sourced from GitHub."""
+    if not supabase_url:
+        raise SupabaseSnapshotError("SUPABASE_URL is required")
+    if not secret_key:
+        raise SupabaseSnapshotError("SUPABASE_SECRET_KEY is required")
+    endpoint = (
+        f"{supabase_url.rstrip('/')}/rest/v1/price_snapshots"
+        "?source=eq.hourly_yahoo&limit=1"
+    )
+    headers = {"apikey": secret_key, "User-Agent": "StockScanner-GitHub-Actions/1.0"}
+    if not secret_key.startswith("sb_secret_"):
+        headers["Authorization"] = f"Bearer {secret_key}"
+    try:
+        with opener(Request(endpoint, headers=headers), timeout=timeout) as response:
+            result = json.loads(response.read().decode("utf-8"))
+    except HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        raise SupabaseSnapshotError(f"Supabase returned HTTP {exc.code}: {detail}") from exc
+    except (OSError, URLError, json.JSONDecodeError) as exc:
+        raise SupabaseSnapshotError(f"Unable to load the Supabase snapshot: {exc}") from exc
+    if not isinstance(result, list) or not result or not isinstance(result[0], dict):
+        raise SupabaseSnapshotError("Supabase hourly snapshot is not initialized")
+    return result[0]
 
 
 def store_snapshot(
@@ -126,16 +179,24 @@ def store_snapshot(
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--input", type=Path, required=True)
+    operation = parser.add_mutually_exclusive_group(required=True)
+    operation.add_argument("--input", type=Path)
+    operation.add_argument("--download", type=Path)
     args = parser.parse_args(argv)
 
     try:
-        payload = json.loads(args.input.read_text(encoding="utf-8"))
-        stored = store_snapshot(
-            payload,
-            supabase_url=os.environ.get("SUPABASE_URL", ""),
-            secret_key=os.environ.get("SUPABASE_SECRET_KEY", ""),
-        )
+        credentials = {
+            "supabase_url": os.environ.get("SUPABASE_URL", ""),
+            "secret_key": os.environ.get("SUPABASE_SECRET_KEY", ""),
+        }
+        if args.download:
+            stored = fetch_snapshot(**credentials)
+            args.download.write_text(
+                json.dumps(stored, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+            )
+        else:
+            payload = json.loads(args.input.read_text(encoding="utf-8"))
+            stored = store_snapshot(payload, **credentials)
     except (OSError, json.JSONDecodeError, SupabaseSnapshotError) as exc:
         parser.error(str(exc))
 

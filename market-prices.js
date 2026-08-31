@@ -2,27 +2,34 @@ const SVG_NS = "http://www.w3.org/2000/svg";
 
 export function marketRows(snapshot) {
   const hourly = snapshot?.prices || {};
-  const daily = snapshot?.daily_prices || {};
-  return [...new Set([...Object.keys(hourly), ...Object.keys(daily)])]
+  const previous = snapshot?.previous_close_prices || snapshot?.daily_prices || {};
+  const marketClose = snapshot?.market_close_prices || {};
+  return [...new Set([...Object.keys(hourly), ...Object.keys(previous), ...Object.keys(marketClose)])]
     .sort()
     .map((symbol) => {
       const hourlyPrice = Number(hourly[symbol]);
-      const dailyPrice = Number(daily[symbol]);
+      const previousClose = Number(previous[symbol]);
+      const marketClosePrice = Number(marketClose[symbol]);
       const hasHourly = Number.isFinite(hourlyPrice) && hourlyPrice > 0;
-      const hasDaily = Number.isFinite(dailyPrice) && dailyPrice > 0;
+      const hasPrevious = Number.isFinite(previousClose) && previousClose > 0;
+      const hasMarketClose = Number.isFinite(marketClosePrice) && marketClosePrice > 0;
       return {
         symbol,
         hourlyPrice: hasHourly ? hourlyPrice : null,
-        dailyPrice: hasDaily ? dailyPrice : null,
-        changePercent: hasHourly && hasDaily
-          ? ((hourlyPrice - dailyPrice) / dailyPrice) * 100
+        previousClose: hasPrevious ? previousClose : null,
+        marketClosePrice: hasMarketClose ? marketClosePrice : null,
+        changePercent: hasHourly && hasPrevious
+          ? ((hourlyPrice - previousClose) / previousClose) * 100
           : null,
       };
     });
 }
 
 export function intradayPoints(snapshot, symbol) {
-  const dailyPrice = Number(snapshot?.daily_prices?.[symbol]);
+  const previousClose = Number(
+    snapshot?.previous_close_prices?.[symbol]
+      ?? snapshot?.daily_prices?.[symbol]
+  );
   const points = Array.isArray(snapshot?.intraday_series?.[symbol])
     ? snapshot.intraday_series[symbol]
     : [];
@@ -35,8 +42,8 @@ export function intradayPoints(snapshot, symbol) {
     .sort((left, right) => left.timestamp.localeCompare(right.timestamp))
     .map((point) => ({
       ...point,
-      changePercent: Number.isFinite(dailyPrice) && dailyPrice > 0
-        ? ((point.price - dailyPrice) / dailyPrice) * 100
+      changePercent: Number.isFinite(previousClose) && previousClose > 0
+        ? ((point.price - previousClose) / previousClose) * 100
         : null,
     }));
 }
@@ -47,7 +54,7 @@ function svgElement(name, attributes = {}) {
   return element;
 }
 
-export function drawSpikeChart(svg, points, dailyPrice, formatPrice) {
+export function drawSpikeChart(svg, points, previousClose, formatPrice) {
   svg.replaceChildren();
   const width = 900;
   const height = 320;
@@ -90,7 +97,7 @@ export function drawSpikeChart(svg, points, dailyPrice, formatPrice) {
       class: value >= 0 ? "spike-positive" : "spike-negative",
       tabindex: "0",
       role: "img",
-      "aria-label": `${new Date(point.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}: ${formatPrice(point.price)}, ${value >= 0 ? "+" : ""}${value.toFixed(2)} percent versus daily close`,
+      "aria-label": `${new Date(point.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}: ${formatPrice(point.price)}, ${value >= 0 ? "+" : ""}${value.toFixed(2)} percent versus previous close`,
     });
     const title = svgElement("title");
     title.textContent = rect.getAttribute("aria-label");
@@ -106,6 +113,6 @@ export function drawSpikeChart(svg, points, dailyPrice, formatPrice) {
   });
 
   const closeLabel = svgElement("text", { x: width - margin.right, y: 16, class: "chart-close-label", "text-anchor": "end" });
-  closeLabel.textContent = `Daily close: ${formatPrice(dailyPrice)}`;
+  closeLabel.textContent = `Previous close: ${formatPrice(previousClose)}`;
   svg.append(closeLabel);
 }
