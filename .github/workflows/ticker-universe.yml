@@ -14,6 +14,9 @@ on:
   # Minute 7 avoids GitHub Actions' busiest top-of-hour scheduling window.
   schedule:
     - cron: "7 12,13 * * 1-5"
+    # Additional non-peak candidates protect against delayed/dropped GitHub
+    # cron events. The New York date guard keeps only the first successful run.
+    - cron: "37 14,15 * * 1-5"
 
 permissions:
   actions: write

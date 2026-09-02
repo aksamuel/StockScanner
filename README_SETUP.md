@@ -279,8 +279,11 @@ code or GitHub Pages.
 | `price-snapshot.yml` | Updates hourly/current, previous-close, and market-close prices directly in Supabase | Weekday candidate slots during market hours and the close window, plus manual dispatch |
 | `invite-admin.yml` | Invites or promotes an administrator without handling a password | Manual only |
 
-GitHub cron is UTC-only. The ticker and scan workflows schedule candidate UTC
-hours and use New York date/time guards to remain daylight-saving safe. The
+GitHub cron is UTC-only and may deliver runs several hours late. The ticker and
+scan workflows schedule redundant candidate UTC hours and use New York date
+and database lease guards to remain daylight-saving safe. A delayed scanner
+candidate is accepted any time after 9:00 AM New York when that market date has
+not already completed. The
 scanner uses `public.scanner_run_state` as a backend-only atomic daily lease,
 requires today's refreshed universe with at least 2,000 rows, and batch-caches
 daily histories before analysis. `public.price_collection_runs` similarly

@@ -100,7 +100,10 @@ jobs:
           NEW_YORK_TIME=$(TZ=America/New_York date '+%Y-%m-%d %H:%M:%S %Z')
           NEW_YORK_HOUR=$(TZ=America/New_York date '+%H')
           echo "new_york_time=$NEW_YORK_TIME" >> "$GITHUB_OUTPUT"
-          if [ "$GITHUB_EVENT_NAME" != "schedule" ] || [ "$NEW_YORK_HOUR" = "09" ] || [ "$NEW_YORK_HOUR" = "10" ]; then
+          # GitHub cron events can be delayed by several hours. Once New York
+          # reaches 09:00, let every delayed candidate try the database lease;
+          # the lease, not a narrow clock window, is the duplicate guard.
+          if [ "$GITHUB_EVENT_NAME" != "schedule" ] || [ "$((10#$NEW_YORK_HOUR))" -ge 9 ]; then
             echo "should_run=true" >> "$GITHUB_OUTPUT"
             echo "Scanner is due at $NEW_YORK_TIME."
           else
