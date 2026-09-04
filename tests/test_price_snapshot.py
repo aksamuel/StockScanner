@@ -30,11 +30,36 @@ def test_regular_market_session_gate_includes_open_and_close():
 def test_refresh_outside_market_hours_does_not_write(tmp_path):
     snapshot_path = tmp_path / "prices.json"
 
-    result = refresh_snapshot(snapshot_path, now=ny_time(9))
+    result = refresh_snapshot(snapshot_path, now=ny_time(8, 44))
 
     assert result["published"] is False
     assert result["reason"] == "outside_price_collection_window"
     assert not snapshot_path.exists()
+
+
+def test_refresh_accepts_first_premarket_collection_at_0845(tmp_path):
+    snapshot_path = tmp_path / "prices.json"
+    write_snapshot_from_results(
+        [{"Symbol": "AAA", "Current Price": 10}],
+        snapshot_path,
+        ny_time(8, 30),
+    )
+
+    result = refresh_snapshot(
+        snapshot_path,
+        now=ny_time(8, 45),
+        alpaca_downloader=lambda symbols, now: {
+            "AAA": {
+                "price": 10.25,
+                "daily_close": 10.0,
+                "timestamp": ny_time(8, 44),
+            }
+        },
+        downloader=lambda symbol, now: None,
+    )
+
+    assert result["published"] is True
+    assert result["updated"] == 1
 
 
 def test_refresh_writes_json_and_preserves_failed_symbol_price(tmp_path, capsys):

@@ -19,12 +19,12 @@ on:
       - "stockscanner/supabase_snapshot.py"
       - "stockscanner/price_run_state.py"
       - "supabase/migrations/**"
-  # Redundant UTC candidates cover New York market and close windows through
-  # daylight-saving changes. New York gates and database leases reject
-  # duplicate and off-season candidates.
+  # The hourly UTC range maps to 08:45-15:45 New York through both EDT and
+  # EST; the New York gate rejects the single off-season endpoint. A separate
+  # candidate pair captures the close through both daylight-saving offsets.
   schedule:
-    - cron: "47 13-21 * * 1-5"
-    - cron: "17 20,21 * * 1-5"
+    - cron: "45 12-20 * * 1-5"
+    - cron: "5 20,21 * * 1-5"
 
 permissions:
   contents: read
@@ -61,6 +61,7 @@ jobs:
         id: window
         env:
           REQUESTED_MODE: ${{ github.event.inputs.mode || 'auto' }}
+          TRIGGER_SCHEDULE: ${{ github.event.schedule || '' }}
         run: |
           python - <<'PY'
           import os
@@ -70,9 +71,11 @@ jobs:
           now = datetime.now(ZoneInfo("America/New_York"))
           mode = os.environ["REQUESTED_MODE"]
           if mode == "auto":
-              mode = "close" if now.time() >= time(16, 0) else "hourly"
+              scheduled_close = os.environ["TRIGGER_SCHEDULE"].startswith("5 ")
+              manual_close = not os.environ["TRIGGER_SCHEDULE"] and now.time() >= time(16, 0)
+              mode = "close" if scheduled_close or manual_close else "hourly"
           valid = now.weekday() < 5 and (
-              time(9, 30) <= now.time() < time(16, 0)
+              time(8, 45) <= now.time() < time(16, 0)
               if mode == "hourly"
               else time(16, 0) <= now.time() <= time(18, 0)
           )

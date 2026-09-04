@@ -418,6 +418,10 @@ def test_three_report_pages_have_requested_columns_navigation_and_selection():
                 "Sector": "Technology",
                 "Market": "NYSE",
                 "Current Price": 123.45,
+                "Entry": 120.00,
+                "Target 1": 126.00,
+                "Target 2": 132.00,
+                "Target 3": 138.00,
                 "RSI": 55,
                 "Relative Strength": 70,
                 "Score": 90,
@@ -461,6 +465,10 @@ def test_three_report_pages_have_requested_columns_navigation_and_selection():
     assert "<th>RSI</th>" in technical_headers
     assert "<th>Recommendation</th>" in technical_headers
     assert "<th>Analyst Rating</th>" not in technical_headers
+    assert technical_headers.startswith(
+        "<th>Rank</th><th>Symbol</th><th>Entry</th><th>Target 1</th>"
+        "<th>Target 2</th><th>Target 3</th>"
+    )
     assert technical_headers.rfind("<th>RSI</th>") < technical_headers.rfind(
         "<th>MACD</th>"
     )
@@ -468,7 +476,7 @@ def test_three_report_pages_have_requested_columns_navigation_and_selection():
     assert 'id="requestYahooRefresh"' in pages["technical"]
     assert '<button id="requestYahooRefresh" type="button">' in pages["technical"]
     assert 'data-current-price="123.45"' in pages["technical"]
-    assert 'data-target-one=""' in pages["technical"]
+    assert 'data-target-one="126.0"' in pages["technical"]
     assert "fetch(snapshotUrl(), { cache: 'no-store' })" in pages["technical"]
     assert "loadRefreshButtonSnapshotTime();" in pages["technical"]
     assert "Refresh Latest Prices · ${snapshot.price_timestamp_new_york}" in pages[

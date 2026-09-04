@@ -519,6 +519,7 @@ function addNavigationDrawer(user) {
     ["Scanner", "Analysts rating", "analysts.html"],
     ["Scanner", "Bought candidates", "bought-selection.html"],
     ["Market data", "Hourly & daily prices", "market-prices.html"],
+    ["Market data", "Database overview", "database.html"],
     ["My lists", "My exceptions", "my-exceptions.html"],
     ["My lists", "My bought list", "my-bought-selection.html"],
     ["My lists", "Portfolio analysis", "portfolio-analysis.html"],
@@ -637,6 +638,158 @@ function addNavigationDrawer(user) {
   });
 }
 
+function reorderTechnicalAnalysisColumns() {
+  const page = window.location.pathname.split("/").filter(Boolean).pop();
+  if (page !== "technical.html") return;
+  document.querySelectorAll("table").forEach((table) => {
+    const headerRow = table.querySelector("thead tr");
+    if (!headerRow) return;
+    const names = [...headerRow.children].map((cell) => cell.textContent.trim());
+    const desired = ["Rank", "Symbol", "Entry", "Target 1", "Target 2", "Target 3"];
+    if (!desired.every((name) => names.includes(name))) return;
+    const remaining = names.filter((name) => !desired.includes(name));
+    const order = [...desired, ...remaining].map((name) => names.indexOf(name));
+    if (order.every((sourceIndex, targetIndex) => sourceIndex === targetIndex)) return;
+    const reorder = (row) => {
+      const cells = [...row.children];
+      order.forEach((index) => row.appendChild(cells[index]));
+    };
+    reorder(headerRow);
+    table.querySelectorAll("tbody tr").forEach(reorder);
+  });
+}
+
+function installSharedTableSorting() {
+  const page = window.location.pathname.split("/").filter(Boolean).pop() || "index.html";
+  const generatedReportPages = new Set(["index.html", "technical.html", "analysts.html", "bought-selection.html"]);
+  if (window.stockscannerNativeTableSorting || generatedReportPages.has(page)) return;
+  if (!document.querySelector("style[data-stockscanner-table-sorting]")) {
+    const style = document.createElement("style");
+    style.dataset.stockscannerTableSorting = "";
+    style.textContent = `
+      .stockscanner-sort-button {
+        display: inline-flex;
+        width: 100%;
+        min-height: 32px;
+        align-items: center;
+        gap: 6px;
+        padding: 3px 0;
+        border: 0;
+        color: inherit;
+        background: transparent;
+        font: inherit;
+        font-weight: inherit;
+        text-align: left;
+        cursor: pointer;
+      }
+      .stockscanner-sort-button::after { content: "↕"; color: #78909c; font-size: .78em; }
+      th[aria-sort="ascending"] .stockscanner-sort-button::after { content: "▲"; color: #81d4fa; }
+      th[aria-sort="descending"] .stockscanner-sort-button::after { content: "▼"; color: #81d4fa; }
+      .stockscanner-sort-button:focus-visible { outline: 2px solid #4fc3f7; outline-offset: 2px; }
+    `;
+    document.head.appendChild(style);
+  }
+
+  const missingLabels = new Set(["", "—", "-", "n/a", "na", "unavailable", "pending", "pending close", "unknown"]);
+  const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
+
+  function sortValue(cell) {
+    const raw = cell?.dataset.sortValue ?? cell?.textContent ?? "";
+    const text = raw.replace(/\s+/g, " ").trim();
+    if (missingLabels.has(text.toLowerCase())) return { missing: true, value: null };
+
+    const normalizedNumber = text
+      .replace(/^(?:USD|CAD|EUR|GBP|AUD|JPY)\s+/i, "")
+      .replace(/[$£€¥,%]/g, "")
+      .replace(/,/g, "")
+      .trim();
+    if (/^[+-]?(?:\d+(?:\.\d+)?|\.\d+)(?:\s*(?:days?|shares?))?$/i.test(normalizedNumber)) {
+      return { missing: false, value: Number.parseFloat(normalizedNumber) };
+    }
+
+    if (/^\d{4}-\d{2}-\d{2}(?:[T\s].*)?$/.test(text)
+        || /^\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4}(?:\s.*)?$/.test(text)
+        || /^[A-Za-z]{3,9}\s+\d{1,2},?\s+\d{4}/.test(text)) {
+      const timestamp = Date.parse(text);
+      if (Number.isFinite(timestamp)) return { missing: false, value: timestamp };
+    }
+    return { missing: false, value: text };
+  }
+
+  function compareCells(leftCell, rightCell, direction) {
+    const left = sortValue(leftCell);
+    const right = sortValue(rightCell);
+    if (left.missing || right.missing) {
+      if (left.missing && right.missing) return 0;
+      return left.missing ? 1 : -1;
+    }
+    const comparison = typeof left.value === "number" && typeof right.value === "number"
+      ? left.value - right.value
+      : collator.compare(String(left.value), String(right.value));
+    return direction === "ascending" ? comparison : -comparison;
+  }
+
+  function applySort(table) {
+    const column = Number(table.dataset.stockscannerSortColumn);
+    const direction = table.dataset.stockscannerSortDirection;
+    if (!Number.isInteger(column) || !direction) return;
+    for (const body of table.tBodies) {
+      const current = [...body.rows];
+      const sorted = current
+        .map((row, index) => ({ row, index }))
+        .sort((left, right) => compareCells(left.row.cells[column], right.row.cells[column], direction) || left.index - right.index)
+        .map(({ row }) => row);
+      if (sorted.some((row, index) => row !== current[index])) body.append(...sorted);
+    }
+  }
+
+  function enhanceTable(table) {
+    if (table.dataset.stockscannerSortingReady !== undefined) return;
+    if (table.querySelector(".sort-button, [data-sort-column]")) {
+      table.dataset.stockscannerSortingReady = "custom";
+      return;
+    }
+    const headers = [...table.querySelectorAll("thead th")];
+    if (!headers.length) return;
+    table.dataset.stockscannerSortingReady = "";
+    headers.forEach((header, column) => {
+      if (header.classList.contains("no-sort")) return;
+      header.setAttribute("aria-sort", "none");
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "stockscanner-sort-button";
+      button.title = `Sort by ${header.textContent.trim()}`;
+      button.append(...header.childNodes);
+      button.addEventListener("click", (event) => {
+        event.stopPropagation();
+        const ascending = table.dataset.stockscannerSortColumn !== String(column)
+          || table.dataset.stockscannerSortDirection !== "ascending";
+        headers.forEach((item) => item.setAttribute("aria-sort", "none"));
+        const direction = ascending ? "ascending" : "descending";
+        header.setAttribute("aria-sort", direction);
+        table.dataset.stockscannerSortColumn = String(column);
+        table.dataset.stockscannerSortDirection = direction;
+        button.title = `Sorted ${direction}. Click to reverse.`;
+        applySort(table);
+      });
+      header.append(button);
+    });
+  }
+
+  document.querySelectorAll("table").forEach(enhanceTable);
+  new MutationObserver((mutations) => {
+    for (const mutation of mutations) {
+      const table = mutation.target.closest?.("table");
+      if (table?.dataset.stockscannerSortingReady === "") applySort(table);
+      for (const node of mutation.addedNodes) {
+        if (!(node instanceof Element)) continue;
+        if (node.matches("table")) enhanceTable(node);
+        node.querySelectorAll?.("table").forEach(enhanceTable);
+      }
+    }
+  }).observe(document.body, { childList: true, subtree: true });
+}
+
 async function protectPage() {
   const { data, error } = await supabase.auth.getUser();
 
@@ -669,6 +822,8 @@ async function protectPage() {
     console.warn("Could not apply the personal Top 20 filters.", filterError);
   });
   addNavigationDrawer(data.user);
+  reorderTechnicalAnalysisColumns();
+  installSharedTableSorting();
   showPage();
   await recordActivity(data.user, "page_view").catch(() => {});
   window.setInterval(

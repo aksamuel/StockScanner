@@ -396,8 +396,8 @@ PAGE_CONFIGS = {
     "technical": {
         "title": "Technical Analysis Page",
         "columns": [
-            "Rank", "Symbol", "Sector", "Score", "Recommendation", "Signal",
-            "Trend", "Entry", "Target 1", "Target 2", "Target 3", "20 MA",
+            "Rank", "Symbol", "Entry", "Target 1", "Target 2", "Target 3",
+            "Sector", "Score", "Recommendation", "Signal", "Trend", "20 MA",
             "50 MA", "200 MA", "Stop Loss", "RSI", "MACD",
         ],
         "accent": "#c6efce",
@@ -1837,6 +1837,7 @@ if (addBought) addBought.addEventListener('click', async () => {{
     }}
 }});
 
+window.stockscannerNativeTableSorting = true;
 // Sortable columns
 document.querySelectorAll('th:not(.no-sort)').forEach(th => {{
     th.addEventListener('click', function() {{

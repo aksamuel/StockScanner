@@ -4,11 +4,11 @@
 
 | Version | Security support |
 |---|---|
-| `2.13.x` | Supported |
-| `< 2.13` | Unsupported; upgrade to the current stable release |
+| `2.15.x` | Supported |
+| `< 2.15` | Unsupported; upgrade to the current stable release |
 
 The production baseline is maintained on `main` and pinned on the
-`stable/v2.13.0` branch.
+`stable/v2.15.0` branch.
 
 ## Reporting a vulnerability
 
@@ -48,6 +48,9 @@ JWT, password, session token, or recovery link.
   and an explicit service-role-only `EXECUTE` grant.
 - `public.price_snapshots` exposes read-only current prices to authenticated
   users and accepts writes only from backend automation.
+- `database.html` relies on those grants and RLS policies: approved users see
+  shared market status and only their own portfolio/list counts. The activity
+  log is queried only for the named administrator.
 
 Data API grants and RLS are separate controls: grants determine whether a role
 can reach an object, while RLS determines which rows that role can access.
@@ -57,12 +60,18 @@ can reach an object, while RLS determines which rows that role can access.
 - Browser code may contain only the Supabase publishable/anonymous key.
 - IBKR Flex tokens and query IDs are Edge Function secrets and must never be
   exposed in HTML, JavaScript, CSV templates, logs, or repository files.
+- `GITHUB_ACTIONS_TOKEN` is an Edge Function secret used only by the
+  admin-verified `trigger-scanner` function. Restrict it to the StockScanner
+  repository with Actions read/write permission; never expose it to browser
+  code or GitHub Pages.
 - `SUPABASE_SECRET_KEY` belongs only in the protected GitHub `github-pages`
   environment or an intentionally secured backend session.
 - New `sb_secret_...` keys are sent through the `apikey` header. Legacy
   service-role JWTs may additionally require `Authorization: Bearer`.
 - Never put secret keys in HTML, JavaScript bundles, screenshots, logs,
   documentation examples, commits, issues, or chat messages.
+- Supabase platform logs require dashboard organization/project access. Never
+  place a Supabase management token in the static GitHub Pages application.
 - Rotate a key immediately if exposure is suspected, then update the GitHub
   environment secret and verify the affected workflow.
 

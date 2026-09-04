@@ -23,6 +23,8 @@
     th, td { padding: 12px; border-bottom: 1px solid #334b5f; text-align: left; }
     button { padding: 7px 12px; border: 0; border-radius: 5px; color: #10242d; background: #81c784; font-weight: 700; cursor: pointer; }
     button:disabled { opacity: .6; cursor: wait; }
+    .run-controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 12px 0 4px; }
+    .run-controls a { color: #81d4fa; }
     #message { min-height: 24px; color: #ffcc80; }
     @media (max-width: 720px) {
       body { padding: 58px 14px 32px; }
@@ -44,6 +46,14 @@
       <div class="metric">Total logins<strong id="loginCount">—</strong></div>
       <div class="metric">Total page hits<strong id="hitCount">—</strong></div>
     </section>
+    <h2>Manual scanner runs</h2>
+    <p>Start a full daily analysis or retry the current hourly price collection. Hourly collection remains limited to its valid New York market window.</p>
+    <div class="run-controls">
+      <button id="runDaily" type="button">Run daily scanner</button>
+      <button id="runHourly" type="button">Run hourly prices</button>
+      <a href="https://github.com/aksamuel/StockScanner/actions" target="_blank" rel="noopener noreferrer">View GitHub Actions</a>
+    </div>
+    <p id="runMessage" role="status" aria-live="polite"></p>
     <h2>User activity</h2>
     <div class="table-wrap">
       <table>
@@ -80,6 +90,9 @@
     const form = document.querySelector("#permissionForm");
     const permissionEmail = document.querySelector("#permissionEmail");
     const activityRows = document.querySelector("#activityRows");
+    const runMessage = document.querySelector("#runMessage");
+    const runDaily = document.querySelector("#runDaily");
+    const runHourly = document.querySelector("#runHourly");
     let adminUser;
 
     const { data: { user } } = await supabase.auth.getUser();
@@ -109,6 +122,32 @@
       message.textContent = `${email} may now create an account.`;
       await loadRequests();
     });
+
+    async function triggerWorkflow(kind, button) {
+      button.disabled = true;
+      runMessage.textContent = kind === "daily"
+        ? "Requesting a full daily scanner run…"
+        : "Requesting an hourly price update…";
+      const { data, error } = await supabase.functions.invoke("trigger-scanner", {
+        body: { kind },
+      });
+      button.disabled = false;
+      if (error) {
+        let detail = error.message;
+        try {
+          const response = await error.context?.json();
+          if (response?.error) detail = response.error;
+        } catch {
+          // Retain the client error when the response has no JSON body.
+        }
+        runMessage.textContent = detail;
+        return;
+      }
+      runMessage.textContent = data?.message || "The workflow request was accepted.";
+    }
+
+    runDaily.addEventListener("click", () => triggerWorkflow("daily", runDaily));
+    runHourly.addEventListener("click", () => triggerWorkflow("hourly", runHourly));
 
     async function loadRequests() {
       const { data, error } = await supabase

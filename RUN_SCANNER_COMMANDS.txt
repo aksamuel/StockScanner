@@ -1,4 +1,4 @@
-StockScanner v2.13.0 command reference
+StockScanner v2.15.0 command reference
 
 Run commands from C:\StockScanner. If global Python is unavailable, use
 .venv\Scripts\python.exe as shown below.
@@ -78,6 +78,17 @@ download_nyse.bat --force-yfinance
 
 Production does not read this CSV. The Daily NYSE Ticker Universe GitHub
 workflow writes the current universe to public.nyse_tickers in Supabase.
+
+
+== PRODUCTION SCHEDULE REFERENCE ==
+
+Daily NYSE ticker refresh: 3:07 AM New York time on weekdays.
+Hourly prices: 8:45 AM, then every 60 minutes through 3:45 PM New York time.
+Market close prices: separate post-close workflow candidate.
+
+The authenticated database.html page reports the latest snapshot and the
+signed-in user's RLS-filtered record counts. The application administrator can
+also view recent activity and open the protected Supabase Logs Explorer.
 
 
 == RUN ALL TESTS ==

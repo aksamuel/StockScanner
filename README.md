@@ -1,11 +1,11 @@
-# StockScanner v2.14.0
+# StockScanner v2.15.0
 
 [![Stock Scanner](https://github.com/aksamuel/StockScanner/actions/workflows/scan.yml/badge.svg)](https://github.com/aksamuel/StockScanner/actions/workflows/scan.yml)
 
 StockScanner scans a watchlist or the NYSE universe, calculates technical and
 analyst signals, sizes positions, and produces Excel and GitHub Pages reports.
 
-**Stable release: v2.14.0** — reliable daily-universe scanning, current and
+**Stable release: v2.15.0** — reliable daily-universe scanning, current and
 previous-close market prices, purchased-position coverage, Supabase-only
 hourly storage, and operational run telemetry.
 
@@ -23,17 +23,23 @@ AI-powered features with ChatGPT integration were introduced in v2.11.0. 🤖
 - Excel reports and linked HTML dashboards
 - Supabase Auth with administrator-controlled account approval
 - Admin-only activity and user-management pages
+- Admin-only manual daily-scan and hourly-price workflow controls
 - Per-user exception and bought-selection lists protected by RLS
 - On-demand user portfolio imports from IBKR Flex or a broker CSV
 - Rule-based portfolio profit/loss, holding-time, target, and stop reviews, with a 7% profit-review threshold and conservative automatic targets from technical, resistance, analyst-proxy, and return-objective inputs
 - Current profit/loss percentage for purchased positions
 - Bought-position time-to-profit status and benchmark-based breakeven-day scenarios
-- Daily Supabase NYSE universe refresh at 8:07 AM New York time
+- Daily Supabase NYSE universe refresh at 3:07 AM New York time
 - One-market-day intraday price storage, including the latest hourly quote,
   previous close, and current market close
+- Hourly price collection from 8:45 AM through 3:45 PM New York time
+- Authenticated database overview with RLS-safe personal counts and an
+  administrator-only application activity log
 - Daily scanner health counts for downloads, history, price/liquidity filters,
   and analysis failures
 - Responsive desktop and mobile dashboards with a collapsible left navigation drawer
+- Sortable columns across market-data, administration, personal-list, portfolio,
+  and generated scanner tables
 - Clickable KPI cards with searchable Strong Buy, Buy, Accumulate, Watch, Avoid,
   and complete scanned-stock lists
 - AI-powered stock analysis with ChatGPT 🎯
@@ -186,7 +192,8 @@ Each run creates files under `reports\\YYYY-MM-DD\\`:
 | `my-exceptions.html` | Signed-in user's personal exclusions |
 | `my-bought-selection.html` | Signed-in user's purchased positions and profit/loss |
 | `portfolio-analysis.html` | User-owned IBKR/CSV holdings and review signals |
-| `admin.html` | Admin-only activity and usage metrics |
+| `database.html` | Approved-user database overview with RLS-scoped counts |
+| `admin.html` | Admin-only activity, usage metrics, and manual workflow controls |
 | `users.html` | Admin-only accept, block, and delete controls |
 | `login.html` | Sign-in and approved-user registration |
 
@@ -208,6 +215,10 @@ The personal Exception List and Bought Selection are intentionally separate:
 - **Bought Selection** records a position the user owns or tracks, including
   quantity, buy price, and current profit/loss.
 
+Table headers are interactive throughout the protected application. Select a
+header to sort ascending and select it again to sort descending. The Technical
+Analysis page keeps Entry and Targets 1–3 immediately beside Symbol.
+
 The bought list also shows days held and an estimated breakeven period for a
 losing position. The scenario compounds the Equal-weight Top 20's observed
 one-year daily return until the position would recover its buy price. It is a
@@ -225,7 +236,7 @@ longer create GitHub issues.
 
 | Data | Supabase table | Retention | Schedule |
 |---|---|---|---|
-| NYSE universe | `public.nyse_tickers` | Current rows only | Weekdays at 8:07 AM New York time |
+| NYSE universe | `public.nyse_tickers` | Current rows only | Weekdays at 3:07 AM New York time |
 | Hourly prices | `public.price_snapshots` | One singleton row; one New York market day | Weekdays during market hours plus a closing-price window |
 | Price-run telemetry | `public.price_collection_runs` | Operational slot records | Every hourly or close attempt |
 | Scanner-run telemetry | `public.scanner_run_state` | Operational daily lease | Every universe-scan attempt |
@@ -267,10 +278,13 @@ price JSON or redeploy GitHub Pages. Each run first reads the singleton row,
 updates it, and writes it back. When the New York market date changes, prior
 intraday samples are discarded while the prior close is retained as the new
 day's comparison baseline. A separate close run records today's market close.
-Per-slot database leases make delayed or duplicate GitHub cron events safe.
+The first hourly run is scheduled for 8:45 AM New York time, followed by runs
+at 60-minute intervals through 3:45 PM. Per-slot database leases make delayed
+or duplicate GitHub cron events safe. A separate post-close candidate records
+the market close.
 
 The production universe scan normally starts immediately after the confirmed
-8:07 AM ticker refresh. A 9:17 AM schedule remains as the primary safety net,
+3:07 AM ticker refresh. A 9:17 AM schedule remains as the primary safety net,
 with a 10:47 AM fallback if GitHub delays or misses an earlier cron event. An
 atomic Supabase daily-run lease prevents these triggers from producing duplicate
 reports. The scanner refuses a stale universe or fewer than 2,000 NYSE rows,
@@ -280,6 +294,13 @@ only as workflow artifacts and never replace the last successful site.
 
 Live site: <https://aksamuel.github.io/StockScanner/>
 
+Approved users can inspect current market-data status and counts for their own
+Supabase records from `database.html`. The administrator additionally sees the
+latest StockScanner activity events there. Supabase infrastructure, API, Auth,
+Postgres, and Edge Function logs remain in the protected Supabase Logs Explorer;
+the management credential required for those logs is never exposed in the
+static site.
+
 ## Testing
 
 ```powershell
@@ -287,7 +308,7 @@ cd C:\StockScanner
 .\.venv\Scripts\python.exe -m pytest -q
 ```
 
-The `v2.14.0` release is verified by the complete automated test suite before
+The `v2.15.0` release is verified by the complete automated test suite before
 deployment.
 
 ## License

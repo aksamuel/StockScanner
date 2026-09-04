@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Database overview | StockScanner</title>
+  <style data-stockscanner-auth>html:not(.auth-ready) { visibility: hidden; }</style>
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 62px 24px 40px; overflow-x: clip; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #e0e0e0; background: #0f1923; }
+    main { width: min(100%, 1100px); margin: auto; }
+    h1 { margin: 0; color: #4fc3f7; font-size: 1.45rem; line-height: 1.2; }
+    h2 { margin: 24px 0 10px; color: #b3e5fc; font-size: 1.12rem; }
+    .subtitle { margin: 4px 0 0; color: #90a4ae; font-size: .88rem; }
+    .page-header { display: flex; gap: 10px; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+    button, .button-link { padding: 7px 11px; border: 1px solid #4fc3f7; border-radius: 6px; color: #4fc3f7; background: transparent; font: inherit; font-weight: 700; text-decoration: none; cursor: pointer; }
+    button:disabled { opacity: .55; cursor: wait; }
+    .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin: 16px 0; }
+    .metric { min-height: 92px; padding: 14px; border: 1px solid #334b5f; border-radius: 9px; background: #1a2a3a; }
+    .metric span { display: block; color: #90a4ae; font-size: .82rem; }
+    .metric strong { display: block; margin-top: 7px; color: #81d4fa; font-size: 1.45rem; }
+    .table-wrap { width: calc(100vw - 48px); margin-left: calc(50% - 50vw + 24px); overflow-x: auto; border: 1px solid #334b5f; border-radius: 9px; }
+    table { width: 100%; border-collapse: collapse; background: #1a2a3a; }
+    th, td { padding: 10px 12px; border-bottom: 1px solid #334b5f; text-align: left; vertical-align: top; }
+    th { color: #b3e5fc; background: #142433; white-space: nowrap; }
+    tr:last-child td { border-bottom: 0; }
+    code { color: #b9f6ca; }
+    .status { min-height: 24px; color: #ffcc80; }
+    .scope { color: #90caf9; white-space: nowrap; }
+    .admin-panel { padding: 14px; border: 1px solid #795548; border-radius: 9px; background: #211b18; }
+    .admin-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; }
+    .admin-note { margin: 8px 0 0; color: #bcaaa4; }
+    [hidden] { display: none !important; }
+    @media (max-width: 720px) {
+      body { padding: 58px 14px 32px; }
+      .table-wrap { width: calc(100vw - 28px); margin-left: calc(50% - 50vw + 14px); }
+      th, td { padding: 9px; white-space: nowrap; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="page-header">
+      <div>
+        <h1>Supabase database overview</h1>
+        <p class="subtitle">Live operational status with row-level security applied.</p>
+      </div>
+      <button id="refresh" type="button">Refresh</button>
+    </div>
+    <p id="message" class="status" role="status" aria-live="polite">Loading database status…</p>
+
+    <section class="metrics" aria-label="Database summary">
+      <div class="metric"><span>Latest price update</span><strong id="priceUpdated">—</strong></div>
+      <div class="metric"><span>Stored stock prices</span><strong id="priceCount">—</strong></div>
+      <div class="metric"><span>Prices refreshed</span><strong id="updatedCount">—</strong></div>
+      <div class="metric"><span>Price failures</span><strong id="failedCount">—</strong></div>
+      <div class="metric"><span>My portfolio rows</span><strong id="portfolioCount">—</strong></div>
+      <div class="metric"><span>My personal lists</span><strong id="listCount">—</strong></div>
+    </section>
+
+    <h2>Available data</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Table</th><th>Purpose</th><th>Visible data</th><th>Rows/status</th></tr></thead>
+        <tbody id="catalogRows"></tbody>
+      </table>
+    </div>
+
+    <section id="adminLogs" class="admin-panel" hidden>
+      <div class="admin-actions">
+        <div>
+          <h2>Administrator logs</h2>
+          <p class="admin-note">The table below contains the latest 250 StockScanner login, page-view, and logout events.</p>
+        </div>
+        <a class="button-link" href="https://supabase.com/dashboard/project/cszzbkssxxgwgafwuonc/logs/explorer" target="_blank" rel="noopener noreferrer">Open Supabase Logs Explorer</a>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Time</th><th>User</th><th>Event</th><th>Page</th></tr></thead>
+          <tbody id="logRows"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+  <script type="module" src="/StockScanner/auth.js" data-stockscanner-auth></script>
+  <script type="module">
+    import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.112.3/+esm";
+
+    const ADMIN_EMAIL = "aaksamuel@zohomail.com";
+    const supabase = createClient(
+      "https://cszzbkssxxgwgafwuonc.supabase.co",
+      "sb_publishable_VnhkG4H4acjm2Hp1k5tzyw_I9xtUrGI",
+      { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } },
+    );
+    const message = document.querySelector("#message");
+    const refresh = document.querySelector("#refresh");
+
+    refresh.addEventListener("click", loadOverview);
+
+    function formatTime(value) {
+      return value ? new Date(value).toLocaleString() : "Unavailable";
+    }
+
+    function countQuery(table) {
+      return supabase.from(table).select("*", { count: "exact", head: true });
+    }
+
+    function addCatalogRow(table, purpose, scope, value) {
+      const row = document.createElement("tr");
+      for (const [text, className] of [
+        [table, ""], [purpose, ""], [scope, "scope"], [value, ""],
+      ]) {
+        const cell = document.createElement("td");
+        if (table === text) {
+          const code = document.createElement("code");
+          code.textContent = text;
+          cell.append(code);
+        } else {
+          cell.textContent = text;
+        }
+        if (className) cell.className = className;
+        row.append(cell);
+      }
+      return row;
+    }
+
+    async function loadOverview() {
+      refresh.disabled = true;
+      message.textContent = "Loading database status…";
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const [snapshotResult, portfolioResult, importsResult, exceptionsResult, boughtResult] = await Promise.all([
+        supabase.from("price_snapshots").select("generated_at,market_date,collection_kind,symbol_count,updated_count,failed_count,provider_counts").eq("source", "hourly_yahoo").maybeSingle(),
+        countQuery("user_portfolio_holdings"),
+        countQuery("user_portfolio_imports"),
+        countQuery("user_exceptions"),
+        countQuery("user_bought_selections"),
+      ]);
+      const error = snapshotResult.error || portfolioResult.error || importsResult.error || exceptionsResult.error || boughtResult.error;
+      if (error) {
+        message.textContent = `Unable to load database status: ${error.message}`;
+        refresh.disabled = false;
+        return;
+      }
+
+      const snapshot = snapshotResult.data;
+      const portfolioCount = portfolioResult.count || 0;
+      const importsCount = importsResult.count || 0;
+      const exceptionsCount = exceptionsResult.count || 0;
+      const boughtCount = boughtResult.count || 0;
+      document.querySelector("#priceUpdated").textContent = formatTime(snapshot?.generated_at);
+      document.querySelector("#priceCount").textContent = snapshot?.symbol_count ?? 0;
+      document.querySelector("#updatedCount").textContent = snapshot?.updated_count ?? 0;
+      document.querySelector("#failedCount").textContent = snapshot?.failed_count ?? 0;
+      document.querySelector("#portfolioCount").textContent = portfolioCount;
+      document.querySelector("#listCount").textContent = exceptionsCount + boughtCount;
+
+      const rows = [
+        addCatalogRow("price_snapshots", "Latest hourly, daily-close, and intraday price data", "All approved users", snapshot ? `${snapshot.symbol_count} symbols; ${snapshot.collection_kind}` : "No snapshot"),
+        addCatalogRow("nyse_tickers", "Current daily NYSE ticker universe", "Backend protected", "Maintained by scheduled workflow"),
+        addCatalogRow("user_portfolio_holdings", "Imported broker positions and analysis inputs", "My records only", `${portfolioCount} rows`),
+        addCatalogRow("user_portfolio_imports", "Latest import status for each broker", "My records only", `${importsCount} brokers`),
+        addCatalogRow("user_exceptions", "Personal scanner exclusions", "My records only", `${exceptionsCount} rows`),
+        addCatalogRow("user_bought_selections", "Personal bought-stock selections", "My records only", `${boughtCount} rows`),
+        addCatalogRow("user_access", "Account approval status", "My status; all rows for admin", "RLS protected"),
+        addCatalogRow("user_activity_events", "Login, page-view, and logout audit trail", "Administrator only", "RLS protected"),
+        addCatalogRow("scanner_run_state", "Daily scanner workflow state", "Backend only", "Operational telemetry"),
+        addCatalogRow("price_collection_runs", "Hourly workflow run state", "Backend only", "Operational telemetry"),
+      ];
+      document.querySelector("#catalogRows").replaceChildren(...rows);
+
+      if ((user.email || "").toLowerCase() === ADMIN_EMAIL) await loadAdminLogs();
+      message.textContent = `Database status refreshed for ${user.email}.`;
+      refresh.disabled = false;
+    }
+
+    async function loadAdminLogs() {
+      const [eventsResult, accessResult] = await Promise.all([
+        supabase.from("user_activity_events").select("user_id,event_type,page_path,occurred_at").order("occurred_at", { ascending: false }).limit(250),
+        supabase.from("user_access").select("user_id,email"),
+      ]);
+      if (eventsResult.error || accessResult.error) {
+        message.textContent = `Database loaded, but application logs are unavailable: ${(eventsResult.error || accessResult.error).message}`;
+        return;
+      }
+      const emailByUser = new Map(accessResult.data.map((item) => [item.user_id, item.email]));
+      const rows = eventsResult.data.map((event) => {
+        const row = document.createElement("tr");
+        for (const value of [
+          formatTime(event.occurred_at),
+          emailByUser.get(event.user_id) || "Unknown user",
+          event.event_type,
+          event.page_path || "—",
+        ]) {
+          const cell = document.createElement("td");
+          cell.textContent = value;
+          row.append(cell);
+        }
+        return row;
+      });
+      if (!rows.length) rows.push(addCatalogRow("—", "No application events recorded", "", ""));
+      document.querySelector("#logRows").replaceChildren(...rows);
+      document.querySelector("#adminLogs").hidden = false;
+    }
+
+    await loadOverview();
+  </script>
+</body>
+</html>

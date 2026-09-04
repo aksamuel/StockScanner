@@ -30,6 +30,7 @@ from .portfolio_symbols import (
 NEW_YORK = ZoneInfo("America/New_York")
 MARKET_OPEN = time(9, 30)
 MARKET_CLOSE = time(16, 0)
+HOURLY_COLLECTION_START = time(8, 45)
 CLOSE_COLLECTION_END = time(18, 0)
 REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_SNAPSHOT_PATH = REPOSITORY_ROOT / "prices.json"
@@ -96,14 +97,14 @@ def is_regular_market_session(moment=None):
 
 
 def is_price_collection_window(moment=None, *, close_run=False):
-    """Allow regular snapshots in-session and a dedicated post-close snapshot."""
+    """Allow hourly snapshots from 08:45 and a dedicated post-close snapshot."""
     local = _new_york_time(moment)
     if local.weekday() >= 5:
         return False
     local_time = local.time().replace(tzinfo=None)
     if close_run:
         return MARKET_CLOSE <= local_time <= CLOSE_COLLECTION_END
-    return MARKET_OPEN <= local_time < MARKET_CLOSE
+    return HOURLY_COLLECTION_START <= local_time < MARKET_CLOSE
 
 
 def _valid_price(value):
