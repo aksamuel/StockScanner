@@ -1,4 +1,4 @@
-StockScanner v2.13.0 package testing instructions
+StockScanner v2.15.0 package testing instructions
 
 Run these commands from C:\StockScanner.
 
@@ -18,8 +18,8 @@ Run these commands from C:\StockScanner.
 
     python -m pytest -q
 
-The v2.13.0 production package passed 113 tests. A later test count can be higher
-as new coverage is added; success means the command exits with no failures.
+The v2.15.0 production package passed 141 tests. A later count can be higher as
+coverage is added; success means the command exits with no failures.
 
 4. Confirm package-version consistency
 
@@ -27,10 +27,10 @@ as new coverage is added; success means the command exits with no failures.
 
 Expected stable version:
 
-    2.13.0
+    2.15.0
 
 The same version must appear in stockscanner\__init__.py, pyproject.toml,
-README.md, and STABLE_RELEASE_2_13_0.txt.
+README.md, and STABLE_RELEASE_2_15_0.txt.
 
 5. Check the CLI entry point
 
@@ -53,9 +53,9 @@ rate-limit a test; retry only after confirming the error is external.
 Do not run a production refresh from a developer PC unless SUPABASE_URL and
 SUPABASE_SECRET_KEY were intentionally provided for that test.
 
-8. Test the latest-only hourly snapshot integration
+8. Test the latest-only hourly snapshot and database overview
 
-    python -m pytest -q tests\test_supabase_snapshot.py tests\test_price_snapshot.py
+    python -m pytest -q tests\test_supabase_snapshot.py tests\test_price_snapshot.py tests\test_database_page.py
 
 9. Validate documentation and source formatting
 
@@ -68,6 +68,8 @@ Production acceptance criteria
 - Daily NYSE workflow updates public.nyse_tickers atomically.
 - The production scanner reads the universe from Supabase.
 - public.price_snapshots contains only the latest hourly_yahoo row.
+- The first hourly collection is scheduled for 8:45 AM New York time, followed
+  by 60-minute intervals through 3:45 PM and a separate post-close run.
 - Auth pages reject unapproved users.
 - Admin pages are limited to aaksamuel@zohomail.com.
 - Each user can access only their own exception and bought-selection rows.
@@ -75,10 +77,12 @@ Production acceptance criteria
 - KPI cards open the matching full scanned-stock lists.
 - Bought-list breakeven estimates use the documented Equal-weight Top 20 scenario.
 - GitHub Pages deploys successfully and protected pages redirect signed-out users.
+- database.html shows only shared market status and RLS-filtered personal counts;
+  activity logs and the Supabase Logs Explorer link appear only for the admin.
 
 Ticker storage note
 
 The production ticker universe is not stored in a GitHub CSV. It is stored in
-public.nyse_tickers and replaced once per weekday at or after 8:00 AM New York
+public.nyse_tickers and replaced once per weekday at or after 3:07 AM New York
 time. The legacy local CSV downloader remains available only for local testing
 and recovery.

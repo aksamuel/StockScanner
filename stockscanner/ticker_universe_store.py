@@ -332,6 +332,14 @@ def main(argv=None):
         type=Path,
         help="Append stored/date outputs for a GitHub Actions step.",
     )
+    parser.add_argument(
+        "--not-before-hour",
+        type=int,
+        choices=range(24),
+        default=8,
+        metavar="HOUR",
+        help="Earliest New York hour for scheduled refreshes (default: 8).",
+    )
     args = parser.parse_args(argv)
 
     try:
@@ -339,6 +347,7 @@ def main(argv=None):
             supabase_url=os.environ.get("SUPABASE_URL", ""),
             secret_key=os.environ.get("SUPABASE_SECRET_KEY", ""),
             force=args.force,
+            not_before_hour=args.not_before_hour,
         )
     except TickerUniverseStoreError as exc:
         parser.error(str(exc))

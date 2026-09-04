@@ -27,6 +27,7 @@ on:
       - "portfolio-analysis.js"
       - "market-prices.html"
       - "market-prices.js"
+      - "database.html"
       - "portfolio-holdings-template.csv"
       - "personal-lists.css"
       - "personal-lists.js"

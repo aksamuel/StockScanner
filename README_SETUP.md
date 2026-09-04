@@ -1,4 +1,4 @@
-# StockScanner v2.14.0 setup and operations
+# StockScanner v2.15.0 setup and operations
 
 Windows PowerShell commands to create and activate a virtual environment, install dependencies from `requirements.txt`, and verify installation.
 
@@ -153,7 +153,7 @@ Apply the migrations in timestamp order:
 
 The final two migrations add backend-only daily-scan and price-collection
 leases, scanner/price telemetry, previous-close and market-close fields, and
-purchased-position coverage. Apply them before deploying v2.14.0 workflows.
+purchased-position coverage. Apply them before deploying v2.15.0 workflows.
 
 ## Activate invite-only Supabase authentication
 
@@ -180,7 +180,7 @@ cascading. Blocked or rejected users cannot use the protected application pages.
 Apply both market-data migrations listed above, then keep
 `SUPABASE_SECRET_KEY` in the protected GitHub `github-pages` environment.
 The **Daily NYSE Ticker Universe** workflow refreshes `public.nyse_tickers`
-once each weekday at or after 8:07 AM New York time. It uses both possible UTC
+once each weekday at or after 3:07 AM New York time. It uses both possible UTC
 hours plus database date guards so daylight-saving changes and delayed GitHub
 jobs do not create duplicate downloads.
 
@@ -205,6 +205,12 @@ distinct symbols in `public.user_portfolio_holdings`. This keeps the daily scan
 NYSE-only while still pricing existing NASDAQ and AMEX holdings. The workflow
 uses `SUPABASE_SECRET_KEY` to read only the holdings' `symbol` column; it never
 places portfolio rows or the secret in the public site.
+
+The authenticated `database.html` page shows the current price-snapshot status
+and RLS-filtered counts for the signed-in user's portfolio and personal lists.
+For `aaksamuel@zohomail.com`, it also shows recent application activity and a
+link to the protected Supabase Logs Explorer. Never put a Supabase management
+token or secret key in this static page.
 
 The combined list is split evenly between Alpaca and Yahoo. Missing or timed-out
 prices cross over to the other provider once, then up to eight remaining gaps
@@ -274,9 +280,9 @@ code or GitHub Pages.
 
 | Workflow | Purpose | Schedule |
 |---|---|---|
-| `ticker-universe.yml` | Atomically replaces `public.nyse_tickers` | Once per weekday at or after 8:07 AM New York time |
+| `ticker-universe.yml` | Atomically replaces `public.nyse_tickers` | Once per weekday at or after 3:07 AM New York time |
 | `scan.yml` | Runs the universe scan and publishes GitHub Pages | After a successful ticker refresh, with 9:17 AM primary and 10:47 AM fallback schedules |
-| `price-snapshot.yml` | Updates hourly/current, previous-close, and market-close prices directly in Supabase | Weekday candidate slots during market hours and the close window, plus manual dispatch |
+| `price-snapshot.yml` | Updates hourly/current, previous-close, and market-close prices directly in Supabase | Weekdays at 8:45 AM New York time, then every 60 minutes through 3:45 PM, plus a post-close run and manual dispatch |
 | `invite-admin.yml` | Invites or promotes an administrator without handling a password | Manual only |
 
 GitHub cron is UTC-only and may deliver runs several hours late. The ticker and

@@ -519,6 +519,7 @@ function addNavigationDrawer(user) {
     ["Scanner", "Analysts rating", "analysts.html"],
     ["Scanner", "Bought candidates", "bought-selection.html"],
     ["Market data", "Hourly & daily prices", "market-prices.html"],
+    ["Market data", "Database overview", "database.html"],
     ["My lists", "My exceptions", "my-exceptions.html"],
     ["My lists", "My bought list", "my-bought-selection.html"],
     ["My lists", "Portfolio analysis", "portfolio-analysis.html"],

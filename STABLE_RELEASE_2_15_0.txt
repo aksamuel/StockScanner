@@ -1,0 +1,36 @@
+StockScanner stable release 2.15.0
+
+Package
+  - Name: stockscanner
+  - Version: 2.15.0
+  - Production branch: main
+  - Stable branch: stable/v2.15.0
+  - Release tag: v2.15.0
+  - Release verification: 141 tests passed
+
+Production data
+  - Current NYSE ticker universe: public.nyse_tickers
+  - Current hourly/close price singleton: public.price_snapshots
+  - Scanner and price run telemetry: public.scanner_run_state and
+    public.price_collection_runs
+  - User portfolios, imports, exception lists, and bought lists remain private
+    through Supabase RLS
+
+Production schedules
+  - NYSE ticker refresh: weekdays at 3:07 AM New York time
+  - Hourly price refresh: 8:45 AM, then every 60 minutes through 3:45 PM
+  - Closing-price refresh: separate post-close candidate
+
+Pages
+  - database.html is available to approved users and exposes only safe shared
+    status plus the current user's RLS-filtered counts
+  - Recent application activity and the Supabase Logs Explorer link are visible
+    only to aaksamuel@zohomail.com
+
+Documentation
+  - README.md: product overview and production architecture
+  - README_SETUP.md: setup, Supabase, workflows, and operations
+  - RUN_SCANNER_COMMANDS.txt: Windows/local command reference
+  - PACKAGE_TESTING_INSTRUCTIONS.txt: release verification
+  - SECURITY.md: supported versions and security controls
+  - RELEASE_NOTES_v2.15.0.md: release changes

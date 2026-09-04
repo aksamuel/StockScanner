@@ -10,13 +10,13 @@ on:
       - "stockscanner/universe.py"
       - "supabase/migrations/**"
   # GitHub cron is UTC-only. Running at both candidate UTC hours and applying
-  # New York/date guards in Python produces one refresh at 08:07 through DST.
+  # New York/date guards in Python produce one refresh at 03:07 through DST.
   # Minute 7 avoids GitHub Actions' busiest top-of-hour scheduling window.
   schedule:
-    - cron: "7 12,13 * * 1-5"
+    - cron: "7 7,8 * * 1-5"
     # Additional non-peak candidates protect against delayed/dropped GitHub
     # cron events. The New York date guard keeps only the first successful run.
-    - cron: "37 14,15 * * 1-5"
+    - cron: "37 9,10 * * 1-5"
 
 permissions:
   actions: write
@@ -61,6 +61,7 @@ jobs:
           fi
           python -m stockscanner.ticker_universe_store \
             $FORCE_FLAG \
+            --not-before-hour 3 \
             --github-output "$GITHUB_OUTPUT"
 
       - name: Trigger full scanner after successful ticker refresh
