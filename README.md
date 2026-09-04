@@ -23,6 +23,7 @@ AI-powered features with ChatGPT integration were introduced in v2.11.0. 🤖
 - Excel reports and linked HTML dashboards
 - Supabase Auth with administrator-controlled account approval
 - Admin-only activity and user-management pages
+- Admin-only manual daily-scan and hourly-price workflow controls
 - Per-user exception and bought-selection lists protected by RLS
 - On-demand user portfolio imports from IBKR Flex or a broker CSV
 - Rule-based portfolio profit/loss, holding-time, target, and stop reviews, with a 7% profit-review threshold and conservative automatic targets from technical, resistance, analyst-proxy, and return-objective inputs
@@ -37,6 +38,8 @@ AI-powered features with ChatGPT integration were introduced in v2.11.0. 🤖
 - Daily scanner health counts for downloads, history, price/liquidity filters,
   and analysis failures
 - Responsive desktop and mobile dashboards with a collapsible left navigation drawer
+- Sortable columns across market-data, administration, personal-list, portfolio,
+  and generated scanner tables
 - Clickable KPI cards with searchable Strong Buy, Buy, Accumulate, Watch, Avoid,
   and complete scanned-stock lists
 - AI-powered stock analysis with ChatGPT 🎯
@@ -189,7 +192,8 @@ Each run creates files under `reports\\YYYY-MM-DD\\`:
 | `my-exceptions.html` | Signed-in user's personal exclusions |
 | `my-bought-selection.html` | Signed-in user's purchased positions and profit/loss |
 | `portfolio-analysis.html` | User-owned IBKR/CSV holdings and review signals |
-| `admin.html` | Admin-only activity and usage metrics |
+| `database.html` | Approved-user database overview with RLS-scoped counts |
+| `admin.html` | Admin-only activity, usage metrics, and manual workflow controls |
 | `users.html` | Admin-only accept, block, and delete controls |
 | `login.html` | Sign-in and approved-user registration |
 
@@ -210,6 +214,10 @@ The personal Exception List and Bought Selection are intentionally separate:
 - **Exception List** means a ticker must not be considered by that user.
 - **Bought Selection** records a position the user owns or tracks, including
   quantity, buy price, and current profit/loss.
+
+Table headers are interactive throughout the protected application. Select a
+header to sort ascending and select it again to sort descending. The Technical
+Analysis page keeps Entry and Targets 1–3 immediately beside Symbol.
 
 The bought list also shows days held and an estimated breakeven period for a
 losing position. The scenario compounds the Equal-weight Top 20's observed

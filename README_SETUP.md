@@ -276,6 +276,20 @@ Supabase Edge Function secrets named `IBKR_FLEX_TOKEN` and
 verification handled by the function. Never put either IBKR value in browser
 code or GitHub Pages.
 
+### Configure admin manual scanner controls
+
+The admin dashboard provides **Run daily scanner** and **Run hourly prices**
+buttons only to `aaksamuel@zohomail.com`. Create a fine-grained GitHub personal
+access token scoped only to `aksamuel/StockScanner`, grant it **Actions: Read
+and write**, and store it as the Supabase Edge Function secret
+`GITHUB_ACTIONS_TOKEN`. Deploy the `trigger-scanner` Edge Function after that
+secret is configured. Never place the token in `admin.html`, browser storage,
+GitHub Pages, or a repository secret used by client code.
+
+The daily button dispatches a forced full-universe scan. The hourly button
+dispatches the hourly price workflow, whose New York market-window validation
+still applies. The dashboard links to GitHub Actions for progress and logs.
+
 ## Production GitHub workflows
 
 | Workflow | Purpose | Schedule |

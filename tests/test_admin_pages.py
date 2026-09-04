@@ -37,6 +37,29 @@ def test_admin_dashboard_contains_activity_metrics():
         assert metric in source
 
 
+def test_admin_dashboard_can_request_manual_scanner_runs():
+    source = read("admin.html")
+    assert 'id="runDaily"' in source
+    assert 'id="runHourly"' in source
+    assert 'supabase.functions.invoke("trigger-scanner"' in source
+    assert 'triggerWorkflow("daily"' in source
+    assert 'triggerWorkflow("hourly"' in source
+
+
+def test_scanner_trigger_function_verifies_admin_and_keeps_github_token_server_side():
+    source = read("supabase/functions/trigger-scanner/index.ts")
+    verified_user = source.index("userClient.auth.getUser()")
+    admin_email_check = source.index("!== ADMIN_EMAIL", verified_user)
+    github_token = source.index('Deno.env.get("GITHUB_ACTIONS_TOKEN")', admin_email_check)
+    assert verified_user < admin_email_check < github_token
+    assert 'file: "scan.yml"' in source
+    assert 'file: "price-snapshot.yml"' in source
+    assert 'inputs: { mode: "universe"' in source
+    assert 'inputs: { mode: "hourly"' in source
+    assert "github_pat_" not in source
+    assert "ghp_" not in source
+
+
 def test_user_management_offers_requested_actions():
     source = read("users.html")
     for action in ("accept", "block", "delete"):

@@ -22,6 +22,17 @@ Released as the stable scheduling and database-visibility release.
 - Links the administrator to Supabase Logs Explorer without exposing a
   management token or backend secret in browser code.
 
+## Administration and tables
+
+- Adds admin-only buttons to dispatch a forced daily universe scan or an hourly
+  price update through the authenticated `trigger-scanner` Edge Function.
+- Keeps the repository-scoped GitHub Actions token in Supabase Edge Function
+  secrets rather than exposing it to the static site.
+- Adds ascending and descending sorting to all applicable application tables,
+  including dynamically refreshed market-price and administration rows.
+- Moves Entry and Targets 1–3 directly beside Symbol on the Technical Analysis
+  page and preserves that order in future generated reports.
+
 ## Reliability
 
 - Allows the 8:45 AM pre-market snapshot while preserving the 9:30 AM regular
@@ -33,6 +44,6 @@ Released as the stable scheduling and database-visibility release.
 
 ## Verification
 
-- Complete Python test suite passes: 141 tests.
+- Complete Python test suite passes: 147 tests.
 - GitHub workflow YAML parses successfully.
 - Documentation and package version references are synchronized to v2.15.0.

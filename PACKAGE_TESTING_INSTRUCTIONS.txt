@@ -18,7 +18,7 @@ Run these commands from C:\StockScanner.
 
     python -m pytest -q
 
-The v2.15.0 production package passed 141 tests. A later count can be higher as
+The v2.15.0 production package passed 147 tests. A later count can be higher as
 coverage is added; success means the command exits with no failures.
 
 4. Confirm package-version consistency
@@ -64,7 +64,7 @@ SUPABASE_SECRET_KEY were intentionally provided for that test.
 Production acceptance criteria
 
 - All tests pass.
-- Package version reports 2.13.0.
+- Package version reports 2.15.0.
 - Daily NYSE workflow updates public.nyse_tickers atomically.
 - The production scanner reads the universe from Supabase.
 - public.price_snapshots contains only the latest hourly_yahoo row.
@@ -72,6 +72,10 @@ Production acceptance criteria
   by 60-minute intervals through 3:45 PM and a separate post-close run.
 - Auth pages reject unapproved users.
 - Admin pages are limited to aaksamuel@zohomail.com.
+- The admin dashboard dispatches daily/hourly workflows only through the
+  admin-verified trigger-scanner Edge Function.
+- All applicable table columns sort in both directions, and Technical Analysis
+  places Entry and Targets 1-3 immediately beside Symbol.
 - Each user can access only their own exception and bought-selection rows.
 - The shared responsive navigation drawer works with pointer and keyboard input.
 - KPI cards open the matching full scanned-stock lists.

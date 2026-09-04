@@ -60,6 +60,10 @@ can reach an object, while RLS determines which rows that role can access.
 - Browser code may contain only the Supabase publishable/anonymous key.
 - IBKR Flex tokens and query IDs are Edge Function secrets and must never be
   exposed in HTML, JavaScript, CSV templates, logs, or repository files.
+- `GITHUB_ACTIONS_TOKEN` is an Edge Function secret used only by the
+  admin-verified `trigger-scanner` function. Restrict it to the StockScanner
+  repository with Actions read/write permission; never expose it to browser
+  code or GitHub Pages.
 - `SUPABASE_SECRET_KEY` belongs only in the protected GitHub `github-pages`
   environment or an intentionally secured backend session.
 - New `sb_secret_...` keys are sent through the `apikey` header. Legacy
