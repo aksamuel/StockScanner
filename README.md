@@ -274,8 +274,9 @@ are never truncated or changed.
   authenticated stock history is available. The calculation counts non-overlapping
   declines at least as deep as the current loss, reports completed and unresolved
   recoveries, and shows median calendar days for completed recoveries only.
-  Historical data retrieval is not enabled in this release pending permission
-  for ticker-only Yahoo Finance lookups; the benchmark breakeven date remains
+  Historical data is retrieved through an authenticated function using ticker-only
+  Yahoo Finance lookups for losing long positions. No account details, quantities,
+  or purchase prices are sent to Yahoo. The benchmark breakeven date remains
   available independently. Missing history never creates a recovery prediction.
 - Displayed dates and manual date entry use **dd/mmm/yyyy**, for example
   `05/Sep/2026`. CSV templates use the same format; ISO dates remain supported

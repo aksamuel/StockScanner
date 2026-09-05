@@ -233,6 +233,8 @@
     let portfolioFilter = "all";
     let benchmarkMetrics = null;
     let stockHistory = {};
+    const historyLoading = new Set();
+    const historyErrors = {};
 
     if (user) await loadPortfolio();
     filter.addEventListener("input", renderPortfolio);
@@ -329,7 +331,7 @@
       if (scannerResult.targetWarnings?.length) warnings.push(`Automatic targets are limited: ${scannerResult.targetWarnings.join(" ")}`);
       if (warnings.length) setMessage(message, `Portfolio loaded. ${warnings.join(" ")}`);
       renderPortfolio();
-      // Enable authenticated history retrieval after provider access is approved.
+      void loadStockHistory();
     }
 
     async function loadDailyScannerSignals() {
@@ -425,14 +427,23 @@
     }
 
     async function loadStockHistory() {
-      const symbols = [...new Set(holdings.map((holding) => holding.symbol))];
+      const symbols = [...new Set(holdings.filter((holding) => Number(holding.quantity) > 0
+        && holdingReturnPercent(holding, currentQuote(holding).price) < 0).map((holding) => holding.symbol))];
+      symbols.forEach((symbol) => historyLoading.add(symbol));
+      renderPortfolio();
       for (let offset = 0; offset < symbols.length; offset += 4) {
         await Promise.all(symbols.slice(offset, offset + 4).map(async (symbol) => {
-          if (stockHistory[symbol]) return;
           try {
+            if (stockHistory[symbol] && Date.now() - Date.parse(stockHistory[symbol].generated_at) < 3600000) return;
+            delete historyErrors[symbol];
             const { data, error } = await supabase.functions.invoke("portfolio-history", { body: { symbol } });
             if (!error && data?.points) stockHistory[symbol] = data;
-          } catch { /* The estimate remains usable when stock history is unavailable. */ }
+            else historyErrors[symbol] = "Stock history is temporarily unavailable. Refresh the page to retry; the benchmark estimate is independent.";
+          } catch {
+            historyErrors[symbol] = "Stock history is temporarily unavailable. Refresh the page to retry; the benchmark estimate is independent.";
+          } finally {
+            historyLoading.delete(symbol);
+          }
         }));
       }
       renderPortfolio();
@@ -722,7 +733,7 @@
         body.className = "subtle";
         const loss = 1 - Number(holding.quote.price) / Number(holding.buy_price);
         const history = historicalRecovery(stockHistory[holding.symbol], loss);
-        body.textContent = history.unavailable ||
+        body.textContent = (historyLoading.has(holding.symbol) ? "Loading the stock's one-year price history…" : historyErrors[holding.symbol]) || history.unavailable ||
           `${formatDate(history.start)}–${formatDate(history.end)}: ${history.recovered + history.unresolved} non-overlapping declines of at least ${(loss * 100).toFixed(1)}%; ${history.recovered} recovered to their prior peak, ${history.unresolved} remained unrecovered by the end of the sample. ` +
           (history.medianDays !== null ? `Median time after reaching that decline: ${history.medianDays} calendar days among recovered episodes only. ` : "No recovered episodes to estimate a typical duration. ") +
           (history.unresolvedDays !== null ? `The unrecovered episode had ${history.unresolvedDays} observed days after reaching the threshold. ` : "") +

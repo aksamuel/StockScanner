@@ -276,11 +276,25 @@ market scan. Publish `date-format.js` and `portfolio-recovery.js` with the page.
 `tools/format_report_dates.py` updates archived report dates during deployment
 without rewriting their URLs or committing hundreds of regenerated files.
 
-The recovery UI accepts authenticated `portfolio-history` responses with
-`points: [["YYYY-MM-DD", adjustedClose], ...]`. That endpoint is not installed in
-this release: ticker-only Yahoo Finance access awaits explicit approval. Until
-then the page reports stock history as unavailable; benchmark dates still work.
-No public file containing a holdings-derived symbol list is generated.
+Deploy `supabase/functions/portfolio-history/index.ts` with its `handler.mjs`
+dependency. The function validates the caller with `auth.getUser()`, checks approved
+access, and verifies ownership through the caller's JWT and existing RLS before
+every history request, including cache hits. Gateway JWT verification is disabled
+because authentication is performed explicitly in the handler, supporting the
+project's current signing keys. No service-role key or new secret is required.
+
+The response contains `points: [["YYYY-MM-DD", adjustedClose], ...]`, source, and
+generation time. Only ticker symbols are sent to Yahoo Finance; user IDs, broker
+names, quantities, and purchase prices are never forwarded. History uses one year
+of adjusted daily closes, excludes today's potentially incomplete candle, and is
+cached in function memory for one hour after ownership validation. Responses use
+`Cache-Control: private, no-store`; no holdings-derived public file is generated.
+The UI requests at most four symbols concurrently, reports unavailable history
+explicitly, and retains the independent benchmark breakeven date. At least 60
+daily closes are required; history older than seven days is not used.
+
+Run `node tests/portfolio-history.test.mjs` to verify authentication, ownership,
+cache isolation, provider failure handling, and completed-candle parsing.
 
 Run `python -m pytest -q`, `node tests/date-format.test.mjs`, and
 `node tests/portfolio-recovery.test.mjs` before publishing. Verify broker selection,
