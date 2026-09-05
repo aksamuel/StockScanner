@@ -259,8 +259,11 @@ Escape key, or choosing a destination closes it. Admin links appear only for
 `aaksamuel@zohomail.com`.
 
 On the KPI Dashboard, Stocks Scanned, Strong Buy, Buy, Accumulate, Watch, and
-Avoid are clickable and open searchable stock lists generated from the same
-scan as their counts.
+Avoid are clickable and open stock lists generated from the same scan as their
+counts. Searchable dropdowns list the symbols in the selected table or category
+and include All stocks. Users can type to narrow the list, click a choice or use
+the arrow keys and Enter. The shared table-filter module is included in new reports and added
+to archived report displays during deployment.
 
 The bought-list breakeven value is an illustrative benchmark calculation. It
 uses the Equal-weight Top 20's observed daily compound return over the chart
@@ -271,11 +274,19 @@ daily ticker histories are not retained.
 
 ### Portfolio page deployment and checks
 
-Stable release v2.16.0 places Symbol, Action review, Recovery scenario / days
+Stable release v2.17.0 retains Symbol, Action review, Recovery scenario / days
 held, and Profit / Loss % first, in that order. Technical strength appears once
 inside Action review. The recovery timeline keeps Today undated and displays
 blue stock-history and orange Top 20 estimates in chronological order. Both the
 table and graph disclose that recovery dates are estimates without guarantees.
+
+Publish `bought-price.js`, `table-filters.js`, and `searchable-filter.js` alongside
+`auth.js`. The shared guard reads the approved user's purchase prices and
+quantities, paginating by ID so portfolio averages include all lots. The purchase
+labels prefer portfolio lots over duplicate bought-list entries. The table-filter
+module retains the native select as the selected-value store and presents a
+searchable combobox with keyboard support. New and archived reports load it
+directly, including archived pages that do not load the shared guard.
 
 The existing Stock Scanner workflow publishes GitHub Pages on pushes to `main`
 that change the portfolio page, its helper modules, or the shared date module.
@@ -347,9 +358,10 @@ matching non-prerelease GitHub release from that commit using the checked-in
 release notes. Existing releases are preserved on later deployments of the same
 version. A test or deployment failure prevents a new stable release.
 
-The Pages build applies the current date/time formatter and Help links to all
-archived HTML reports. This preserves original report URLs and ISO source data.
-No new database migration or history-function deployment is required for v2.16.0.
+The Pages build applies the current date/time formatter, Help links and shared
+searchable filters to archived HTML reports. This preserves original report URLs
+and ISO source data. No new database migration or history-function deployment is
+required for v2.17.0.
 For rollback, revert the release commit on `main` and deploy through the same
 workflow; do not rewrite existing release tags or modify user holdings.
 

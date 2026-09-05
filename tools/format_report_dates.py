@@ -5,6 +5,7 @@ import re
 from zoneinfo import ZoneInfo
 
 NEW_YORK = ZoneInfo('America/New_York')
+FILTER_MODULE = '<script type="module" src="/StockScanner/table-filters.js"></script>'
 
 CHART_LABELS = "chartData.labels.map((value) => { const [year, month, day] = value.split('-'); return day + '/' + ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][Number(month) - 1] + '/' + year; })"
 SNAPSHOT_READ = '        const snapshot = await response.json();'
@@ -46,6 +47,8 @@ def _format_visible_times(source):
 
 
 def format_report(source):
+    if ('id="filterInput"' in source or 'id="kpiStockSearch"' in source) and FILTER_MODULE not in source:
+        source = source.replace('</body>', FILTER_MODULE + '\n</body>')
     source = source.replace('https://github.com/aksamuel/StockScanner#readme', '/StockScanner/help.html')
     source = source.replace('labels: chartData.labels,', 'labels: ' + CHART_LABELS + ',')
     if 'snapshot.generated_at_new_york' in source and SNAPSHOT_CLOCK.strip() not in source:

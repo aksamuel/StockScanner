@@ -43,7 +43,7 @@
     </section>
     <div class="list-toolbar">
       <span id="count" class="count">0 exceptions</span>
-      <input id="filter" class="filter" type="search" placeholder="Filter by symbol or reason" aria-label="Filter exceptions">
+      <select id="filter" class="filter" aria-label="Select a stock"><option value="">All stocks</option></select>
     </div>
     <div class="table-wrap">
       <table>
@@ -56,6 +56,7 @@
   <script type="module" src="/StockScanner/auth.js" data-stockscanner-auth></script>
   <script type="module">
     import { formatDateTime, parseDateInput, validateDateInputs } from "/StockScanner/date-format.js";
+    import { setFilterOptions } from "/StockScanner/table-filters.js";
     import {
       formatDate, localDateValue, requireApprovedUser, setFormBusy,
       setMessage, supabase, tableCell,
@@ -132,7 +133,7 @@
       symbol.focus();
     }
 
-    filter.addEventListener("input", renderExceptions);
+    filter.addEventListener("change", renderExceptions);
 
     async function loadExceptions() {
       const { data, error } = await supabase
@@ -150,10 +151,8 @@
     }
 
     function renderExceptions() {
-      const term = filter.value.trim().toLowerCase();
-      const visible = exceptions.filter((item) =>
-        item.symbol.toLowerCase().includes(term) || (item.reason || "").toLowerCase().includes(term)
-      );
+      const selected = setFilterOptions(filter, exceptions.map(item => item.symbol));
+      const visible = exceptions.filter(item => !selected || item.symbol === selected);
       rows.replaceChildren(...visible.map(exceptionRow));
       empty.hidden = visible.length !== 0;
     }

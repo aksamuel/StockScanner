@@ -344,8 +344,8 @@ html:not(.auth-ready) { visibility: hidden; }
             </div>
             <button id="closeKpiDetails" class="kpi-details-close" type="button">Close list</button>
         </div>
-        <label class="kpi-search-label" for="kpiStockSearch">Filter this list</label>
-        <input id="kpiStockSearch" class="kpi-stock-search" type="search" placeholder="Symbol, sector, recommendation, or score">
+        <label class="kpi-search-label" for="kpiStockSearch">Select a stock</label>
+        <select id="kpiStockSearch" class="kpi-stock-search"><option value="">All stocks</option></select>
         <div class="table-wrapper">
             <table id="kpiStockTable">
                 <thead><tr><th>Rank</th><th>Symbol</th><th>Current Price</th><th>Sector</th><th>Recommendation</th><th>Score</th></tr></thead>
@@ -876,5 +876,6 @@ document.querySelectorAll('th:not(.no-sort)').forEach(th => {
     });
 });
 </script>
+<script type="module" src="/StockScanner/table-filters.js"></script>
 </body>
 </html>

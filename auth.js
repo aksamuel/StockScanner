@@ -1,4 +1,6 @@
 import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.112.3/+esm";
+import { annotateBoughtAnalysis, purchaseBasisBySymbol } from "./bought-price.js";
+import { installReportStockFilters } from "./table-filters.js";
 
 const SUPABASE_URL = "https://cszzbkssxxgwgafwuonc.supabase.co";
 const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_VnhkG4H4acjm2Hp1k5tzyw_I9xtUrGI";
@@ -177,20 +179,33 @@ function addPersonalFilterControl(target, options) {
   return button;
 }
 
+async function readPersonalPurchaseRows(query) {
+  const data = [];
+  const pageSize = 1000;
+  for (let offset = 0; ; offset += pageSize) {
+    const result = await query().order("id").range(offset, offset + pageSize - 1);
+    if (result.error) return result;
+    data.push(...(result.data || []));
+    if ((result.data || []).length < pageSize) return { data, error: null };
+  }
+}
+
 async function applyPersonalTopTwentyFilters(user) {
   const rows = topTwentyRows();
-  if (!rows.length) return;
+  const page = window.location.pathname.split("/").filter(Boolean).pop();
+  const showPurchasePrices = page === "technical.html" || page === "analysts.html";
+  if (!rows.length && !showPurchasePrices) return;
 
   const today = new Date().toISOString().slice(0, 10);
   const [boughtResult, portfolioResult, exceptionResult] = await Promise.all([
-    supabase
+    readPersonalPurchaseRows(() => supabase
       .from("user_bought_selections")
-      .select("symbol")
-      .eq("user_id", user.id),
-    supabase
+      .select(showPurchasePrices ? "symbol,quantity,buy_price" : "symbol")
+      .eq("user_id", user.id)),
+    readPersonalPurchaseRows(() => supabase
       .from("user_portfolio_holdings")
-      .select("symbol")
-      .eq("user_id", user.id),
+      .select(showPurchasePrices ? "symbol,quantity,buy_price,currency" : "symbol")
+      .eq("user_id", user.id)),
     supabase
       .from("user_exceptions")
       .select("symbol,date_from,date_to")
@@ -223,6 +238,9 @@ async function applyPersonalTopTwentyFilters(user) {
   });
 
   addPersonalFilterStyles();
+  if (showPurchasePrices) {
+    annotateBoughtAnalysis(purchaseBasisBySymbol(boughtResult.data, portfolioResult.data), page);
+  }
   const targets = [
     document.querySelector(".filter-bar"),
     document.querySelector(".top20-drilldown"),
@@ -824,6 +842,7 @@ async function protectPage() {
   });
   addNavigationDrawer(data.user);
   reorderTechnicalAnalysisColumns();
+  installReportStockFilters();
   installSharedTableSorting();
   showPage();
   await recordActivity(data.user, "page_view").catch(() => {});

@@ -1035,8 +1035,8 @@ def _generate_html(
             </div>
             <button id="closeKpiDetails" class="kpi-details-close" type="button">Close list</button>
         </div>
-        <label class="kpi-search-label" for="kpiStockSearch">Filter this list</label>
-        <input id="kpiStockSearch" class="kpi-stock-search" type="search" placeholder="Symbol, sector, recommendation, or score">
+        <label class="kpi-search-label" for="kpiStockSearch">Select a stock</label>
+        <select id="kpiStockSearch" class="kpi-stock-search"><option value="">All stocks</option></select>
         <div class="table-wrapper">
             <table id="kpiStockTable">
                 <thead><tr><th>Rank</th><th>Symbol</th><th>Current Price</th><th>Sector</th><th>Recommendation</th><th>Score</th></tr></thead>
@@ -1076,7 +1076,7 @@ def _generate_html(
         </div>
 
         <div class="filter-bar">
-            <input type="text" id="filterInput" placeholder="Filter by symbol or sector..." onkeyup="filterTable()">
+            <select id="filterInput" aria-label="Select a stock"><option value="">All stocks</option></select>
             {target_sort_controls}
             {add_exceptions_button}
             {add_bought_button}
@@ -1865,6 +1865,7 @@ document.querySelectorAll('th:not(.no-sort)').forEach(th => {{
     }});
 }});
 </script>
+<script type="module" src="/StockScanner/table-filters.js"></script>
 </body>
 </html>"""
     return html

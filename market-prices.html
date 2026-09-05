@@ -65,7 +65,7 @@
 
     <div class="list-toolbar">
       <span id="tableCount" class="count">0 symbols</span>
-      <input id="filter" class="filter" type="search" placeholder="Filter by symbol" aria-label="Filter stock prices by symbol">
+      <select id="filter" class="filter" aria-label="Select a stock"><option value="">All stocks</option></select>
     </div>
     <p id="message" role="status" aria-live="polite"></p>
     <div class="table-wrap">
@@ -81,6 +81,7 @@
     import { formatDateTime, formatTime } from "/StockScanner/date-format.js";
     import { requireApprovedUser, setMessage, supabase, tableCell } from "/StockScanner/personal-lists.js";
     import { drawSpikeChart, intradayPoints, marketRows } from "/StockScanner/market-prices.js";
+    import { setFilterOptions } from "/StockScanner/table-filters.js";
 
     const priceFormat = new Intl.NumberFormat(undefined, { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 4 });
     const percentFormat = new Intl.NumberFormat(undefined, { signDisplay: "always", minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -102,7 +103,11 @@
     let selectedSymbol = null;
 
     if (user) await loadPrices();
-    filter.addEventListener("input", renderTable);
+    filter.addEventListener("change", () => {
+      if (filter.value) selectedSymbol = filter.value;
+      renderTable();
+      renderChart();
+    });
 
     async function loadPrices() {
       const { data, error } = await supabase
@@ -129,8 +134,8 @@
     }
 
     function renderTable() {
-      const term = filter.value.trim().toUpperCase();
-      const visible = priceRows.filter((row) => row.symbol.includes(term));
+      const selected = setFilterOptions(filter, priceRows.map(row => row.symbol));
+      const visible = priceRows.filter(row => !selected || row.symbol === selected);
       rowsElement.replaceChildren(...visible.map(priceRow));
       tableCount.textContent = `${visible.length.toLocaleString()} of ${priceRows.length.toLocaleString()} symbols`;
       empty.hidden = visible.length !== 0;

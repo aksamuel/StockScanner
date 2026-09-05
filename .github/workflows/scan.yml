@@ -18,6 +18,9 @@ on:
       - main
     paths:
       - "auth.js"
+      - "bought-price.js"
+      - "table-filters.js"
+      - "searchable-filter.js"
       - "help.html"
       - "README.md"
       - "README_SETUP.md"
@@ -169,7 +172,7 @@ jobs:
       - name: Check application before deployment
         run: |
           python -m pytest -q
-          node --test tests/date-format.test.mjs tests/portfolio-recovery.test.mjs tests/portfolio-history.test.mjs
+          node --test tests/*.test.mjs
 
       - name: Validate stable release version
         if: github.event_name == 'push'

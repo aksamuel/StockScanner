@@ -16,7 +16,7 @@
     .page-header { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; margin-bottom: 14px; }
     .page-header a { padding: 7px 10px; border: 1px solid #4fc3f7; border-radius: 6px; color: #4fc3f7; text-decoration: none; font-weight: 700; }
     .toolbar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin: 16px 0 12px; }
-    input { min-width: min(100%, 320px); padding: 10px 12px; border: 1px solid #3b5368; border-radius: 6px; color: #fff; background: #10212d; font: inherit; }
+    input, select { width: min(100%, 320px); max-width: 100%; padding: 10px 12px; border: 1px solid #3b5368; border-radius: 6px; color: #fff; background: #10212d; font: inherit; }
     .table-wrap { width: calc(100vw - 48px); margin-left: calc(50% - 50vw + 24px); overflow-x: auto; border: 1px solid #334b5f; border-radius: 9px; }
     table { width: 100%; border-collapse: collapse; background: #1a2a3a; }
     th, td { padding: 12px; border-bottom: 1px solid #334b5f; text-align: left; white-space: nowrap; }
@@ -49,8 +49,8 @@
       <a href="/StockScanner/admin.html">Admin dashboard</a>
     </div>
     <div class="toolbar">
-      <label for="search">Search users</label>
-      <input id="search" type="search" placeholder="Email address">
+      <label for="search">Select a user</label>
+      <select id="search"><option value="">All users</option></select>
       <button id="refresh" class="refresh" type="button">Refresh</button>
     </div>
     <p id="message" role="status" aria-live="polite">Loading users…</p>
@@ -66,6 +66,7 @@
   <script type="module" src="/StockScanner/auth.js" data-stockscanner-auth></script>
   <script type="module">
     import { formatDateTime, parseDateInput, validateDateInputs } from "/StockScanner/date-format.js";
+    import { setFilterOptions } from "/StockScanner/table-filters.js";
     import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.112.3/+esm";
 
     const ADMIN_EMAIL = "aaksamuel@zohomail.com";
@@ -88,7 +89,7 @@
     }
 
     refresh.addEventListener("click", loadUsers);
-    search.addEventListener("input", renderUsers);
+    search.addEventListener("change", renderUsers);
 
     async function loadUsers() {
       setBusy(true);
@@ -107,8 +108,8 @@
     }
 
     function renderUsers() {
-      const term = search.value.trim().toLowerCase();
-      const visible = users.filter((item) => item.email.toLowerCase().includes(term));
+      const selected = setFilterOptions(search, users.map(item => item.email.toLowerCase()), "All users");
+      const visible = users.filter(item => !selected || item.email.toLowerCase() === selected);
       body.replaceChildren(...visible.map(userRow));
       if (!visible.length) {
         const row = document.createElement("tr");

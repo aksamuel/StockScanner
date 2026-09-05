@@ -302,7 +302,8 @@ def test_portfolio_kpis_filter_the_holdings_table_accessibly():
     assert page.count('class="metric metric-filter"') == 5
     assert page.count('aria-controls="brokerTables"') == 6
     assert 'let portfolioFilter = "all"' in page
-    assert "analyzed.filter(matchesPortfolioFilter).filter" in page
+    assert "const candidates = analyzed.filter(matchesPortfolioFilter)" in page
+    assert "candidates.filter(holding => !selected || holding.symbol === selected)" in page
     assert 'holding.returnPercent > 0' in page
     assert 'holding.decision.code === portfolioFilter' in page
     assert 'button.setAttribute("aria-pressed", active ? "true" : "false")' in page

@@ -326,7 +326,7 @@ html:not(.auth-ready) { visibility: hidden; }
         </div>
 
         <div class="filter-bar">
-            <input type="text" id="filterInput" placeholder="Filter by symbol or sector..." onkeyup="filterTable()">
+            <select id="filterInput" aria-label="Select a stock"><option value="">All stocks</option></select>
             <div class="target-sort-controls"><button id="requestYahooRefresh" type="button">Refresh Latest Prices</button><span id="targetSortStatus" role="status" aria-live="polite">Loads the latest backend Yahoo price snapshot.</span></div>
             <button id="addExceptions" type="button" hidden disabled></button>
             <button id="addBought" type="button" hidden disabled></button>
@@ -799,5 +799,6 @@ document.querySelectorAll('th:not(.no-sort)').forEach(th => {
     });
 });
 </script>
+<script type="module" src="/StockScanner/table-filters.js"></script>
 </body>
 </html>

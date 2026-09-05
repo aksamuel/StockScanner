@@ -162,7 +162,7 @@
 
     <div class="list-toolbar">
       <span id="count" class="count" aria-live="polite">0 holdings</span>
-      <input id="filter" class="filter" type="search" placeholder="Filter by ticker, broker, or signal" aria-label="Filter portfolio holdings">
+      <select id="filter" class="filter" aria-label="Select a stock"><option value="">All stocks</option></select>
     </div>
     <p id="recoveryDisclaimer" class="subtle"><strong>Recovery dates are estimates and are not guaranteed.</strong> Actual recovery may happen earlier, later, or not at all.</p>
     <div id="brokerTables" class="broker-tables" aria-describedby="recoveryDisclaimer"></div>
@@ -241,6 +241,7 @@
   <script type="module">
     import { technicalStrength, recoveryScenario, historicalRecovery, stockGrowthMetrics, recoveryGraphModel } from "/StockScanner/portfolio-recovery.js";
     import { renderRecoveryChart } from "/StockScanner/recovery-chart.js";
+    import { setFilterOptions } from "/StockScanner/table-filters.js";
     import { formatDateTime, parseDateInput, validateDateInputs } from "/StockScanner/date-format.js";
     import { formatDate, requireApprovedUser, setFormBusy, setMessage, supabase, tableCell } from "/StockScanner/personal-lists.js";
     import { daysHeld, detectedPortfolioBroker, equalWeightTopTwentyMetrics, holdingReturnPercent, portfolioActionDecision, portfolioConcentrationPercent, portfolioRowsFromCsv, profitTimingLabel, recommendedTargetPrice } from "/StockScanner/portfolio-analysis.js";
@@ -279,7 +280,7 @@
     });
 
     if (user) await loadPortfolio();
-    filter.addEventListener("input", renderPortfolio);
+    filter.addEventListener("change", renderPortfolio);
     brokerSelect.addEventListener("change", () => {
       portfolioFilter = "all";
       filter.value = "";
@@ -565,17 +566,15 @@
           decision: portfolioActionDecision(holding, { ...decisionContext, recommendedTarget: target }),
         };
       });
-      const term = filter.value.trim().toLowerCase();
-      const visible = analyzed.filter(matchesPortfolioFilter).filter((holding) => [
-        holding.symbol, holding.broker, holding.description, technicalStrength(holding.scanner.score).label,
-        holding.decision.label, holding.target?.source, ...holding.decision.reasons,
-      ].some((value) => String(value || "").toLowerCase().includes(term)));
+      const candidates = analyzed.filter(matchesPortfolioFilter);
+      const selected = setFilterOptions(filter, candidates.map(holding => holding.symbol));
+      const visible = candidates.filter(holding => !selected || holding.symbol === selected);
       visible.sort(compareHoldings);
       updatePortfolioFilterButtons();
       renderBrokerTables(analyzed, visible);
       updateSortHeaders();
       empty.hidden = scopedHoldings.length !== 0;
-      document.querySelector("#count").textContent = visible.length === scopedHoldings.length && !term
+      document.querySelector("#count").textContent = visible.length === scopedHoldings.length && !selected
         ? `${scopedHoldings.length} holding${scopedHoldings.length === 1 ? "" : "s"}`
         : `${visible.length} of ${scopedHoldings.length} holdings shown`;
       document.querySelector("#holdingCount").textContent = scopedHoldings.length;

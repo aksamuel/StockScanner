@@ -1,12 +1,14 @@
-# StockScanner v2.16.0
+# StockScanner v2.17.0
 
 [![Stock Scanner](https://github.com/aksamuel/StockScanner/actions/workflows/scan.yml/badge.svg)](https://github.com/aksamuel/StockScanner/actions/workflows/scan.yml)
 
 StockScanner scans a watchlist or the NYSE universe, calculates technical and
 analyst signals, sizes positions, and produces Excel and GitHub Pages reports.
 
-**Stable release: v2.16.0** — a clearer portfolio review with one Technical
-strength score, recovery timelines and graphs, and consistent New York clocks.
+**Stable release: v2.17.0** — searchable stock dropdowns, purchase-price labels,
+and profit/loss percentages beneath technical targets and support/resistance.
+Portfolio recovery timelines, the unified strength score and New York clocks
+remain available.
 Daily scanning, market-price collection, and owner-scoped portfolio storage
 continue through the existing services.
 
@@ -45,7 +47,7 @@ AI-powered features with ChatGPT integration were introduced in v2.11.0. 🤖
 - Responsive desktop and mobile dashboards with a collapsible left navigation drawer
 - Sortable columns across market-data, administration, personal-list, portfolio,
   and generated scanner tables
-- Clickable KPI cards with searchable Strong Buy, Buy, Accumulate, Watch, Avoid,
+- Clickable KPI cards with stock dropdowns for Strong Buy, Buy, Accumulate, Watch, Avoid,
   and complete scanned-stock lists
 - AI-powered stock analysis with ChatGPT 🎯
   - Individual stock analysis and recommendations
@@ -212,7 +214,32 @@ page is selected.
 On the KPI Dashboard, select **Successfully Analysed**, **Strong Buy**, **Buy**,
 **Accumulate**, **Watch**, or **Avoid** to open the matching stock list. The
 drill-down includes rank, symbol, current price, sector, recommendation, and
-score, plus a text filter. Average Score and Best Score remain display-only.
+score, plus a stock dropdown. Average Score and Best Score remain display-only.
+
+Table filters use searchable dropdowns with sorted, unique stock symbols and an
+**All stocks** option. Type a ticker or part of it to narrow the populated list;
+prefix matches appear first. Click a choice or use the arrow keys and Enter.
+Clearing the field restores all stocks, and Escape cancels an unfinished search.
+Scanner choices follow the active table; KPI and portfolio
+choices follow the selected category or portfolio scope. On Hourly and Daily
+Stock Prices, choosing a symbol also opens its chart. User management uses an
+email dropdown with **All users**.
+
+On Technical Analysis and Analysts Rating, owned stocks show **Bought @ $price**
+in both Top 20 and All Results. Technical Targets 1–3 and the analyst Support
+Low/High and Resistance Low/High prices have a return label underneath: green
+for profit, red for loss and grey for breakeven or an unavailable comparison.
+The percentage is `(level - buy price) / buy price × 100`, before fees, taxes,
+dividends and currency conversion. Existing arrows still compare levels with
+the current market price.
+
+Multiple portfolio lots use their quantity-weighted average purchase price.
+Portfolio holdings take precedence over a duplicate My Bought List entry;
+the bought list supplies the price when no portfolio lots exist for the symbol.
+Missing purchase prices, mixed currencies and short positions do not produce a
+misleading average. Non-USD purchase prices remain labelled in their currency,
+with returns against USD report levels unavailable. Labels survive price
+refreshes and table sorting and use only the signed-in user's purchases.
 
 The personal Exception List and Bought Selection are intentionally separate:
 
@@ -264,7 +291,7 @@ are never truncated or changed.
   have been removed. Native IBKR CSV exports remain supported.
 - Use **Analyze portfolio** to select one broker or all brokers. Holdings counts,
   action reviews, concentration, and the last-import timestamp follow this scope.
-  Changing brokers clears the search and action filter. The redundant Broker
+  Changing brokers resets the stock dropdown and action filter. The redundant Broker
   column has been removed, while broker section headings remain visible.
 - **Technical strength** shows Weak in red below 40, Moderate in orange from 40
   through 70 inclusive, and Strong in green above 70. Missing scores are grey.

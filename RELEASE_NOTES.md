@@ -1,39 +1,41 @@
-# StockScanner v2.16.0
+# StockScanner v2.17.0
 
 Stable release · 05/Sep/2026
 
-This release brings the portfolio review changes together with consistent date
-and time displays and a dedicated Help & FAQ page.
+This release adds purchase-price comparisons to the scanner pages and searchable
+dropdowns throughout the table filters.
 
-- Portfolio columns begin with Symbol, Action review, Recovery scenario / days
-  held, and Profit / Loss %. Broker selection controls the analysis scope.
-- Technical strength appears once inside Action review, with a score out of 100:
-  Weak below 40 in red, Moderate from 40 through 70 in orange, and Strong above
-  70 in green. Missing scores remain unavailable. Existing action rules are
-  unchanged; a weak score alone is not an instruction to sell.
-- Recovery timelines start at a grey Today dot, followed in date order by blue
-  stock-history and orange Equal-weight Top 20 estimated recovery milestones.
-  Both dates and calendar-day counts remain visible when calculable. Graphs
-  retain the stock history, both growth scenarios and the buy-price target.
-- Recovery dates carry an explicit no-guarantee disclaimer. Unavailable,
-  non-positive-growth and beyond-graph-horizon scenarios remain explained.
-- Displayed clocks use New York time, 24-hour HH:mm, without seconds and with
-  EST/EDT. Dates use dd/mmm/yyyy. Report generation, existing deployed report
-  displays, charts and new Excel exports use the shared formatting rules.
-  Stored timestamp precision, machine-readable dates and unique paths remain
-  intact.
-- The README, setup guide, inline portfolio help and new in-app Help & FAQ
-  explain the final layout and assumptions. The shared menu and generated
-  report help links open the new help page. Broker CSV uploads, including native
-  IBKR exports, remain supported after removal of direct IBKR downloading.
+- Technical Analysis and Analysts Rating show **Bought @ $price** for owned
+  stocks in Top 20 and All Results. Multiple portfolio lots use the
+  quantity-weighted average buy price. Portfolio holdings take precedence over
+  a duplicate My Bought List entry; all purchase reads remain scoped to the
+  approved user and include pagination.
+- Technical Targets 1, 2 and 3, and analyst Support Low/High and Resistance
+  Low/High, display percentage returns from the purchase price beneath each
+  price level. Profit is green, loss red, and breakeven or unavailable grey.
+  The existing arrows continue to compare levels with the market price.
+  Labels remain present after sorting and price refreshes.
+- Table filters contain populated, searchable dropdowns with unique sorted
+  symbols and **All stocks**. Typing narrows the choices, with prefix matches
+  first. Click a choice or use the arrow keys and Enter; clear the field to reset
+  or use Escape to cancel an unfinished search. User management offers the same
+  interaction for email addresses.
+- Choices follow the active scanner table, dashboard category or portfolio
+  scope. Selecting a stock on Hourly and Daily Stock Prices also opens its chart.
+  Shared report code provides the same filters in newly generated reports and
+  archived report displays.
+- README, setup documentation and Help & FAQ describe the new controls and
+  price comparisons. The previous portfolio layout, recovery estimates,
+  no-guarantee disclaimer and New York date/time formatting remain available.
 
 ## Validation and deployment
 
-The deployment workflow runs the Python suite and JavaScript date, recovery
-model and history-handler checks before publishing. Local browser fixtures
-cover portfolio layout, strength boundaries, recovery graphs and timelines,
-missing history, mobile layout and New York clocks in multiple browser zones.
-These fixture checks do not constitute a test of every user's live portfolio.
+The deployment workflow runs the Python suite and all JavaScript test files
+before publishing. Local browser fixtures cover purchase-price weighting and
+account filters, pagination, loss/profit labels, sorting, price refreshes,
+searchable options, keyboard and mouse selection, clearing, unavailable matches,
+scope changes and mobile layout. Fixture checks do not constitute a test of
+every user's live portfolio.
 
 GitHub Pages publishes the release, including formatting of archived report
 displays. A successful push deployment creates the matching stable GitHub
@@ -41,7 +43,12 @@ Release from that source commit. Existing release tags are preserved.
 No database migration is required for this release. Reverting the release
 changes on main and redeploying restores the preceding application behavior.
 
-## Recovery assumptions
+## Price and recovery assumptions
+
+Purchase-price comparisons exclude fees, taxes, dividends and currency
+conversion. Missing prices, mixed currencies and short positions do not produce
+a misleading average. Non-USD purchase prices retain their currency labels;
+returns against USD report levels are unavailable.
 
 Recovery means returning from the latest available quote to the recorded buy
 price. The stock-history and Equal-weight Top 20 scenarios assume their
