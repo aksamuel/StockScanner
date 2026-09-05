@@ -1,4 +1,20 @@
 const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const newYorkClock = new Intl.DateTimeFormat("en-US", {
+  timeZone: "America/New_York", year: "numeric", month: "short", day: "2-digit",
+  hour: "2-digit", minute: "2-digit", hourCycle: "h23", timeZoneName: "short",
+});
+
+function timeParts(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return Object.fromEntries(newYorkClock.formatToParts(date).map(({ type, value }) => [type, value]));
+}
+
+export function formatTime(value, includeZone = true) {
+  const parts = timeParts(value);
+  return parts ? `${parts.hour}:${parts.minute}${includeZone ? ` ${parts.timeZoneName}` : ""}` : "—";
+}
 
 export function formatDate(value) {
   if (!value) return "—";
@@ -8,9 +24,8 @@ export function formatDate(value) {
 }
 
 export function formatDateTime(value) {
-  const date = new Date(value);
-  if (!value || Number.isNaN(date.getTime())) return "—";
-  return `${formatDate(date)}, ${date.toLocaleTimeString()}`;
+  const parts = timeParts(value);
+  return parts ? `${parts.day}/${parts.month}/${parts.year}, ${parts.hour}:${parts.minute} ${parts.timeZoneName}` : "—";
 }
 
 export function parseDateInput(value) {

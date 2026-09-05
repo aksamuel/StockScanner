@@ -15,6 +15,7 @@ from typing import Callable, Iterable
 from zoneinfo import ZoneInfo
 
 from .market_data import download_intraday_snapshot
+from .display_time import format_new_york_time
 from .price_providers import (
     TWELVE_DATA_FREE_SYMBOLS_PER_RUN,
     download_alpaca_snapshots,
@@ -151,10 +152,10 @@ def _snapshot_payload(
         "schema_version": 3,
         "market_date": local.date().isoformat(),
         "generated_at": local.isoformat(),
-        "generated_at_new_york": local.strftime("%d/%b/%Y, %I:%M %p %Z"),
+        "generated_at_new_york": format_new_york_time(local),
         "price_timestamp": yahoo_time.isoformat() if yahoo_time else None,
         "price_timestamp_new_york": (
-            yahoo_time.strftime("%d/%b/%Y, %I:%M %p %Z")
+            format_new_york_time(yahoo_time)
             if yahoo_time
             else None
         ),
@@ -316,7 +317,7 @@ def refresh_snapshot(
         return {
             "published": False,
             "reason": "outside_price_collection_window",
-            "generated_at_new_york": local.strftime("%d/%b/%Y, %I:%M %p %Z"),
+            "generated_at_new_york": format_new_york_time(local),
         }
 
     previous = load_snapshot(path)

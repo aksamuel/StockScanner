@@ -180,7 +180,7 @@ cascading. Blocked or rejected users cannot use the protected application pages.
 Apply both market-data migrations listed above, then keep
 `SUPABASE_SECRET_KEY` in the protected GitHub `github-pages` environment.
 The **Daily NYSE Ticker Universe** workflow refreshes `public.nyse_tickers`
-once each weekday at or after 3:07 AM New York time. It uses both possible UTC
+once each weekday at or after 03:07 New York time. It uses both possible UTC
 hours plus database date guards so daylight-saving changes and delayed GitHub
 jobs do not create duplicate downloads.
 
@@ -230,13 +230,13 @@ explicit `EXECUTE` grant only for `service_role`.
 
 ## Personal lists
 
-The two signed-in user pages serve different purposes:
+The signed-in user pages serve different purposes:
 
 - `my-exceptions.html`: tickers the user does not want considered.
 - `my-bought-selection.html`: positions the user owns or tracks, with quantity,
   buy price, present price, profit/loss percentage, days held, and an estimated
   breakeven period using the Equal-weight Top 20 as a reference scenario.
-- `portfolio-analysis.html`: on-demand IBKR Flex and broker CSV holdings, current
+- `portfolio-analysis.html`: on-demand broker CSV holdings, including native IBKR exports, current
   return, holding duration, daily scanner evidence, concentration, and
   sell/partial-sell/hold review signals. The profit-review threshold is 7%.
   Manual targets override the conservative automatic target, which selects the
@@ -244,6 +244,8 @@ The two signed-in user pages serve different purposes:
   resistance, and analyst target proxy. Each import atomically replaces only
   the signed-in user's older rows for that broker before the page recalculates
   the analysis; it never truncates another user or broker.
+- `help.html`: the current user guide and FAQ, available from the shared Menu,
+  portfolio navigation, and report Help links.
 
 Do not duplicate bought positions into the Exception List. The authenticated
 Top 20 hides that user's bought/imported holdings and active exceptions by
@@ -268,6 +270,12 @@ and it does not estimate the historical first-profit day because individual
 daily ticker histories are not retained.
 
 ### Portfolio page deployment and checks
+
+Stable release v2.16.0 places Symbol, Action review, Recovery scenario / days
+held, and Profit / Loss % first, in that order. Technical strength appears once
+inside Action review. The recovery timeline keeps Today undated and displays
+blue stock-history and orange Top 20 estimates in chronological order. Both the
+table and graph disclose that recovery dates are estimates without guarantees.
 
 The existing Stock Scanner workflow publishes GitHub Pages on pushes to `main`
 that change the portfolio page, its helper modules, or the shared date module.
@@ -310,7 +318,8 @@ cache isolation, provider failure handling, and completed-candle parsing.
 
 Run `python -m pytest -q`, `node tests/date-format.test.mjs`, and
 `node tests/portfolio-recovery.test.mjs` before publishing. Verify broker selection,
-13-column table alignment, score boundaries (39, 40, 70, 71), positive and
+12-column table alignment, a single strength badge inside Action review, score
+boundaries (39, 40, 70, 71), positive and
 non-positive stock/benchmark returns, both projection start points and recovery
 markers, missing history, dates beyond the five-year chart, keyboard/modal use,
 mobile chart scrolling, and manual date validation.
@@ -318,6 +327,31 @@ mobile chart scrolling, and manual date validation.
 Dates are presentation changes only: do not rewrite ISO database dates or
 historical report paths. The IBKR Flex import code is retired; CSV import uses
 the existing owner-scoped replacement function and requires no schema migration.
+
+All displayed times use `America/New_York`, 24-hour `HH:mm` without seconds,
+and an EST/EDT suffix. Browser formatting is shared in `date-format.js`; generated
+reports and snapshot display labels use `stockscanner/display_time.py`. Raw ISO
+timestamps keep their seconds and offsets. Report snapshot labels are formatted
+from those ISO timestamps so previously stored 12-hour labels cannot override
+the display convention. The report deployment formatter also normalizes archive
+text, treating unzoned legacy CI report timestamps as UTC; timezone-labelled
+timestamps retain their original instant. Stored dates and report URLs are not
+rewritten. Date-only purchase and chart values remain calendar dates.
+
+### Stable releases
+
+Keep the version in `pyproject.toml`, `stockscanner/__init__.py`, README,
+`help.html`, and `RELEASE_NOTES.md` aligned. A push to `main` runs the Python
+suite and JavaScript checks, deploys the complete site, and then creates the
+matching non-prerelease GitHub release from that commit using the checked-in
+release notes. Existing releases are preserved on later deployments of the same
+version. A test or deployment failure prevents a new stable release.
+
+The Pages build applies the current date/time formatter and Help links to all
+archived HTML reports. This preserves original report URLs and ISO source data.
+No new database migration or history-function deployment is required for v2.16.0.
+For rollback, revert the release commit on `main` and deploy through the same
+workflow; do not rewrite existing release tags or modify user holdings.
 
 ### Configure admin manual scanner controls
 
@@ -337,15 +371,15 @@ still applies. The dashboard links to GitHub Actions for progress and logs.
 
 | Workflow | Purpose | Schedule |
 |---|---|---|
-| `ticker-universe.yml` | Atomically replaces `public.nyse_tickers` | Once per weekday at or after 3:07 AM New York time |
-| `scan.yml` | Runs the universe scan and publishes GitHub Pages | After a successful ticker refresh, with 9:17 AM primary and 10:47 AM fallback schedules |
-| `price-snapshot.yml` | Updates hourly/current, previous-close, and market-close prices directly in Supabase | Weekdays at 8:45 AM New York time, then every 60 minutes through 3:45 PM, plus a post-close run and manual dispatch |
+| `ticker-universe.yml` | Atomically replaces `public.nyse_tickers` | Once per weekday at or after 03:07 New York time |
+| `scan.yml` | Runs the universe scan and publishes GitHub Pages | After a successful ticker refresh, with 09:17 primary and 10:47 fallback schedules |
+| `price-snapshot.yml` | Updates hourly/current, previous-close, and market-close prices directly in Supabase | Weekdays at 08:45 New York time, then every 60 minutes through 15:45, plus a post-close run and manual dispatch |
 | `invite-admin.yml` | Invites or promotes an administrator without handling a password | Manual only |
 
 GitHub cron is UTC-only and may deliver runs several hours late. The ticker and
 scan workflows schedule redundant candidate UTC hours and use New York date
 and database lease guards to remain daylight-saving safe. A delayed scanner
-candidate is accepted any time after 9:00 AM New York when that market date has
+candidate is accepted any time after 09:00 New York when that market date has
 not already completed. The
 scanner uses `public.scanner_run_state` as a backend-only atomic daily lease,
 requires today's refreshed universe with at least 2,000 rows, and batch-caches

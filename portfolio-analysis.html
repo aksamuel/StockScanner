@@ -34,6 +34,11 @@
     .strength-strong { color: #b9f6ca; background: #1b5e20; }
     .strength-unavailable { color: #cfd8dc; background: #455a64; }
     .recovery-cell { min-width: 220px; max-width: 310px; }
+    .recovery-timeline { display: block; width: 280px; min-width: 280px; margin-top: 8px; overflow: visible; }
+    .recovery-timeline text { font-family: inherit; font-size: 12px; }
+    .recovery-timeline .milestone-date { font-weight: 650; font-size: 13px; }
+    .recovery-timeline .milestone-days { fill: #90a4ae; }
+    .recovery-timeline-status { margin-top: 5px; }
     .recovery-cell .graph-button { margin-top: 9px; }
     #recoveryGraphDialog { width: min(94vw, 1080px); max-width: 1080px; max-height: 88vh; padding: 22px; overflow: auto; }
     .recovery-dialog-header { display: flex; justify-content: space-between; align-items: center; gap: 14px; position: sticky; top: -22px; padding: 12px 0; background: #142433; z-index: 1; }
@@ -49,6 +54,8 @@
     .recovery-inspector { display: grid; gap: 5px; margin-top: 16px; }
     .recovery-inspector input { width: 100%; }
     .decision-reasons { margin-top: 6px; max-width: 270px; color: #b0bec5; font-size: .78rem; line-height: 1.35; }
+    .decision-strength { display: grid; justify-items: start; gap: 4px; margin-top: 8px; }
+    .decision-strength-label { color: #b0bec5; font-size: .78rem; }
     .subtle { color: #90a4ae; font-size: .88rem; }
     .warning { color: #ffcc80; }
     .table-wrap { margin-top: 12px; }
@@ -58,7 +65,7 @@
     .broker-group-header h2 { margin: 0; color: #b3e5fc; font-size: 1.15rem; }
     .broker-result-count { color: #90a4ae; font-size: .86rem; }
     .broker-empty td { padding: 22px 12px; color: #90a4ae; text-align: center; }
-    .portfolio-table { min-width: 1680px; }
+    .portfolio-table { min-width: 1560px; }
     .portfolio-table td { vertical-align: top; }
     .sort-button {
       display: inline-flex;
@@ -101,6 +108,7 @@
         <a href="/StockScanner/my-exceptions.html">My exceptions</a>
         <a href="/StockScanner/my-bought-selection.html">My bought list</a>
         <a href="/StockScanner/portfolio-analysis.html" aria-current="page">Portfolio analysis</a>
+        <a href="/StockScanner/help.html#portfolio">Help &amp; FAQ</a>
       </nav>
     </div>
 
@@ -129,9 +137,10 @@
       <p>The page combines present profit/loss, days held, the newest daily StockScanner recommendation and score, targets and stop-losses, and each symbol's share of known portfolio market value. A manual target remains the highest-priority target. Otherwise, the automatic target is the lowest valid price at or above cost from the 7% return objective, Technical Target 1, resistance and the analyst target proxy. A reached target or stop takes priority. An Avoid rating combined with a loss of at least 10% produces a sell review; high concentration, weaker trend, long holding time, or a gain of at least 7% can produce a partial-sell review. Missing evidence is disclosed and never guessed.</p>
       <p class="subtle">Concentration thresholds: 10% warrants closer review and 20% is treated as high concentration. Decisions are screening prompts for your review, not automatic orders or guaranteed outcomes.</p>
       <p class="warning">IBKR may omit buy dates unless its Flex query uses Open Positions at tax-lot detail. Missing dates are never guessed.</p>
-      <p class="subtle">Technical strength: below 40 is Weak (red), 40–70 is Moderate (orange), and above 70 is Strong (green). These describe technical conditions, not buy/sell instructions.</p>
+      <p class="subtle">Technical strength appears once inside Action review: below 40 is Weak (red), 40–70 is Moderate (orange), and above 70 is Strong (green). These describe technical conditions, not buy/sell instructions. Recovery and Profit / Loss % are beside Action review.</p>
       <p id="recoveryReference" class="subtle">Loading breakeven benchmark…</p>
       <p class="subtle">View recovery graph compares the stock's own historical growth rate with the Equal-weight Top 20 rate, starting at the latest available price today and aiming at your buy price. Both estimated breakeven dates remain visible. They are scenarios, not guaranteed dates, and exclude fees, taxes, dividends received, and currency conversion. Historical recovery statistics inside the graph show comparable past declines, including unrecovered episodes. Recovery scenarios do not change the action-review signal.</p>
+      <p class="subtle">The timeline starts at the grey Today dot. Blue marks the stock-history estimate and orange marks Top 20, ordered by date. Dates use dd/mmm/yyyy; all displayed clocks use New York time, 24-hour HH:mm, with EST/EDT shown.</p>
     </section>
 
     <div class="list-toolbar">
@@ -155,7 +164,8 @@
       <span id="count" class="count" aria-live="polite">0 holdings</span>
       <input id="filter" class="filter" type="search" placeholder="Filter by ticker, broker, or signal" aria-label="Filter portfolio holdings">
     </div>
-    <div id="brokerTables" class="broker-tables"></div>
+    <p id="recoveryDisclaimer" class="subtle"><strong>Recovery dates are estimates and are not guaranteed.</strong> Actual recovery may happen earlier, later, or not at all.</p>
+    <div id="brokerTables" class="broker-tables" aria-describedby="recoveryDisclaimer"></div>
     <div id="empty" class="empty" hidden>No portfolio holdings have been imported.</div>
     <template id="portfolioTableTemplate">
       <section class="broker-group">
@@ -169,15 +179,14 @@
               <tr>
                 <th scope="col" data-sort-column="symbol" aria-sort="ascending"><button class="sort-button" type="button" data-sort-key="symbol">Symbol</button></th>
                 <th scope="col" data-sort-column="action" aria-sort="none"><button class="sort-button" type="button" data-sort-key="action">Action review</button></th>
+                <th scope="col" data-sort-column="held_days" aria-sort="none"><button class="sort-button" type="button" data-sort-key="held_days">Recovery scenario / days held</button></th>
+                <th scope="col" data-sort-column="return_percent" aria-sort="none"><button class="sort-button" type="button" data-sort-key="return_percent">Profit / Loss %</button></th>
                 <th scope="col" data-sort-column="quantity" aria-sort="none"><button class="sort-button" type="button" data-sort-key="quantity">Quantity</button></th>
                 <th scope="col" data-sort-column="buy_price" aria-sort="none"><button class="sort-button" type="button" data-sort-key="buy_price">Buy price</button></th>
                 <th scope="col" data-sort-column="bought_on" aria-sort="none"><button class="sort-button" type="button" data-sort-key="bought_on">Buy date</button></th>
                 <th scope="col" data-sort-column="present_price" aria-sort="none"><button class="sort-button" type="button" data-sort-key="present_price">Present price</button></th>
-                <th scope="col" data-sort-column="return_percent" aria-sort="none"><button class="sort-button" type="button" data-sort-key="return_percent">Profit / Loss %</button></th>
                 <th scope="col" data-sort-column="target" aria-sort="none"><button class="sort-button" type="button" data-sort-key="target">Review target</button></th>
                 <th scope="col" data-sort-column="concentration" aria-sort="none"><button class="sort-button" type="button" data-sort-key="concentration">Concentration</button></th>
-                <th scope="col" data-sort-column="scanner" aria-sort="none"><button class="sort-button" type="button" data-sort-key="scanner">Technical strength</button></th>
-                <th scope="col" data-sort-column="held_days" aria-sort="none"><button class="sort-button" type="button" data-sort-key="held_days">Recovery scenario / days held</button></th>
                 <th scope="col" data-sort-column="price_updated" aria-sort="none"><button class="sort-button" type="button" data-sort-key="price_updated">Price updated</button></th>
                 <th scope="col">Manage</th>
               </tr>
@@ -558,7 +567,7 @@
       });
       const term = filter.value.trim().toLowerCase();
       const visible = analyzed.filter(matchesPortfolioFilter).filter((holding) => [
-        holding.symbol, holding.broker, holding.description, holding.scanner.label,
+        holding.symbol, holding.broker, holding.description, technicalStrength(holding.scanner.score).label,
         holding.decision.label, holding.target?.source, ...holding.decision.reasons,
       ].some((value) => String(value || "").toLowerCase().includes(term)));
       visible.sort(compareHoldings);
@@ -604,7 +613,7 @@
           const row = document.createElement("tr");
           row.className = "broker-empty";
           const cell = document.createElement("td");
-          cell.colSpan = 13;
+          cell.colSpan = section.querySelectorAll("thead th").length;
           cell.textContent = "No holdings from this broker match the selected filters.";
           row.append(cell);
           body.append(row);
@@ -649,7 +658,6 @@
         return_percent: holding.returnPercent,
         target: holding.target?.price,
         concentration: holding.concentrationPercent,
-        scanner: holding.scanner.score,
         held_days: holding.heldDays,
         action: holding.decision.priority,
         price_updated: holding.quote.at ? Date.parse(holding.quote.at) : null,
@@ -694,11 +702,9 @@
         holding.returnPercent === null ? "pl-unavailable" : holding.returnPercent > 0 ? "pl-profit" : holding.returnPercent < 0 ? "pl-loss" : "pl-neutral",
       );
       const strength = technicalStrength(holding.scanner.score);
-      const scannerCell = document.createElement("td");
       const strengthBadge = document.createElement("span");
       strengthBadge.className = `signal strength-${strength.tone}`;
       strengthBadge.textContent = strength.score === null ? strength.label : `${strength.label} · ${strength.score.toFixed(0)}/100`;
-      scannerCell.append(strengthBadge);
       const targetCell = tableCell(
         holding.target ? `${holding.currency} ${numberFormat.format(holding.target.price)}` : "Unavailable",
       );
@@ -717,8 +723,16 @@
       decision.textContent = holding.decision.label;
       const decisionReasons = document.createElement("div");
       decisionReasons.className = "decision-reasons";
-      decisionReasons.textContent = holding.decision.reasons.join(" ");
-      decisionCell.append(decision, decisionReasons);
+      decisionReasons.textContent = holding.decision.reasons
+        .filter(reason => reason !== holding.decision.technicalReason).join(" ");
+      decisionReasons.hidden = !decisionReasons.textContent;
+      const strengthReview = document.createElement("div");
+      strengthReview.className = "decision-strength";
+      const strengthLabel = document.createElement("span");
+      strengthLabel.className = "decision-strength-label";
+      strengthLabel.textContent = "Technical strength";
+      strengthReview.append(strengthLabel, strengthBadge);
+      decisionCell.append(decision, decisionReasons, strengthReview);
       const actions = document.createElement("td");
       actions.className = "row-actions";
       const edit = document.createElement("button");
@@ -735,15 +749,14 @@
       row.append(
         symbolCell,
         decisionCell,
+        recoveryCell(holding),
+        returnCell,
         tableCell(Number(holding.quantity).toLocaleString()),
         tableCell(holding.buy_price === null ? "Not provided" : `${holding.currency} ${numberFormat.format(Number(holding.buy_price))}`),
         tableCell(holding.bought_on ? formatDate(holding.bought_on) : "Not provided"),
         priceCell,
-        returnCell,
         targetCell,
         tableCell(holding.concentrationPercent === null ? "Unavailable" : `${holding.concentrationPercent.toFixed(2)}%`),
-        scannerCell,
-        recoveryCell(holding),
         tableCell(formatTime(holding.quote.at)),
         actions,
       );
@@ -760,15 +773,11 @@
       if (scenario.requiredGain !== undefined) {
         const stockMetrics = stockGrowthMetrics(stockHistory[holding.symbol]);
         const ownScenario = recoveryScenario(holding, stockMetrics);
-        const estimate = document.createElement("div");
-        estimate.className = "subtle";
-        estimate.textContent = scenario.date
-          ? `Top 20 est. breakeven: ${formatDate(scenario.date)} · ${scenario.days.toLocaleString()} calendar days`
-          : `Top 20: ${recoveryEstimateText(scenario, benchmarkMetrics)}`;
-        cell.append(estimate);
-        const ownEstimate = document.createElement("div");
-        ownEstimate.className = "subtle";
-        ownEstimate.textContent = `Stock-history: ${historyLoading.has(holding.symbol) ? "Loading…" : historyErrors[holding.symbol] || recoveryEstimateText(ownScenario, stockMetrics)}`;
+        const stockStatus = historyLoading.has(holding.symbol) ? "Loading…" : historyErrors[holding.symbol];
+        cell.append(recoveryTimeline([
+          { label: "Top 20", color: "#ffb74d", scenario, message: recoveryEstimateText(scenario, benchmarkMetrics) },
+          { label: "Stock history", color: "#4fc3f7", scenario: stockStatus ? {} : ownScenario, message: stockStatus || recoveryEstimateText(ownScenario, stockMetrics) },
+        ]));
         const graphButton = document.createElement("button");
         graphButton.type = "button";
         graphButton.className = "secondary graph-button";
@@ -779,13 +788,61 @@
           updateRecoveryGraph(holding);
           recoveryGraphDialog.showModal();
         });
-        cell.append(ownEstimate, graphButton);
+        cell.append(graphButton);
       }
       const duration = document.createElement("div");
       duration.className = "subtle";
       duration.textContent = holding.heldDays === null ? "Buy date not provided" : `${holding.heldDays} days held`;
       cell.append(duration);
       return cell;
+    }
+
+    function recoveryTimeline(estimates) {
+      const container = document.createElement("div");
+      const dated = estimates.filter(item => item.scenario.date && Number.isFinite(item.scenario.days))
+        .sort((a, b) => a.scenario.date - b.scenario.date);
+      const svgNode = (tag, attrs, text) => {
+        const node = document.createElementNS("http://www.w3.org/2000/svg", tag);
+        Object.entries(attrs).forEach(([key, value]) => node.setAttribute(key, value));
+        if (text !== undefined) node.textContent = text;
+        return node;
+      };
+      const svg = svgNode("svg", { viewBox: `0 0 280 ${dated.length === 2 ? 114 : 84}`, class: "recovery-timeline", role: "img",
+        "aria-label": `Estimated breakeven timeline. Today. ${dated.map(item => `${item.label}: ${item.message}`).join(". ")}` });
+      const startX = 12, endX = 266, railY = 55;
+      const lastDay = Math.max(1, ...dated.map(item => item.scenario.days));
+      const positions = dated.map(item => startX + (endX - startX) * item.scenario.days / lastDay);
+      // Separate very close milestones enough to keep each coloured dot visible.
+      if (positions.length === 2) positions[0] = Math.min(positions[0], positions[1] - 12);
+      if (positions.length) positions[0] = Math.max(startX + 12, positions[0]);
+      svg.append(svgNode("line", { x1: startX, x2: dated.length ? endX : 64, y1: railY, y2: railY, stroke: "#546e7a", "stroke-width": 2 }));
+      const dot = (x, color, description) => {
+        const circle = svgNode("circle", { cx: x, cy: railY, r: 5, fill: color, stroke: "#10212e", "stroke-width": 2 });
+        circle.append(svgNode("title", {}, description));
+        svg.append(circle);
+      };
+      dot(startX, "#b0bec5", "Today — projection starting point");
+      svg.append(svgNode("text", { x: 2, y: 77, fill: "#b0bec5" }, "Today"));
+      dated.forEach((item, index) => {
+        const x = positions[index];
+        const above = index === 0;
+        const anchor = x < 72 ? "start" : x > 208 ? "end" : "middle";
+        const labelY = above ? 12 : 77;
+        dot(x, item.color, `${item.label} estimated breakeven: ${item.message}`);
+        svg.append(svgNode("line", { x1: x, x2: x, y1: above ? 44 : 62, y2: above ? 49 : 66, stroke: item.color }));
+        svg.append(svgNode("text", { x, y: labelY, fill: item.color, "text-anchor": anchor }, item.label));
+        svg.append(svgNode("text", { x, y: labelY + 15, fill: item.color, "text-anchor": anchor, class: "milestone-date" }, formatDate(item.scenario.date)));
+        svg.append(svgNode("text", { x, y: labelY + 29, "text-anchor": anchor, class: "milestone-days" }, `${item.scenario.days.toLocaleString()} days`));
+      });
+      container.append(svg);
+      estimates.filter(item => !dated.includes(item)).forEach(item => {
+        const status = document.createElement("div");
+        status.className = "subtle recovery-timeline-status";
+        const name = document.createElement("span"); name.style.color = item.color; name.textContent = `${item.label}: `;
+        status.append(name, document.createTextNode(item.message));
+        container.append(status);
+      });
+      return container;
     }
 
     function recoveryEstimateText(scenario, metrics) {
@@ -818,7 +875,7 @@
         }
       }
       renderRecoveryChart(document.querySelector("#recoveryChart"), model, holding.currency);
-      document.querySelector("#recoveryGraphAssumptions").textContent = "Solid blue shows adjusted daily closes. Dashed lines extrapolate each sample's historical compound growth rate from the latest quote today; they stop at the buy price. The graph displays up to five future years. Rates of zero or less do not produce a recovery date. These are hypothetical scenarios, not predictions or guaranteed dates; fees, taxes, dividends received, and currency conversion are excluded.";
+      document.querySelector("#recoveryGraphAssumptions").textContent = "Solid blue shows adjusted daily closes. Dashed lines extrapolate each sample's historical compound growth rate from the latest quote today; they stop at the buy price. The graph displays up to five future years. Rates of zero or less do not produce a recovery date. Recovery dates are estimates and are not guaranteed. Actual recovery may happen earlier, later, or not at all. Fees, taxes, dividends received, and currency conversion are excluded.";
       const loss = 1 - Number(holding.quote.price) / Number(holding.buy_price);
       const history = historicalRecovery(stockHistory[holding.symbol], loss);
       document.querySelector("#recoveryGraphHistory").textContent = (historyLoading.has(holding.symbol) ? "Loading the stock's one-year price history…" : historyErrors[holding.symbol]) || history.unavailable ||

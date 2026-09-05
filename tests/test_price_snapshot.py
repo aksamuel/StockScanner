@@ -79,7 +79,7 @@ def test_refresh_writes_json_and_preserves_failed_symbol_price(tmp_path, capsys)
     initial_payload = json.loads(snapshot_path.read_text(encoding="utf-8"))
     assert (
         initial_payload["price_timestamp_new_york"]
-        == "13/Aug/2026, 09:55 AM EDT"
+        == "13/Aug/2026, 09:55 EDT"
     )
 
     def downloader(symbol, now):
@@ -121,7 +121,7 @@ def test_refresh_writes_json_and_preserves_failed_symbol_price(tmp_path, capsys)
         "Twelve Data": 0,
     }
     assert payload["generated_at_new_york"].endswith("EDT")
-    assert payload["price_timestamp_new_york"] == "13/Aug/2026, 09:59 AM EDT"
+    assert payload["price_timestamp_new_york"] == "13/Aug/2026, 09:59 EDT"
     assert "Price refresh failed for BBB" in capsys.readouterr().err
 
 

@@ -1,13 +1,18 @@
-# StockScanner v2.15.0
+# StockScanner v2.16.0
 
 [![Stock Scanner](https://github.com/aksamuel/StockScanner/actions/workflows/scan.yml/badge.svg)](https://github.com/aksamuel/StockScanner/actions/workflows/scan.yml)
 
 StockScanner scans a watchlist or the NYSE universe, calculates technical and
 analyst signals, sizes positions, and produces Excel and GitHub Pages reports.
 
-**Stable release: v2.15.0** — reliable daily-universe scanning, current and
-previous-close market prices, purchased-position coverage, Supabase-only
-hourly storage, and operational run telemetry.
+**Stable release: v2.16.0** — a clearer portfolio review with one Technical
+strength score, recovery timelines and graphs, and consistent New York clocks.
+Daily scanning, market-price collection, and owner-scoped portfolio storage
+continue through the existing services.
+
+[Help & FAQ](https://aksamuel.github.io/StockScanner/help.html) explains the
+screens and recovery estimates. [Release notes](RELEASE_NOTES.md) describe this
+release; [setup and deployment](README_SETUP.md) covers maintenance.
 
 AI-powered features with ChatGPT integration were introduced in v2.11.0. 🤖
 
@@ -29,10 +34,10 @@ AI-powered features with ChatGPT integration were introduced in v2.11.0. 🤖
 - Rule-based portfolio profit/loss, holding-time, target, and stop reviews, with a 7% profit-review threshold and conservative automatic targets from technical, resistance, analyst-proxy, and return-objective inputs
 - Current profit/loss percentage for purchased positions
 - Bought-position time-to-profit status and benchmark-based breakeven-day scenarios
-- Daily Supabase NYSE universe refresh at 3:07 AM New York time
+- Daily Supabase NYSE universe refresh at 03:07 New York time
 - One-market-day intraday price storage, including the latest hourly quote,
   previous close, and current market close
-- Hourly price collection from 8:45 AM through 3:45 PM New York time
+- Hourly price collection from 08:45 through 15:45 New York time
 - Authenticated database overview with RLS-safe personal counts and an
   administrator-only application activity log
 - Daily scanner health counts for downloads, history, price/liquidity filters,
@@ -236,7 +241,7 @@ longer create GitHub issues.
 
 | Data | Supabase table | Retention | Schedule |
 |---|---|---|---|
-| NYSE universe | `public.nyse_tickers` | Current rows only | Weekdays at 3:07 AM New York time |
+| NYSE universe | `public.nyse_tickers` | Current rows only | Weekdays at 03:07 New York time |
 | Hourly prices | `public.price_snapshots` | One singleton row; one New York market day | Weekdays during market hours plus a closing-price window |
 | Price-run telemetry | `public.price_collection_runs` | Operational slot records | Every hourly or close attempt |
 | Scanner-run telemetry | `public.scanner_run_state` | Operational daily lease | Every universe-scan attempt |
@@ -252,6 +257,9 @@ are never truncated or changed.
 
 ### Portfolio analysis guide
 
+- The first four columns are **Symbol → Action review → Recovery scenario /
+  days held → Profit / Loss %**. Quantity, buy price/date, present price, review
+  target, concentration, price update time, and management controls follow.
 - Upload broker CSV files; the direct IBKR download box and Flex download scripts
   have been removed. Native IBKR CSV exports remain supported.
 - Use **Analyze portfolio** to select one broker or all brokers. Holdings counts,
@@ -262,12 +270,16 @@ are never truncated or changed.
   through 70 inclusive, and Strong in green above 70. Missing scores are grey.
   These descriptive bands do not change the daily scanner's underlying ratings
   or the separate action-review rules.
+  The coloured strength badge and `/100` score appear once per holding, inside
+  **Action review**, replacing labels such as `Avoid (35)` with `Weak · 35/100`.
+  The separate Technical strength column is removed. Strength remains visible
+  for every action review, including when price data is missing.
 - **Recovery scenario / days held** keeps the estimated breakeven date visible
   alongside calendar days and the percentage gain required to recover cost.
-  Recovered positions say "Buy price recovered". Dates assume the Equal-weight
-  Top 20 benchmark's historical daily compound return continues from today.
-  Non-positive or unavailable benchmark growth produces no estimate. Short
-  positions are not given this long-position recovery estimate.
+  Recovered positions say "Buy price recovered". Each estimated date assumes
+  its stock-history or Equal-weight Top 20 historical compound rate continues
+  from today. Non-positive or unavailable growth produces no date for that
+  scenario. Short positions are not given this long-position recovery estimate.
 - Recovery scenarios exclude transaction costs, taxes, dividends, and currency
   conversion. They are not promises and do not trigger an action review.
 - Choose **View recovery graph** on a losing long position to compare solid blue
@@ -277,7 +289,12 @@ are never truncated or changed.
   holding's latest available quote today and aim at the horizontal buy-price
   target. The Top 20 line is rescaled to the holding's price, not its raw index
   level. The quote timestamp and both sample windows are shown in the dialog.
-  Both estimated dates remain visible above the graph and in the table.
+  Both estimated dates remain visible above the graph. The table uses a compact
+  timeline: a grey Today dot without today's date, then blue stock-history and
+  orange Top 20 milestones in date order, each labelled with its date and days
+  to recovery. Missing estimates remain explicit messages rather than dated dots.
+  A disclaimer above the table and in the graph states that recovery dates are
+  estimates without a guarantee, and recovery may happen earlier, later, or never.
   Use **Inspect date** to read historical prices and projected values.
 - The stock's rate is the compound return between the first and last valid
   closes in its one-year sample, measured in calendar days. Zero or negative
@@ -297,6 +314,12 @@ are never truncated or changed.
   `05/Sep/2026`. CSV templates use the same format; ISO dates remain supported
   for native exports. Database values, chart source data, and file paths retain
   their machine-readable date format.
+- All displayed clocks use **New York time, 24-hour HH:mm**, with no seconds;
+  for example `05/Sep/2026, 14:07 EDT` or `05/Jan/2026, 13:07 EST`.
+  New York daylight saving and the corresponding calendar date are handled
+  automatically, independently of the browser's location. This includes portfolio
+  quote/import times, administration, market-data charts, reports, and new Excel
+  exports. Timestamp data retains its original precision for calculations.
 
 Backend workflows use `SUPABASE_SECRET_KEY` from the protected GitHub
 `github-pages` environment. That secret must never be placed in HTML,
@@ -321,14 +344,14 @@ price JSON or redeploy GitHub Pages. Each run first reads the singleton row,
 updates it, and writes it back. When the New York market date changes, prior
 intraday samples are discarded while the prior close is retained as the new
 day's comparison baseline. A separate close run records today's market close.
-The first hourly run is scheduled for 8:45 AM New York time, followed by runs
-at 60-minute intervals through 3:45 PM. Per-slot database leases make delayed
+The first hourly run is scheduled for 08:45 New York time, followed by runs
+at 60-minute intervals through 15:45. Per-slot database leases make delayed
 or duplicate GitHub cron events safe. A separate post-close candidate records
 the market close.
 
 The production universe scan normally starts immediately after the confirmed
-3:07 AM ticker refresh. A 9:17 AM schedule remains as the primary safety net,
-with a 10:47 AM fallback if GitHub delays or misses an earlier cron event. An
+03:07 ticker refresh. A 09:17 schedule remains as the primary safety net,
+with a 10:47 fallback if GitHub delays or misses an earlier cron event. An
 atomic Supabase daily-run lease prevents these triggers from producing duplicate
 reports. The scanner refuses a stale universe or fewer than 2,000 NYSE rows,
 batch-caches one year of daily history, and reports why symbols were excluded.
@@ -351,8 +374,11 @@ cd C:\StockScanner
 .\.venv\Scripts\python.exe -m pytest -q
 ```
 
-The `v2.15.0` release is verified by the complete automated test suite before
-deployment.
+The deployment workflow runs the Python suite and JavaScript date, recovery,
+and history checks before publishing. A successful Pages deployment publishes
+the versioned stable release and its release notes. Browser checks cover the
+portfolio timeline, the single strength badge, column order, mobile layout, and
+New York clock formatting from different browser timezones.
 
 ## License
 

@@ -1,3 +1,5 @@
+import { formatTime } from './date-format.js';
+
 const SVG_NS = "http://www.w3.org/2000/svg";
 
 export function marketRows(snapshot) {
@@ -97,7 +99,7 @@ export function drawSpikeChart(svg, points, previousClose, formatPrice) {
       class: value >= 0 ? "spike-positive" : "spike-negative",
       tabindex: "0",
       role: "img",
-      "aria-label": `${new Date(point.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}: ${formatPrice(point.price)}, ${value >= 0 ? "+" : ""}${value.toFixed(2)} percent versus previous close`,
+      "aria-label": `${formatTime(point.timestamp)}: ${formatPrice(point.price)}, ${value >= 0 ? "+" : ""}${value.toFixed(2)} percent versus previous close`,
     });
     const title = svgElement("title");
     title.textContent = rect.getAttribute("aria-label");
@@ -108,7 +110,7 @@ export function drawSpikeChart(svg, points, previousClose, formatPrice) {
       x: x + barWidth / 2, y: height - margin.bottom + 22,
       class: "chart-axis-label", "text-anchor": "middle",
     });
-    timeLabel.textContent = new Date(point.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    timeLabel.textContent = formatTime(point.timestamp, false);
     svg.append(timeLabel);
   });
 

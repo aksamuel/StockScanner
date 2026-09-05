@@ -1,5 +1,5 @@
-# Stock Scanner CI Workflow — v2.13.0
-# Runs the stock scanner at 9:17 AM New York time on NYSE trading days (Mon-Fri)
+# Stock Scanner CI Workflow
+# Runs the stock scanner at 09:17 New York time on NYSE trading days (Mon-Fri)
 # or on-demand via the GitHub mobile app / Actions tab.
 # Generates an HTML dashboard and deploys it to GitHub Pages.
 
@@ -12,12 +12,21 @@ run-name: >-
     || 'site deployment' }})
 
 on:
-  # Deploy Auth-related changes without waiting for a scheduled market scan.
+  # Deploy application and release changes without waiting for a market scan.
   push:
     branches:
       - main
     paths:
       - "auth.js"
+      - "help.html"
+      - "README.md"
+      - "README_SETUP.md"
+      - "RELEASE_NOTES.md"
+      - "pyproject.toml"
+      - "stockscanner/__init__.py"
+      - "stockscanner/html_report.py"
+      - "stockscanner/report.py"
+      - "tests/**"
       - "login.html"
       - "admin.html"
       - "users.html"
@@ -38,6 +47,7 @@ on:
       - "supabase/migrations/**"
       - "tools/inject_auth.py"
       - "tools/format_report_dates.py"
+      - "stockscanner/display_time.py"
       - ".github/workflows/scan.yml"
 
   # Manual server-side Yahoo refresh from the Actions page.
@@ -102,7 +112,7 @@ jobs:
         id: gate
         shell: bash
         run: |
-          NEW_YORK_TIME=$(TZ=America/New_York date '+%Y-%m-%d %H:%M:%S %Z')
+          NEW_YORK_TIME=$(TZ=America/New_York date '+%d/%b/%Y %H:%M %Z')
           NEW_YORK_HOUR=$(TZ=America/New_York date '+%H')
           echo "new_york_time=$NEW_YORK_TIME" >> "$GITHUB_OUTPUT"
           # GitHub cron events can be delayed by several hours. Once New York
@@ -149,7 +159,29 @@ jobs:
       - name: Install dependencies
         run: |
           pip install -r requirements.txt
-          pip install -e .
+          pip install -e '.[dev]'
+
+      - name: Set up Node.js for application checks
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Check application before deployment
+        run: |
+          python -m pytest -q
+          node --test tests/date-format.test.mjs tests/portfolio-recovery.test.mjs tests/portfolio-history.test.mjs
+
+      - name: Validate stable release version
+        if: github.event_name == 'push'
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import tomllib
+          from stockscanner import __version__
+          version = tomllib.loads(Path('pyproject.toml').read_text())['project']['version']
+          assert version == __version__, 'Package version mismatch'
+          assert Path('RELEASE_NOTES.md').read_text().startswith(f'# StockScanner v{version}\n'), 'Release notes version mismatch'
+          PY
 
       - name: Acquire daily universe-scan lease
         id: daily-lock
@@ -340,7 +372,7 @@ jobs:
         if: github.event_name == 'push' || github.event.inputs.mode == 'watchlist' || steps.daily-lock.outputs.acquired == 'true'
         uses: actions/configure-pages@v3
 
-      - name: Standardize displayed report dates
+      - name: Standardize displayed report dates and New York times
         if: github.event_name == 'push' || github.event.inputs.mode == 'watchlist' || steps.daily-lock.outputs.acquired == 'true'
         run: python tools/format_report_dates.py
 
@@ -367,6 +399,35 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deploy
         uses: actions/deploy-pages@v4
+
+  stable-release:
+    needs: deploy
+    if: github.event_name == 'push' && needs.deploy.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout deployed source commit
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Publish stable release after successful deployment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          RELEASE_TAG=$(python -c "import pathlib,tomllib; print('v' + tomllib.loads(pathlib.Path('pyproject.toml').read_text())['project']['version'])")
+          if gh release view "$RELEASE_TAG" > /dev/null 2>&1; then
+            echo "Release $RELEASE_TAG already exists; preserving it."
+          else
+            gh release create "$RELEASE_TAG" --target "$GITHUB_SHA" \
+              --title "StockScanner $RELEASE_TAG" --notes-file RELEASE_NOTES.md --latest
+          fi
 
   finalize-daily-run:
     needs: [build, deploy]

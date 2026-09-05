@@ -407,7 +407,7 @@ def test_current_price_is_displayed_below_symbol_in_smaller_text(tmp_path):
 def test_scan_time_is_formatted_in_new_york_time():
     utc_time = datetime(2026, 8, 13, 15, 21, tzinfo=ZoneInfo("UTC"))
 
-    assert _format_new_york_time(utc_time) == "13/Aug/2026, 11:21 AM EDT"
+    assert _format_new_york_time(utc_time) == "13/Aug/2026, 11:21 EDT"
 
 
 def test_three_report_pages_have_requested_columns_navigation_and_selection():

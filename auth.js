@@ -523,6 +523,7 @@ function addNavigationDrawer(user) {
     ["My lists", "My exceptions", "my-exceptions.html"],
     ["My lists", "My bought list", "my-bought-selection.html"],
     ["My lists", "Portfolio analysis", "portfolio-analysis.html"],
+    ["Support", "Help & FAQ", "help.html"],
   ];
   if (isAdmin) {
     menuItems.push(

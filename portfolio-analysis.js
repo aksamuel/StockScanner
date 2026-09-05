@@ -3,6 +3,16 @@ import { parseDateInput } from "./date-format.js";
 export const DEFAULT_PROFIT_REVIEW_PERCENT = 7;
 export const DEFAULT_LOSS_REVIEW_PERCENT = -10;
 
+export function technicalStrength(score) {
+  if (score === null || score === undefined || score === '' || !Number.isFinite(Number(score))) {
+    return { label: 'Unavailable', tone: 'unavailable', score: null };
+  }
+  const value = Number(score);
+  if (value < 0 || value > 100) return { label: 'Unavailable', tone: 'unavailable', score: null };
+  return { label: value < 40 ? 'Weak' : value <= 70 ? 'Moderate' : 'Strong',
+    tone: value < 40 ? 'weak' : value <= 70 ? 'moderate' : 'strong', score: value };
+}
+
 export function parseCsv(source) {
   const rows = [];
   let row = [];
@@ -284,13 +294,9 @@ export function portfolioActionDecision(holding, context = {}) {
     && (isShort ? currentPrice <= target : currentPrice >= target);
   const stopHit = hasPrice && Number.isFinite(stop) && stop > 0
     && (isShort ? currentPrice >= stop : currentPrice <= stop);
-  const scannerLabel = scannerRecommendation === "unavailable"
-    ? "Scanner unavailable"
-    : scannerRecommendation.split("-").map((word) => word[0].toUpperCase() + word.slice(1)).join(" ");
-  const scannerReason = Number.isFinite(scannerScore)
-    ? `${scannerLabel} (${scannerScore.toFixed(0)})`
-    : scannerLabel;
-  const decision = (code, label, reasons, priority) => ({ code, label, reasons, priority });
+  const strength = technicalStrength(scannerScore);
+  const scannerReason = `Technical strength: ${strength.label}${strength.score === null ? "" : ` · ${strength.score.toFixed(0)}/100`}`;
+  const decision = (code, label, reasons, priority) => ({ code, label, reasons, priority, technicalReason: scannerReason });
 
   if (!hasPrice || !hasReturn) {
     return decision("unavailable", "Data needed", ["Present price or buy price is unavailable."], -1);
@@ -319,7 +325,7 @@ export function portfolioActionDecision(holding, context = {}) {
   }
   if (scannerRecommendation === "avoid" && returnPercent > 0) {
     return decision("partial-sell", "Partial sell review", [
-      `Protect a ${returnPercent.toFixed(2)}% gain while the scanner rating is Avoid.`,
+      `Protect a ${returnPercent.toFixed(2)}% gain; review the position's technical strength.`,
       scannerReason,
     ], 2);
   }

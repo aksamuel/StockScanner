@@ -282,7 +282,7 @@ def test_portfolio_table_headers_sort_visible_user_holdings():
 
     for key in (
         "symbol", "quantity", "buy_price", "bought_on",
-        "present_price", "return_percent", "target", "concentration", "scanner",
+        "present_price", "return_percent", "target", "concentration",
         "held_days", "action", "price_updated",
     ):
         assert f'data-sort-key="{key}"' in page

@@ -59,7 +59,7 @@
       <div class="chart-wrap">
         <svg id="spikeChart" viewBox="0 0 900 320" role="img" aria-labelledby="chartTitle chartDescription"></svg>
       </div>
-      <p id="chartDescription" class="subtitle">Green bars are above the previous close; red bars are below it. Values remain available without hover.</p>
+      <p id="chartDescription" class="subtitle">Green bars are above the previous close; red bars are below it. All chart times are New York time (EST/EDT). Values remain available without hover.</p>
       <ol id="chartData" aria-label="Intraday price points"></ol>
     </section>
 
@@ -78,7 +78,7 @@
   </main>
   <script type="module" src="/StockScanner/auth.js" data-stockscanner-auth></script>
   <script type="module">
-    import { formatDateTime, parseDateInput, validateDateInputs } from "/StockScanner/date-format.js";
+    import { formatDateTime, formatTime } from "/StockScanner/date-format.js";
     import { requireApprovedUser, setMessage, supabase, tableCell } from "/StockScanner/personal-lists.js";
     import { drawSpikeChart, intradayPoints, marketRows } from "/StockScanner/market-prices.js";
 
@@ -172,7 +172,7 @@
       chartData.replaceChildren(...points.map((point) => {
         const item = document.createElement("li");
         const change = Number.isFinite(point.changePercent) ? `${percentFormat.format(point.changePercent)}%` : "previous-close comparison unavailable";
-        item.textContent = `${new Date(point.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}: ${priceFormat.format(point.price)} (${change})`;
+        item.textContent = `${formatTime(point.timestamp)}: ${priceFormat.format(point.price)} (${change})`;
         return item;
       }));
     }

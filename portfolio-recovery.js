@@ -1,14 +1,6 @@
 import { estimatedBreakevenDays } from './portfolio-analysis.js';
 
-export function technicalStrength(score) {
-  if (score === null || score === undefined || score === '' || !Number.isFinite(Number(score))) {
-    return { label: 'Unavailable', tone: 'unavailable', score: null };
-  }
-  const value = Number(score);
-  if (value < 0 || value > 100) return { label: 'Unavailable', tone: 'unavailable', score: null };
-  return { label: value < 40 ? 'Weak' : value <= 70 ? 'Moderate' : 'Strong',
-    tone: value < 40 ? 'weak' : value <= 70 ? 'moderate' : 'strong', score: value };
-}
+export { technicalStrength } from './portfolio-analysis.js';
 
 export function recoveryScenario(holding, benchmark, now = new Date()) {
   const cost = Number(holding.buy_price);

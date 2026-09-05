@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Help & FAQ | StockScanner</title>
+  <link rel="stylesheet" href="/StockScanner/personal-lists.css">
+  <style>
+    main { max-width: 960px; }
+    h2 { margin: 0 0 12px; color: #b3e5fc; font-size: 1.15rem; }
+    h3 { font-size: 1rem; margin: 20px 0 8px; }
+    p, li, dd { line-height: 1.6; }
+    a { color: #81d4fa; text-underline-offset: 3px; }
+    a:focus-visible, summary:focus-visible { outline: 2px solid #4fc3f7; outline-offset: 4px; }
+    section { scroll-margin-top: 80px; }
+    .guide-nav { display: flex; flex-wrap: wrap; gap: 12px 20px; margin: 18px 0 24px; }
+    .strength-bands { display: flex; flex-wrap: wrap; gap: 10px; padding: 0; list-style: none; }
+    .strength-bands li { padding: 8px 12px; border: 1px solid currentColor; border-radius: 7px; }
+    .weak { color: #ff8a80; } .moderate, .top20 { color: #ffb74d; } .strong { color: #81c784; } .stock { color: #4fc3f7; }
+    .timeline-key { border-left: 3px solid #78909c; padding-left: 16px; }
+    .disclaimer { border-left: 4px solid #ffb74d; padding: 10px 14px; background: #10212d; }
+    details { padding: 14px 0; border-bottom: 1px solid #334b5f; }
+    details:last-child { border: 0; }
+    summary { cursor: pointer; font-weight: 650; color: #b3e5fc; line-height: 1.5; }
+    details p { margin-bottom: 0; }
+    dt { font-weight: 650; color: #b3e5fc; margin-top: 14px; }
+    dd { margin: 5px 0 0; }
+    .release { color: #b0bec5; font-size: .85rem; }
+  </style>
+</head>
+<body>
+  <main>
+    <header class="page-header">
+      <div><h1>Help & FAQ</h1><p class="subtitle">StockScanner v2.16.0 · A guide to reviewing your portfolio.</p></div>
+      <nav class="page-nav" aria-label="Return to application"><a href="/StockScanner/portfolio-analysis.html">My Portfolio analysis</a><a href="/StockScanner/index.html">Dashboard</a></nav>
+    </header>
+    <nav class="guide-nav" aria-label="Help topics"><a href="#portfolio">Portfolio</a><a href="#strength">Technical strength</a><a href="#recovery">Recovery dates & graphs</a><a href="#dates">Dates & times</a><a href="#faq">FAQ</a></nav>
+
+    <section class="panel" id="portfolio" aria-labelledby="portfolioTitle">
+      <h2 id="portfolioTitle">My Portfolio analysis</h2>
+      <p>Add a holding manually or upload a broker CSV. Native IBKR exports are supported; the direct IBKR download box and its download scripts have been removed. Uploading replaces holdings only for the broker you name. Download the CSV template from the portfolio page for the accepted layout.</p>
+      <p>Use <strong>Analyze portfolio</strong> to select one broker or all brokers. Counts, concentration and action reviews follow that selection. Broker headings identify each table, so there is no separate Broker column.</p>
+      <p>The first four columns are <strong>Symbol → Action review → Recovery scenario / days held → Profit / Loss %</strong>. Quantity, buy price, buy date, present price, review target, concentration, price updated and management controls follow.</p>
+      <dl>
+        <dt>Action review</dt><dd>A screening prompt based on price, profit/loss, targets, stop-losses, scanner evidence, concentration and holding time. The reasons explain the result. It does not place an order.</dd>
+        <dt>Profit / Loss %</dt><dd>The percentage change from your buy price to the latest available price. Fees, taxes, dividends and currency conversion are excluded.</dd>
+        <dt>Review target</dt><dd>A manual target takes priority. Otherwise the application selects the lowest valid price at or above cost from its 7% objective, Technical Target 1, resistance and analyst target proxy. This can differ from the recovery target, which is your buy price.</dd>
+        <dt>Days held</dt><dd>Calendar days since the recorded purchase date. A missing buy date is disclosed rather than guessed.</dd>
+      </dl>
+    </section>
+
+    <section class="panel" id="strength" aria-labelledby="strengthTitle">
+      <h2 id="strengthTitle">One Technical strength score</h2>
+      <p>The score appears once per holding, inside <strong>Action review</strong>. For example, the old “Avoid (35)” display becomes <strong class="weak">Weak · 35/100</strong>.</p>
+      <ul class="strength-bands"><li class="weak"><strong>Weak</strong> · below 40 · red</li><li class="moderate"><strong>Moderate</strong> · 40–70 · orange</li><li class="strong"><strong>Strong</strong> · above 70 · green</li></ul>
+      <p>A missing score is shown as unavailable in grey. The colours describe the scanner's technical conditions. A score below 40 is not, by itself, a sell instruction. Action review uses additional evidence; its existing decision rules are unchanged by this display update.</p>
+    </section>
+
+    <section class="panel" id="recovery" aria-labelledby="recoveryTitle">
+      <h2 id="recoveryTitle">Recovery dates and line graphs</h2>
+      <p>The <strong>recovery target is your recorded buy price</strong>. For a losing long position, the page shows the gain needed from its latest available price to return to that target.</p>
+      <div class="timeline-key">
+        <p><strong>Grey dot — Today:</strong> the starting point; today's date is intentionally omitted.</p>
+        <p class="stock"><strong>Blue dot — Stock history:</strong> the estimated date using the stock's own historical compound growth rate.</p>
+        <p class="top20"><strong>Orange dot — Top 20:</strong> the estimated date using the Equal-weight Top 20 benchmark's historical compound growth rate.</p>
+      </div>
+      <p>The two coloured milestones are ordered by date and show calendar days to recovery. If an estimate is unavailable, an explanation appears in place of its dated dot. Both estimated dates remain available when they can be calculated.</p>
+      <h3>Reading “View recovery graph”</h3>
+      <p>The solid blue line shows the stock's historical adjusted closing prices. The dashed blue line extends its historical compound rate forward. The dashed orange line applies the Top 20 rate, with each constituent given the same weight. Both scenarios start at your holding's latest available quote today and aim at the horizontal buy-price line. The Top 20 line is scaled to this stock's price.</p>
+      <p>The stock's rate comes from the first and last valid closes in its available one-year sample. This is a constant-growth assumption, not a prediction of the path the stock will take. The graph shows the sample dates and quote timestamp. Use <strong>Inspect date</strong> to read values along the lines.</p>
+      <p>A flat or falling historical rate produces no future recovery date under that assumption. Projections stop at the target and the graph displays up to five future years; any later calculated date remains listed. Short positions are not given these long-position recovery estimates.</p>
+      <h3>Historical recovery statistics</h3>
+      <p>Expand the statistics inside the graph to see earlier declines at least as deep as the current percentage loss, how many recovered, how many remain unresolved, and the median calendar days among completed recoveries. These are observations from the available history. They do not determine the blue projected date.</p>
+      <p class="disclaimer"><strong>Recovery dates are estimates and are not guaranteed.</strong> Actual recovery may happen earlier, later, or not at all. Scenarios exclude fees, taxes, dividends received and currency conversion. They do not change the Action review result or recommend switching into the Top 20 stocks.</p>
+    </section>
+
+    <section class="panel" id="dates" aria-labelledby="datesTitle">
+      <h2 id="datesTitle">Dates and New York time</h2>
+      <p>Displayed dates and manual date entry use <strong>dd/mmm/yyyy</strong>, such as <strong>05/Sep/2026</strong>. All displayed clocks use <strong>New York time, 24-hour HH:mm</strong>, without seconds. EST or EDT identifies the season; for example, <strong>05/Sep/2026, 14:07 EDT</strong>.</p>
+      <p>The application handles New York daylight saving automatically, regardless of your device's location. A purchase date remains the calendar date entered. Native CSV exports may still use ISO dates. Internal timestamps and file names retain the precision needed by the application.</p>
+    </section>
+
+    <section class="panel" id="faq" aria-labelledby="faqTitle">
+      <h2 id="faqTitle">Frequently asked questions</h2>
+      <details><summary>Why is the latest price different from today's live price?</summary><p>The page uses the newest available quote, which may be delayed or from an earlier trading session. Check <strong>Price updated</strong> before interpreting an estimate. The <a href="/StockScanner/market-prices.html">Hourly and daily prices</a> page shows available intraday data and previous-close comparisons.</p></details>
+      <details><summary>Why is one recovery date missing?</summary><p>A scenario needs valid prices and a positive historical growth rate. Stock history also needs at least 60 valid daily closes and a latest close no older than seven days. Missing or stale data is disclosed. The Top 20 estimate can remain available independently of stock history.</p></details>
+      <details><summary>Does a weak score mean I must sell?</summary><p>No. It describes technical conditions. Read the Action review reasons alongside profit/loss, targets, position concentration and your own investment objectives. The recovery estimate is a separate scenario and does not overrule the action-review rules.</p></details>
+      <details><summary>Why is the buy date missing after an IBKR import?</summary><p>Some IBKR exports omit purchase dates. An Open Positions export at tax-lot detail can include them. Supply a supported buy date in your CSV or edit the holding; the application will not invent one.</p></details>
+      <details><summary>Where are my personal lists?</summary><p>Use the shared menu to open <a href="/StockScanner/my-bought-selection.html">My Bought selection</a> or <a href="/StockScanner/my-exceptions.html">My Exceptions</a>. My Portfolio analysis reviews the holdings you entered or imported for your account.</p></details>
+    </section>
+    <footer class="release">Stable release v2.16.0 · <a href="https://github.com/aksamuel/StockScanner/releases/tag/v2.16.0">Release notes</a> · <a href="https://github.com/aksamuel/StockScanner#readme">README</a> · <a href="https://github.com/aksamuel/StockScanner/blob/main/README_SETUP.md">Setup guide</a></footer>
+  </main>
+  <script type="module" src="/StockScanner/auth.js" data-stockscanner-auth></script>
+</body>
+</html>
