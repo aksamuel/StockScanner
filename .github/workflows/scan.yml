@@ -33,6 +33,7 @@ on:
       - "personal-lists.js"
       - "date-format.js"
       - "portfolio-recovery.js"
+      - "recovery-chart.js"
       - "supabase/functions/portfolio-history/**"
       - "supabase/migrations/**"
       - "tools/inject_auth.py"

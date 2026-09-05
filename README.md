@@ -270,7 +270,22 @@ are never truncated or changed.
   positions are not given this long-position recovery estimate.
 - Recovery scenarios exclude transaction costs, taxes, dividends, and currency
   conversion. They are not promises and do not trigger an action review.
-- Expand **Stock's historical recovery** for comparable drawdown context when
+- Choose **View recovery graph** on a losing long position to compare solid blue
+  historical adjusted closes with two dashed growth scenarios: blue uses that
+  stock's historical compound rate and orange uses the existing Equal-weight
+  Top 20 benchmark (each constituent has the same weight). Both start at the
+  holding's latest available quote today and aim at the horizontal buy-price
+  target. The Top 20 line is rescaled to the holding's price, not its raw index
+  level. The quote timestamp and both sample windows are shown in the dialog.
+  Both estimated dates remain visible above the graph and in the table.
+  Use **Inspect date** to read historical prices and projected values.
+- The stock's rate is the compound return between the first and last valid
+  closes in its one-year sample, measured in calendar days. Zero or negative
+  rates draw flat or falling lines and show **No recovery under this assumption**.
+  The graph shows up to five future years and each projection stops at the buy
+  price; later estimated dates remain listed. These constant-growth scenarios
+  are not forecasts, confidence intervals, or recommendations to switch stocks.
+- Expand **Historical recovery statistics** inside the graph for comparable drawdown context when
   authenticated stock history is available. The calculation counts non-overlapping
   declines at least as deep as the current loss, reports completed and unresolved
   recoveries, and shows median calendar days for completed recoveries only.

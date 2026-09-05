@@ -272,7 +272,9 @@ daily ticker histories are not retained.
 The existing Stock Scanner workflow publishes GitHub Pages on pushes to `main`
 that change the portfolio page, its helper modules, or the shared date module.
 Push deployments reuse the latest scanner reports; they do not launch a full
-market scan. Publish `date-format.js` and `portfolio-recovery.js` with the page.
+market scan. Publish `date-format.js`, `portfolio-recovery.js`, and
+`recovery-chart.js` with the page. The graph renders locally as SVG and adds no
+chart dependency, database migration, or provider request beyond existing history.
 `tools/format_report_dates.py` updates archived report dates during deployment
 without rewriting their URLs or committing hundreds of regenerated files.
 
@@ -293,13 +295,25 @@ The UI requests at most four symbols concurrently, reports unavailable history
 explicitly, and retains the independent benchmark breakeven date. At least 60
 daily closes are required; history older than seven days is not used.
 
+The recovery graph uses `expm1(log(lastClose / firstClose) / elapsedCalendarDays)`
+for the stock's daily growth rate and the existing equal-weight Top 20 daily rate
+for comparison. Both compound from the holding's latest quote today toward its
+buy price. Dates retain the existing calendar-day breakeven calculation. Drawn
+projections stop at the target or five years, whichever comes first; estimates
+beyond five years stay visible as text. Non-positive rates have no recovery date.
+Missing stock history still allows the independent Top 20 projection. The dialog
+shows quote time, sample dates, annualized rates, an accessible date slider, and
+historical drawdown statistics. No recovery calculation changes action decisions.
+
 Run `node tests/portfolio-history.test.mjs` to verify authentication, ownership,
 cache isolation, provider failure handling, and completed-candle parsing.
 
 Run `python -m pytest -q`, `node tests/date-format.test.mjs`, and
 `node tests/portfolio-recovery.test.mjs` before publishing. Verify broker selection,
 13-column table alignment, score boundaries (39, 40, 70, 71), positive and
-non-positive benchmark returns, and manual date validation.
+non-positive stock/benchmark returns, both projection start points and recovery
+markers, missing history, dates beyond the five-year chart, keyboard/modal use,
+mobile chart scrolling, and manual date validation.
 
 Dates are presentation changes only: do not rewrite ISO database dates or
 historical report paths. The IBKR Flex import code is retired; CSV import uses
