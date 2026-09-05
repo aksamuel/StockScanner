@@ -351,7 +351,7 @@ def create_dashboard_sheet(workbook, dataframe):
     title_cell.fill = TITLE_FILL
     title_cell.font = TITLE_FONT
     title_cell.alignment = Alignment(horizontal="center", vertical="center")
-    scan_time = datetime.now().strftime("%d %B %Y, %I:%M %p")
+    scan_time = datetime.now().strftime("%d/%b/%Y, %I:%M %p")
     total_stocks = len(dataframe)
     average_score = dataframe["Score"].mean() if "Score" in dataframe.columns else 0
     highest_score = dataframe["Score"].max() if "Score" in dataframe.columns else 0
@@ -630,7 +630,7 @@ def _write_html_report(filename, dataframe, report_label, nav_links=None):
     )
     summary_html = _build_html_summary(dataframe)
     nav_html = _build_nav_links(nav_links)
-    generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    generated_at = datetime.now().strftime("%d/%b/%Y %H:%M:%S")
     title = f"StockScanner {report_label} Report"
     html_content = _create_html_document(title, generated_at, summary_html, table_html, nav_html=nav_html)
     with open(html_filename, "w", encoding="utf-8") as html_file:
@@ -646,8 +646,9 @@ def _write_date_index(date_folder, report_entries):
             f"<tr><td>{entry['label']}</td><td>{entry['type']}</td><td><a href='{os.path.basename(entry['path'])}'>{os.path.basename(entry['path'])}</a></td></tr>"
         )
     report_links_html = "<div class='report-links'><h2>Available Reports</h2><table>" + "".join(rows) + "</table></div>"
-    generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    title = f"StockScanner Reports for {os.path.basename(date_folder)}"
+    generated_at = datetime.now().strftime("%d/%b/%Y %H:%M:%S")
+    display_date = datetime.strptime(os.path.basename(date_folder), "%Y-%m-%d").strftime("%d/%b/%Y")
+    title = f"StockScanner Reports for {display_date}"
     html_content = _create_html_document(title, generated_at, "", "", nav_html=None, report_links_html=report_links_html)
     with open(index_filename, "w", encoding="utf-8") as index_file:
         index_file.write(html_content)
@@ -672,11 +673,12 @@ def _write_root_index():
     report_files.sort(key=lambda item: (item[0], item[1]), reverse=True)
     rows = ["<tr><th>Date</th><th>Report</th><th>Link</th></tr>"]
     for report_date, filename, rel_path in report_files:
+        display_date = datetime.strptime(report_date, "%Y-%m-%d").strftime("%d/%b/%Y")
         rows.append(
-            f"<tr><td>{report_date}</td><td>{filename}</td><td><a href='{rel_path}'>Open</a></td></tr>"
+            f"<tr><td>{display_date}</td><td>{filename}</td><td><a href='{rel_path}'>Open</a></td></tr>"
         )
     report_links_html = "<div class='report-links'><h2>All Available Reports</h2><table>" + "".join(rows) + "</table></div>"
-    generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    generated_at = datetime.now().strftime("%d/%b/%Y %H:%M:%S")
     title = "StockScanner Reports Index"
     html_content = _create_html_document(title, generated_at, "", "", nav_html=None, report_links_html=report_links_html)
     root_index = os.path.join(REPORT_FOLDER, "index.html")

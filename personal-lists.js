@@ -30,9 +30,7 @@ export function localDateValue(date = new Date()) {
   return local.toISOString().slice(0, 10);
 }
 
-export function formatDate(value) {
-  return value ? new Date(`${value}T00:00:00`).toLocaleDateString() : "—";
-}
+export { formatDate } from "./date-format.js";
 
 export function setMessage(element, text, success = false) {
   element.textContent = text;

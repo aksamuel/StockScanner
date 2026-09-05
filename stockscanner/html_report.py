@@ -28,7 +28,7 @@ def _format_new_york_time(moment=None):
         moment = moment.replace(tzinfo=NEW_YORK)
     else:
         moment = moment.astimezone(NEW_YORK)
-    return moment.strftime("%d %B %Y, %I:%M %p %Z")
+    return moment.strftime("%d/%b/%Y, %I:%M %p %Z")
 
 
 def _escape_html(text):
@@ -959,7 +959,7 @@ def _generate_html(
         new Chart(ctx, {{
             type: 'line',
             data: {{
-                labels: chartData.labels,
+                labels: chartData.labels.map((value) => {{ const [year, month, day] = value.split('-'); return day + '/' + ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][Number(month) - 1] + '/' + year; }}),
                 datasets: [
                     {{
                         label: 'S&P 500',

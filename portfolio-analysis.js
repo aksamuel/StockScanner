@@ -1,3 +1,5 @@
+import { parseDateInput } from "./date-format.js";
+
 export const DEFAULT_PROFIT_REVIEW_PERCENT = 7;
 export const DEFAULT_LOSS_REVIEW_PERCENT = -10;
 
@@ -48,8 +50,10 @@ function numberValue(value, label, rowNumber, { required = false, nonzero = fals
 function dateValue(value, rowNumber) {
   const text = String(value || "").trim();
   if (!text) return null;
+  const displayDate = parseDateInput(text);
+  if (displayDate) return displayDate;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(text) || Number.isNaN(Date.parse(`${text}T00:00:00Z`))) {
-    throw new Error(`Row ${rowNumber}: buy_date must use YYYY-MM-DD.`);
+    throw new Error(`Row ${rowNumber}: buy_date must use dd/mmm/yyyy (for example 05/Sep/2026). Native YYYY-MM-DD exports are also accepted.`);
   }
   return text;
 }

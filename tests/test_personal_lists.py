@@ -235,8 +235,8 @@ def test_portfolio_page_supports_ibkr_csv_and_rule_based_analysis():
     logic = read("portfolio-analysis.js")
     template = read("portfolio-holdings-template.csv")
 
-    assert 'id="ibkrImport"' in page
-    assert 'supabase.functions.invoke("import-ibkr-portfolio"' in page
+    assert 'id="ibkrImport"' not in page
+    assert 'supabase.functions.invoke("import-ibkr-portfolio"' not in page
     assert 'id="csvFile"' in page
     assert 'href="/StockScanner/portfolio-holdings-template.csv"' in page
     assert '.rpc("replace_my_portfolio_holdings"' in page
@@ -281,7 +281,7 @@ def test_portfolio_table_headers_sort_visible_user_holdings():
     page = read("portfolio-analysis.html")
 
     for key in (
-        "symbol", "broker", "quantity", "buy_price", "bought_on",
+        "symbol", "quantity", "buy_price", "bought_on",
         "present_price", "return_percent", "target", "concentration", "scanner",
         "held_days", "action", "price_updated",
     ):
@@ -300,7 +300,7 @@ def test_portfolio_kpis_filter_the_holdings_table_accessibly():
     for filter_name in ("all", "profitable", "sell", "partial-sell", "hold"):
         assert f'data-portfolio-filter="{filter_name}"' in page
     assert page.count('class="metric metric-filter"') == 5
-    assert page.count('aria-controls="brokerTables"') == 5
+    assert page.count('aria-controls="brokerTables"') == 6
     assert 'let portfolioFilter = "all"' in page
     assert "analyzed.filter(matchesPortfolioFilter).filter" in page
     assert 'holding.returnPercent > 0' in page
@@ -335,7 +335,7 @@ def test_manual_broker_name_overrides_detection_and_form_resets_after_upload():
     assert "csvForm.reset();" in upload
 
 
-def test_portfolio_table_places_action_after_symbol_and_broker_last():
+def test_portfolio_table_places_action_after_symbol_without_broker_column():
     page = read("portfolio-analysis.html")
     header = page[page.index("<thead>"):page.index("</thead>")]
     holding_row = page.index("function holdingRow")
@@ -344,23 +344,10 @@ def test_portfolio_table_places_action_after_symbol_and_broker_last():
 
     assert header.index('data-sort-key="symbol"') < header.index('data-sort-key="action"')
     assert header.index('data-sort-key="action"') < header.index('data-sort-key="quantity"')
-    assert header.index('data-sort-key="price_updated"') < header.index('data-sort-key="broker"')
+    assert 'data-sort-key="broker"' not in header
     assert row_append.index("symbolCell") < row_append.index("decisionCell")
     assert row_append.index("decisionCell") < row_append.index("Number(holding.quantity)")
-    assert row_append.index("formatTime(holding.quote.at)") < row_append.index("holding.broker")
-
-
-def test_ibkr_import_function_authenticates_user_and_uses_server_secrets():
-    source = read("supabase/functions/import-ibkr-portfolio/index.ts")
-
-    assert 'userClient.auth.getUser()' in source
-    assert '.from("user_access")' in source
-    assert 'if (!authorization) return json(request, { error: "Authentication required." }, 401)' in source
-    assert 'Deno.env.get("IBKR_FLEX_TOKEN")' in source
-    assert 'Deno.env.get("IBKR_FLEX_QUERY_ID")' in source
-    assert '.rpc("replace_my_portfolio_holdings"' in source
-    assert 'p_broker: "IBKR"' in source
-    assert "create_order" not in source.lower()
+    assert "tableCell(holding.broker)" not in row_append
 
 
 def test_personal_lists_are_directly_editable_without_github_issues():

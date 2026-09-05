@@ -31,9 +31,12 @@ on:
       - "portfolio-holdings-template.csv"
       - "personal-lists.css"
       - "personal-lists.js"
-      - "supabase/functions/import-ibkr-portfolio/**"
+      - "date-format.js"
+      - "portfolio-recovery.js"
+      - "supabase/functions/portfolio-history/**"
       - "supabase/migrations/**"
       - "tools/inject_auth.py"
+      - "tools/format_report_dates.py"
       - ".github/workflows/scan.yml"
 
   # Manual server-side Yahoo refresh from the Actions page.
@@ -335,6 +338,10 @@ jobs:
       - name: Configure Pages
         if: github.event_name == 'push' || github.event.inputs.mode == 'watchlist' || steps.daily-lock.outputs.acquired == 'true'
         uses: actions/configure-pages@v3
+
+      - name: Standardize displayed report dates
+        if: github.event_name == 'push' || github.event.inputs.mode == 'watchlist' || steps.daily-lock.outputs.acquired == 'true'
+        run: python tools/format_report_dates.py
 
       - name: Upload reports artifact for Pages
         if: github.event_name == 'push' || github.event.inputs.mode == 'watchlist' || steps.daily-lock.outputs.acquired == 'true'

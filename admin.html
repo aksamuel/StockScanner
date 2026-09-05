@@ -77,6 +77,7 @@
   </main>
   <script type="module" src="/StockScanner/auth.js" data-stockscanner-auth></script>
   <script type="module">
+    import { formatDateTime, parseDateInput, validateDateInputs } from "/StockScanner/date-format.js";
     import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.112.3/+esm";
 
     const ADMIN_EMAIL = "aaksamuel@zohomail.com";
@@ -219,7 +220,7 @@
     }
 
     function formatTime(value) {
-      return value ? new Date(value).toLocaleString() : "—";
+      return value ? formatDateTime(value) : "—";
     }
 
     function requestRow(request) {
@@ -228,7 +229,7 @@
       const requested = document.createElement("td");
       const action = document.createElement("td");
       email.textContent = request.email;
-      requested.textContent = new Date(request.permitted_at).toLocaleString();
+      requested.textContent = formatDateTime(request.permitted_at);
       const revoke = document.createElement("button");
       revoke.type = "button";
       revoke.textContent = "Revoke";

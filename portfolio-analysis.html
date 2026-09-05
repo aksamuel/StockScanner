@@ -17,6 +17,9 @@
     .timestamp { color: #b3e5fc; font-weight: 700; }
     .metrics { margin: 22px 0; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
     .metric strong { display: block; margin-top: 7px; color: #81d4fa; font-size: 1.6rem; }
+    #lastImported { font-size: 1rem; overflow-wrap: anywhere; }
+    #brokerSelect { max-width: 100%; padding: 10px; border: 1px solid #456175; border-radius: 5px; background: #10212e; color: #e0e0e0; font: inherit; }
+    #brokerSelect:focus-visible { outline: 2px solid #4fc3f7; outline-offset: 2px; }
     .metric-filter { min-height: 0; color: #e0e0e0; text-align: left; font-weight: 400; }
     .metric-filter:hover, .metric-filter:focus-visible { border-color: #4fc3f7; background: #203448; }
     .metric-filter:focus-visible { outline: 2px solid #4fc3f7; outline-offset: 2px; }
@@ -26,6 +29,13 @@
     .signal-sell { color: #fff; background: #b71c1c; }
     .signal-partial-sell { color: #1a1a1a; background: #ffca28; }
     .signal-hold { color: #b9f6ca; background: #1b5e20; }
+    .strength-weak { color: #ffcdd2; background: #8b1818; }
+    .strength-moderate { color: #1a1a1a; background: #ffb74d; }
+    .strength-strong { color: #b9f6ca; background: #1b5e20; }
+    .strength-unavailable { color: #cfd8dc; background: #455a64; }
+    .recovery-cell { min-width: 220px; max-width: 310px; }
+    .recovery-cell details { margin-top: 8px; }
+    .recovery-cell summary { cursor: pointer; color: #81d4fa; }
     .decision-reasons { margin-top: 6px; max-width: 270px; color: #b0bec5; font-size: .78rem; line-height: 1.35; }
     .subtle { color: #90a4ae; font-size: .88rem; }
     .warning { color: #ffcc80; }
@@ -84,15 +94,6 @@
 
     <section class="import-grid" aria-label="Portfolio import options">
       <article class="import-card">
-        <h2>Download from IBKR</h2>
-        <p>Retrieves the latest open positions only when you click the button. A correctly configured IBKR Flex query can include tax-lot buy dates.</p>
-        <div class="button-row">
-          <button id="ibkrImport" type="button">Download IBKR holdings</button>
-        </div>
-        <p id="ibkrStatus" class="subtle" role="status" aria-live="polite">Not downloaded during this visit.</p>
-      </article>
-
-      <article class="import-card">
         <h2>Upload broker CSV</h2>
         <form id="csvForm">
           <label>Broker name
@@ -116,7 +117,18 @@
       <p>The page combines present profit/loss, days held, the newest daily StockScanner recommendation and score, targets and stop-losses, and each symbol's share of known portfolio market value. A manual target remains the highest-priority target. Otherwise, the automatic target is the lowest valid price at or above cost from the 7% return objective, Technical Target 1, resistance and the analyst target proxy. A reached target or stop takes priority. An Avoid rating combined with a loss of at least 10% produces a sell review; high concentration, weaker trend, long holding time, or a gain of at least 7% can produce a partial-sell review. Missing evidence is disclosed and never guessed.</p>
       <p class="subtle">Concentration thresholds: 10% warrants closer review and 20% is treated as high concentration. Decisions are screening prompts for your review, not automatic orders or guaranteed outcomes.</p>
       <p class="warning">IBKR may omit buy dates unless its Flex query uses Open Positions at tax-lot detail. Missing dates are never guessed.</p>
+      <p class="subtle">Technical strength: below 40 is Weak (red), 40–70 is Moderate (orange), and above 70 is Strong (green). These describe technical conditions, not buy/sell instructions.</p>
+      <p id="recoveryReference" class="subtle">Loading breakeven benchmark…</p>
+      <p class="subtle">Estimated breakeven dates assume the holding grows at the Equal-weight Top 20 benchmark's historical daily rate. They are scenarios, not guaranteed dates, and exclude fees, taxes, dividends, and currency conversion. Historical recovery details use non-overlapping comparable declines in the stock's available one-year adjusted daily closes; unrecovered declines remain visible. Neither recovery measure changes the action-review signal.</p>
     </section>
+
+    <div class="list-toolbar">
+      <label for="brokerSelect">Analyze portfolio</label>
+      <select id="brokerSelect" aria-controls="brokerTables" aria-describedby="analysisScope">
+        <option value="">All brokers</option>
+      </select>
+    </div>
+    <p id="analysisScope" class="subtle" role="status" aria-live="polite">Analysis covers all brokers.</p>
 
     <section class="metrics" aria-label="Portfolio summary">
       <button class="metric metric-filter" type="button" data-portfolio-filter="all" aria-pressed="true" aria-controls="brokerTables">Holdings<strong id="holdingCount">0</strong></button>
@@ -124,7 +136,7 @@
       <button class="metric metric-filter" type="button" data-portfolio-filter="sell" aria-pressed="false" aria-controls="brokerTables">Sell reviews<strong id="sellDecisionCount">0</strong></button>
       <button class="metric metric-filter" type="button" data-portfolio-filter="partial-sell" aria-pressed="false" aria-controls="brokerTables">Partial-sell reviews<strong id="partialSellCount">0</strong></button>
       <button class="metric metric-filter" type="button" data-portfolio-filter="hold" aria-pressed="false" aria-controls="brokerTables">Hold / monitor<strong id="holdCount">0</strong></button>
-      <div class="metric">Last downloaded<strong id="lastDownloaded">Never</strong></div>
+      <div class="metric">Last imported<strong id="lastImported">Never</strong></div>
     </section>
 
     <div class="list-toolbar">
@@ -152,10 +164,9 @@
                 <th scope="col" data-sort-column="return_percent" aria-sort="none"><button class="sort-button" type="button" data-sort-key="return_percent">Profit / Loss %</button></th>
                 <th scope="col" data-sort-column="target" aria-sort="none"><button class="sort-button" type="button" data-sort-key="target">Review target</button></th>
                 <th scope="col" data-sort-column="concentration" aria-sort="none"><button class="sort-button" type="button" data-sort-key="concentration">Concentration</button></th>
-                <th scope="col" data-sort-column="scanner" aria-sort="none"><button class="sort-button" type="button" data-sort-key="scanner">Daily scanner</button></th>
-                <th scope="col" data-sort-column="held_days" aria-sort="none"><button class="sort-button" type="button" data-sort-key="held_days">Time to profit</button></th>
+                <th scope="col" data-sort-column="scanner" aria-sort="none"><button class="sort-button" type="button" data-sort-key="scanner">Technical strength</button></th>
+                <th scope="col" data-sort-column="held_days" aria-sort="none"><button class="sort-button" type="button" data-sort-key="held_days">Recovery scenario / days held</button></th>
                 <th scope="col" data-sort-column="price_updated" aria-sort="none"><button class="sort-button" type="button" data-sort-key="price_updated">Price updated</button></th>
-                <th scope="col" data-sort-column="broker" aria-sort="none"><button class="sort-button" type="button" data-sort-key="broker">Broker</button></th>
                 <th scope="col">Manage</th>
               </tr>
             </thead>
@@ -175,7 +186,7 @@
         <input id="editBuyPrice" type="number" min="0" step="any">
       </label>
       <label>Buy date
-        <input id="editBuyDate" type="date">
+        <input id="editBuyDate" type="text" data-date-input placeholder="dd/mmm/yyyy" maxlength="11">
       </label>
       <label>Target price
         <input id="editTarget" type="number" min="0" step="any">
@@ -195,8 +206,10 @@
 
   <script type="module" src="/StockScanner/auth.js" data-stockscanner-auth></script>
   <script type="module">
+    import { technicalStrength, recoveryScenario, historicalRecovery } from "/StockScanner/portfolio-recovery.js";
+    import { formatDateTime, parseDateInput, validateDateInputs } from "/StockScanner/date-format.js";
     import { formatDate, requireApprovedUser, setFormBusy, setMessage, supabase, tableCell } from "/StockScanner/personal-lists.js";
-    import { daysHeld, detectedPortfolioBroker, holdingReturnPercent, portfolioActionDecision, portfolioConcentrationPercent, portfolioRowsFromCsv, profitTimingLabel, recommendedTargetPrice } from "/StockScanner/portfolio-analysis.js";
+    import { daysHeld, detectedPortfolioBroker, equalWeightTopTwentyMetrics, holdingReturnPercent, portfolioActionDecision, portfolioConcentrationPercent, portfolioRowsFromCsv, profitTimingLabel, recommendedTargetPrice } from "/StockScanner/portfolio-analysis.js";
 
     const user = await requireApprovedUser();
     const brokerTables = document.querySelector("#brokerTables");
@@ -204,10 +217,9 @@
     const empty = document.querySelector("#empty");
     const message = document.querySelector("#message");
     const filter = document.querySelector("#filter");
+    const brokerSelect = document.querySelector("#brokerSelect");
     const csvForm = document.querySelector("#csvForm");
     const csvStatus = document.querySelector("#csvStatus");
-    const ibkrStatus = document.querySelector("#ibkrStatus");
-    const ibkrImport = document.querySelector("#ibkrImport");
     const editDialog = document.querySelector("#editDialog");
     const editForm = document.querySelector("#editForm");
     const numberFormat = new Intl.NumberFormat(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 });
@@ -219,9 +231,16 @@
     let sortKey = "symbol";
     let sortDirection = "ascending";
     let portfolioFilter = "all";
+    let benchmarkMetrics = null;
+    let stockHistory = {};
 
     if (user) await loadPortfolio();
     filter.addEventListener("input", renderPortfolio);
+    brokerSelect.addEventListener("change", () => {
+      portfolioFilter = "all";
+      filter.value = "";
+      renderPortfolio();
+    });
     document.querySelectorAll(".metric-filter").forEach((button) => {
       button.addEventListener("click", () => {
         const selectedFilter = button.dataset.portfolioFilter;
@@ -238,21 +257,6 @@
       sortDirection = selectedKey === sortKey && sortDirection === "ascending" ? "descending" : "ascending";
       sortKey = selectedKey;
       renderPortfolio();
-    });
-
-    ibkrImport.addEventListener("click", async () => {
-      if (!user) return;
-      ibkrImport.disabled = true;
-      ibkrStatus.textContent = "Requesting the latest IBKR Flex portfolio…";
-      const { data, error } = await supabase.functions.invoke("import-ibkr-portfolio", { body: {} });
-      ibkrImport.disabled = false;
-      if (error || data?.error) {
-        ibkrStatus.textContent = data?.error || error?.message || "IBKR import failed.";
-        return;
-      }
-      const missingDates = Number(data.missing_buy_dates || 0);
-      ibkrStatus.textContent = `${data.count} IBKR holding${data.count === 1 ? "" : "s"} downloaded ${formatTime(data.downloaded_at)}.${missingDates ? ` ${missingDates} need a buy date.` : ""}`;
-      await loadPortfolio();
     });
 
     csvForm.addEventListener("submit", async (event) => {
@@ -315,6 +319,7 @@
       }
       holdings = holdingResult.data || [];
       imports = importResult.data || [];
+      updateBrokerOptions();
       latestPrices = priceResult.data?.prices || {};
       snapshotTime = priceResult.data?.price_timestamp || priceResult.data?.generated_at || null;
       scannerSignals = scannerResult.signals;
@@ -324,6 +329,7 @@
       if (scannerResult.targetWarnings?.length) warnings.push(`Automatic targets are limited: ${scannerResult.targetWarnings.join(" ")}`);
       if (warnings.length) setMessage(message, `Portfolio loaded. ${warnings.join(" ")}`);
       renderPortfolio();
+      // Enable authenticated history retrieval after provider access is approved.
     }
 
     async function loadDailyScannerSignals() {
@@ -353,6 +359,11 @@
       };
       try {
         const documentCopy = await fetchDocument("/StockScanner/index.html");
+        const payload = documentCopy.querySelector("#kpiBenchmarkData")?.textContent;
+        benchmarkMetrics = equalWeightTopTwentyMetrics(payload ? JSON.parse(payload) : null);
+        document.querySelector("#recoveryReference").textContent = benchmarkMetrics
+          ? `Breakeven benchmark: Equal-weight Top 20, ${formatDate(benchmarkMetrics.startDate)} to ${formatDate(benchmarkMetrics.endDate)} (${benchmarkMetrics.totalReturnPercent.toFixed(2)}% total return). ${benchmarkMetrics.dailyReturn > 0 ? "Dates use this historical growth rate." : "Non-positive growth: no recovery date can be estimated."}`
+          : "Breakeven benchmark unavailable; estimated dates cannot be calculated.";
         const signals = {};
         documentCopy.querySelectorAll("#kpiStockTable tbody tr").forEach((row) => {
           const cells = row.querySelectorAll("td");
@@ -408,8 +419,23 @@
         }
         return { signals, error: null, targetWarnings };
       } catch (error) {
+        if (!benchmarkMetrics) document.querySelector("#recoveryReference").textContent = "Breakeven benchmark unavailable; estimated dates cannot be calculated.";
         return { signals: {}, error, targetWarnings: [] };
       }
+    }
+
+    async function loadStockHistory() {
+      const symbols = [...new Set(holdings.map((holding) => holding.symbol))];
+      for (let offset = 0; offset < symbols.length; offset += 4) {
+        await Promise.all(symbols.slice(offset, offset + 4).map(async (symbol) => {
+          if (stockHistory[symbol]) return;
+          try {
+            const { data, error } = await supabase.functions.invoke("portfolio-history", { body: { symbol } });
+            if (!error && data?.points) stockHistory[symbol] = data;
+          } catch { /* The estimate remains usable when stock history is unavailable. */ }
+        }));
+      }
+      renderPortfolio();
     }
 
     function currentQuote(holding) {
@@ -439,8 +465,23 @@
       };
     }
 
+    function updateBrokerOptions() {
+      const selectedBroker = brokerSelect.value;
+      const brokers = [...new Set(holdings.map((holding) => holding.broker))]
+        .sort((left, right) => left.localeCompare(right, undefined, { sensitivity: "base" }));
+      brokerSelect.replaceChildren(new Option("All brokers", ""), ...brokers.map((broker) => new Option(broker, broker)));
+      brokerSelect.value = brokers.includes(selectedBroker) ? selectedBroker : "";
+    }
+
     function renderPortfolio() {
-      const baseAnalysis = holdings.map(analyzedHolding);
+      const selectedBroker = brokerSelect.value;
+      const scopedHoldings = selectedBroker
+        ? holdings.filter((holding) => holding.broker === selectedBroker)
+        : holdings;
+      document.querySelector("#analysisScope").textContent = selectedBroker
+        ? `Analysis covers ${selectedBroker} only. Concentration is calculated within this broker portfolio.`
+        : "Analysis covers all brokers. Concentration is calculated across all holdings.";
+      const baseAnalysis = scopedHoldings.map(analyzedHolding);
       const concentrations = portfolioConcentrationPercent(baseAnalysis);
       const analyzed = baseAnalysis.map((holding) => {
         const scanner = scannerSignals[holding.symbol] || {
@@ -480,16 +521,17 @@
       updatePortfolioFilterButtons();
       renderBrokerTables(analyzed, visible);
       updateSortHeaders();
-      empty.hidden = holdings.length !== 0;
-      document.querySelector("#count").textContent = visible.length === holdings.length && !term
-        ? `${holdings.length} holding${holdings.length === 1 ? "" : "s"}`
-        : `${visible.length} of ${holdings.length} holdings shown`;
-      document.querySelector("#holdingCount").textContent = holdings.length;
+      empty.hidden = scopedHoldings.length !== 0;
+      document.querySelector("#count").textContent = visible.length === scopedHoldings.length && !term
+        ? `${scopedHoldings.length} holding${scopedHoldings.length === 1 ? "" : "s"}`
+        : `${visible.length} of ${scopedHoldings.length} holdings shown`;
+      document.querySelector("#holdingCount").textContent = scopedHoldings.length;
       document.querySelector("#profitableCount").textContent = analyzed.filter((holding) => holding.returnPercent > 0).length;
       document.querySelector("#sellDecisionCount").textContent = analyzed.filter((holding) => holding.decision.code === "sell").length;
       document.querySelector("#partialSellCount").textContent = analyzed.filter((holding) => holding.decision.code === "partial-sell").length;
       document.querySelector("#holdCount").textContent = analyzed.filter((holding) => holding.decision.code === "hold").length;
-      document.querySelector("#lastDownloaded").textContent = imports[0] ? formatTime(imports[0].downloaded_at) : "Never";
+      const latestImport = imports.find((entry) => !selectedBroker || entry.broker === selectedBroker);
+      document.querySelector("#lastImported").textContent = latestImport ? formatTime(latestImport.downloaded_at) : "Never";
     }
 
     function renderBrokerTables(analyzed, visible) {
@@ -513,7 +555,7 @@
           const row = document.createElement("tr");
           row.className = "broker-empty";
           const cell = document.createElement("td");
-          cell.colSpan = 14;
+          cell.colSpan = 13;
           cell.textContent = "No holdings from this broker match the selected filters.";
           row.append(cell);
           body.append(row);
@@ -551,7 +593,6 @@
     function sortValue(holding) {
       const values = {
         symbol: holding.symbol,
-        broker: holding.broker,
         quantity: Number(holding.quantity),
         buy_price: holding.buy_price === null ? null : Number(holding.buy_price),
         bought_on: holding.bought_on ? Date.parse(`${holding.bought_on}T00:00:00Z`) : null,
@@ -603,11 +644,12 @@
         holding.returnPercent === null ? "Unavailable" : `${holding.returnPercent >= 0 ? "+" : ""}${holding.returnPercent.toFixed(2)}%`,
         holding.returnPercent === null ? "pl-unavailable" : holding.returnPercent > 0 ? "pl-profit" : holding.returnPercent < 0 ? "pl-loss" : "pl-neutral",
       );
-      const scannerCell = tableCell(
-        holding.scanner.score === null
-          ? holding.scanner.label
-          : `${holding.scanner.label} · ${holding.scanner.score.toFixed(0)}`,
-      );
+      const strength = technicalStrength(holding.scanner.score);
+      const scannerCell = document.createElement("td");
+      const strengthBadge = document.createElement("span");
+      strengthBadge.className = `signal strength-${strength.tone}`;
+      strengthBadge.textContent = strength.score === null ? strength.label : `${strength.label} · ${strength.score.toFixed(0)}/100`;
+      scannerCell.append(strengthBadge);
       const targetCell = tableCell(
         holding.target ? `${holding.currency} ${numberFormat.format(holding.target.price)}` : "Unavailable",
       );
@@ -652,19 +694,54 @@
         targetCell,
         tableCell(holding.concentrationPercent === null ? "Unavailable" : `${holding.concentrationPercent.toFixed(2)}%`),
         scannerCell,
-        tableCell(holding.timing),
+        recoveryCell(holding),
         tableCell(formatTime(holding.quote.at)),
-        tableCell(holding.broker),
         actions,
       );
       return row;
+    }
+
+    function recoveryCell(holding) {
+      const cell = document.createElement("td");
+      cell.className = "recovery-cell";
+      const scenario = recoveryScenario(holding, benchmarkMetrics);
+      const label = document.createElement("div");
+      label.textContent = scenario.label;
+      cell.append(label);
+      if (scenario.requiredGain !== undefined) {
+        const estimate = document.createElement("div");
+        estimate.className = "subtle";
+        estimate.textContent = scenario.date
+          ? `Est. breakeven: ${formatDate(scenario.date)} · ${scenario.days.toLocaleString()} calendar days (benchmark scenario)`
+          : "Est. breakeven date: unavailable (positive benchmark growth needed).";
+        cell.append(estimate);
+        const details = document.createElement("details");
+        const summary = document.createElement("summary");
+        summary.textContent = "Stock's historical recovery";
+        const body = document.createElement("p");
+        body.className = "subtle";
+        const loss = 1 - Number(holding.quote.price) / Number(holding.buy_price);
+        const history = historicalRecovery(stockHistory[holding.symbol], loss);
+        body.textContent = history.unavailable ||
+          `${formatDate(history.start)}–${formatDate(history.end)}: ${history.recovered + history.unresolved} non-overlapping declines of at least ${(loss * 100).toFixed(1)}%; ${history.recovered} recovered to their prior peak, ${history.unresolved} remained unrecovered by the end of the sample. ` +
+          (history.medianDays !== null ? `Median time after reaching that decline: ${history.medianDays} calendar days among recovered episodes only. ` : "No recovered episodes to estimate a typical duration. ") +
+          (history.unresolvedDays !== null ? `The unrecovered episode had ${history.unresolvedDays} observed days after reaching the threshold. ` : "") +
+          "One-year adjusted-price sample; limited observations and differing follow-up periods. Past recoveries do not establish future recovery.";
+        details.append(summary, body);
+        cell.append(details);
+      }
+      const duration = document.createElement("div");
+      duration.className = "subtle";
+      duration.textContent = holding.heldDays === null ? "Buy date not provided" : `${holding.heldDays} days held`;
+      cell.append(duration);
+      return cell;
     }
 
     function openEdit(holding) {
       document.querySelector("#editId").value = holding.id;
       document.querySelector("#editSymbol").textContent = holding.symbol;
       document.querySelector("#editBuyPrice").value = holding.buy_price ?? "";
-      document.querySelector("#editBuyDate").value = holding.bought_on ?? "";
+      document.querySelector("#editBuyDate").value = holding.bought_on ? formatDate(holding.bought_on) : "";
       document.querySelector("#editTarget").value = holding.target_price ?? "";
       document.querySelector("#editStop").value = holding.stop_loss ?? "";
       document.querySelector("#editNotes").value = holding.notes ?? "";
@@ -674,6 +751,7 @@
     document.querySelector("#cancelEdit").addEventListener("click", () => editDialog.close());
     editForm.addEventListener("submit", async (event) => {
       event.preventDefault();
+      if (!validateDateInputs(editForm)) return;
       const id = Number(document.querySelector("#editId").value);
       setFormBusy(editForm, true);
       const nullable = (selector) => document.querySelector(selector).value || null;
@@ -681,7 +759,7 @@
         .from("user_portfolio_holdings")
         .update({
           buy_price: nullable("#editBuyPrice"),
-          bought_on: nullable("#editBuyDate"),
+          bought_on: parseDateInput(document.querySelector("#editBuyDate").value),
           target_price: nullable("#editTarget"),
           stop_loss: nullable("#editStop"),
           notes: nullable("#editNotes"),
@@ -716,7 +794,7 @@
     }
 
     function formatTime(value) {
-      return value ? new Date(value).toLocaleString() : "Unavailable";
+      return value ? formatDateTime(value) : "Unavailable";
     }
   </script>
 </body>

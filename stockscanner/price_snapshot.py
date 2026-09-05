@@ -151,10 +151,10 @@ def _snapshot_payload(
         "schema_version": 3,
         "market_date": local.date().isoformat(),
         "generated_at": local.isoformat(),
-        "generated_at_new_york": local.strftime("%d %B %Y, %I:%M %p %Z"),
+        "generated_at_new_york": local.strftime("%d/%b/%Y, %I:%M %p %Z"),
         "price_timestamp": yahoo_time.isoformat() if yahoo_time else None,
         "price_timestamp_new_york": (
-            yahoo_time.strftime("%d %B %Y, %I:%M %p %Z")
+            yahoo_time.strftime("%d/%b/%Y, %I:%M %p %Z")
             if yahoo_time
             else None
         ),
@@ -316,7 +316,7 @@ def refresh_snapshot(
         return {
             "published": False,
             "reason": "outside_price_collection_window",
-            "generated_at_new_york": local.strftime("%d %B %Y, %I:%M %p %Z"),
+            "generated_at_new_york": local.strftime("%d/%b/%Y, %I:%M %p %Z"),
         }
 
     previous = load_snapshot(path)

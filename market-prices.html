@@ -78,6 +78,7 @@
   </main>
   <script type="module" src="/StockScanner/auth.js" data-stockscanner-auth></script>
   <script type="module">
+    import { formatDateTime, parseDateInput, validateDateInputs } from "/StockScanner/date-format.js";
     import { requireApprovedUser, setMessage, supabase, tableCell } from "/StockScanner/personal-lists.js";
     import { drawSpikeChart, intradayPoints, marketRows } from "/StockScanner/market-prices.js";
 
@@ -118,7 +119,7 @@
       priceRows = marketRows(snapshot);
       selectedSymbol = priceRows.find((row) => snapshot.intraday_series?.[row.symbol]?.length)?.symbol || priceRows[0]?.symbol || null;
       symbolCount.textContent = priceRows.length.toLocaleString();
-      priceTime.textContent = new Date(data.price_timestamp || data.generated_at).toLocaleString();
+      priceTime.textContent = formatDateTime(data.price_timestamp || data.generated_at);
       dataStatus.textContent = data.failed_count ? `Partial · ${data.failed_count} failed` : "Complete";
       coverageStatus.textContent = data.portfolio_symbol_count
         ? `${Number(data.portfolio_coverage_percent).toFixed(2)}% · ${data.portfolio_updated_count}/${data.portfolio_symbol_count}`

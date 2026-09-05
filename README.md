@@ -25,7 +25,7 @@ AI-powered features with ChatGPT integration were introduced in v2.11.0. 🤖
 - Admin-only activity and user-management pages
 - Admin-only manual daily-scan and hourly-price workflow controls
 - Per-user exception and bought-selection lists protected by RLS
-- On-demand user portfolio imports from IBKR Flex or a broker CSV
+- On-demand user portfolio imports from broker CSV files, including native IBKR exports
 - Rule-based portfolio profit/loss, holding-time, target, and stop reviews, with a 7% profit-review threshold and conservative automatic targets from technical, resistance, analyst-proxy, and return-objective inputs
 - Current profit/loss percentage for purchased positions
 - Bought-position time-to-profit status and benchmark-based breakeven-day scenarios
@@ -191,7 +191,7 @@ Each run creates files under `reports\\YYYY-MM-DD\\`:
 | `exceptions.html` | Compatibility redirect to the signed-in user's exceptions |
 | `my-exceptions.html` | Signed-in user's personal exclusions |
 | `my-bought-selection.html` | Signed-in user's purchased positions and profit/loss |
-| `portfolio-analysis.html` | User-owned IBKR/CSV holdings and review signals |
+| `portfolio-analysis.html` | User-owned CSV-imported holdings and review signals |
 | `database.html` | Approved-user database overview with RLS-scoped counts |
 | `admin.html` | Admin-only activity, usage metrics, and manual workflow controls |
 | `users.html` | Admin-only accept, block, and delete controls |
@@ -245,15 +245,42 @@ longer create GitHub issues.
 | Imported broker holdings | `public.user_portfolio_holdings` | Latest per user and broker | On demand |
 | Portfolio import status | `public.user_portfolio_imports` | Latest per user and broker | On demand |
 
-Each CSV or IBKR import is an atomic replacement for the signed-in user and the
+Each CSV import is an atomic replacement for the signed-in user and the
 selected broker. It deletes that user's older rows for the same broker, inserts
 the new file, and refreshes the analysis. Holdings for other users and brokers
 are never truncated or changed.
 
-IBKR download uses a server-side Flex Web Service token and query ID. Those
-secrets belong only in Supabase Edge Function secrets. The browser never
-receives them. The IBKR query should return Open Positions in CSV format and use
-tax-lot detail when buy dates are required.
+### Portfolio analysis guide
+
+- Upload broker CSV files; the direct IBKR download box and Flex download scripts
+  have been removed. Native IBKR CSV exports remain supported.
+- Use **Analyze portfolio** to select one broker or all brokers. Holdings counts,
+  action reviews, concentration, and the last-import timestamp follow this scope.
+  Changing brokers clears the search and action filter. The redundant Broker
+  column has been removed, while broker section headings remain visible.
+- **Technical strength** shows Weak in red below 40, Moderate in orange from 40
+  through 70 inclusive, and Strong in green above 70. Missing scores are grey.
+  These descriptive bands do not change the daily scanner's underlying ratings
+  or the separate action-review rules.
+- **Recovery scenario / days held** keeps the estimated breakeven date visible
+  alongside calendar days and the percentage gain required to recover cost.
+  Recovered positions say "Buy price recovered". Dates assume the Equal-weight
+  Top 20 benchmark's historical daily compound return continues from today.
+  Non-positive or unavailable benchmark growth produces no estimate. Short
+  positions are not given this long-position recovery estimate.
+- Recovery scenarios exclude transaction costs, taxes, dividends, and currency
+  conversion. They are not promises and do not trigger an action review.
+- Expand **Stock's historical recovery** for comparable drawdown context when
+  authenticated stock history is available. The calculation counts non-overlapping
+  declines at least as deep as the current loss, reports completed and unresolved
+  recoveries, and shows median calendar days for completed recoveries only.
+  Historical data retrieval is not enabled in this release pending permission
+  for ticker-only Yahoo Finance lookups; the benchmark breakeven date remains
+  available independently. Missing history never creates a recovery prediction.
+- Displayed dates and manual date entry use **dd/mmm/yyyy**, for example
+  `05/Sep/2026`. CSV templates use the same format; ISO dates remain supported
+  for native exports. Database values, chart source data, and file paths retain
+  their machine-readable date format.
 
 Backend workflows use `SUPABASE_SECRET_KEY` from the protected GitHub
 `github-pages` environment. That secret must never be placed in HTML,

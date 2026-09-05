@@ -267,14 +267,29 @@ the gap from the latest price to the buy price. It is not a forecast or promise,
 and it does not estimate the historical first-profit day because individual
 daily ticker histories are not retained.
 
-### Configure on-demand IBKR imports
+### Portfolio page deployment and checks
 
-Create an IBKR Flex Web Service Activity query that returns **Open Positions**
-as CSV. Use tax-lot detail to include buy dates. Store its token and query ID as
-Supabase Edge Function secrets named `IBKR_FLEX_TOKEN` and
-`IBKR_FLEX_QUERY_ID`, then deploy `import-ibkr-portfolio` with caller JWT
-verification handled by the function. Never put either IBKR value in browser
-code or GitHub Pages.
+The existing Stock Scanner workflow publishes GitHub Pages on pushes to `main`
+that change the portfolio page, its helper modules, or the shared date module.
+Push deployments reuse the latest scanner reports; they do not launch a full
+market scan. Publish `date-format.js` and `portfolio-recovery.js` with the page.
+`tools/format_report_dates.py` updates archived report dates during deployment
+without rewriting their URLs or committing hundreds of regenerated files.
+
+The recovery UI accepts authenticated `portfolio-history` responses with
+`points: [["YYYY-MM-DD", adjustedClose], ...]`. That endpoint is not installed in
+this release: ticker-only Yahoo Finance access awaits explicit approval. Until
+then the page reports stock history as unavailable; benchmark dates still work.
+No public file containing a holdings-derived symbol list is generated.
+
+Run `python -m pytest -q`, `node tests/date-format.test.mjs`, and
+`node tests/portfolio-recovery.test.mjs` before publishing. Verify broker selection,
+13-column table alignment, score boundaries (39, 40, 70, 71), positive and
+non-positive benchmark returns, and manual date validation.
+
+Dates are presentation changes only: do not rewrite ISO database dates or
+historical report paths. The IBKR Flex import code is retired; CSV import uses
+the existing owner-scoped replacement function and requires no schema migration.
 
 ### Configure admin manual scanner controls
 

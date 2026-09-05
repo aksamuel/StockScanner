@@ -41,7 +41,7 @@
           <input id="buyPrice" type="number" min="0" step="0.000001" required>
         </label>
         <label>Bought date
-          <input id="boughtOn" type="date" required>
+          <input id="boughtOn" type="text" data-date-input placeholder="dd/mmm/yyyy" maxlength="11" required>
         </label>
         <label class="wide">Notes
           <input id="notes" type="text" maxlength="500" placeholder="Optional notes">
@@ -71,6 +71,7 @@
   </main>
   <script type="module" src="/StockScanner/auth.js" data-stockscanner-auth></script>
   <script type="module">
+    import { formatDateTime, parseDateInput, validateDateInputs } from "/StockScanner/date-format.js";
     import {
       formatDate, localDateValue, requireApprovedUser, setFormBusy,
       setMessage, supabase, tableCell,
@@ -101,7 +102,7 @@
     let editingId = null;
 
     if (user) {
-      boughtOn.value = localDateValue();
+      boughtOn.value = formatDate(localDateValue());
       await loadBenchmarkReference();
       await loadSelections();
     }
@@ -128,13 +129,13 @@
 
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
-      if (!user || !form.reportValidity()) return;
+      if (!user || !validateDateInputs(form)) return;
       setFormBusy(form, true);
       const ticker = symbol.value.trim().toUpperCase();
       const values = {
         quantity: quantity.value,
         buy_price: buyPrice.value,
-        bought_on: boughtOn.value,
+        bought_on: parseDateInput(boughtOn.value),
         notes: notes.value.trim() || null,
       };
       const operation = editingId
@@ -160,7 +161,7 @@
       form.reset();
       symbol.disabled = false;
       quantity.value = "1";
-      boughtOn.value = localDateValue();
+      boughtOn.value = formatDate(localDateValue());
       submitSelection.textContent = "Add selection";
       cancelEdit.hidden = true;
       symbol.focus();
@@ -236,7 +237,7 @@
         breakevenText = "0 days · buy price recovered";
       } else if (breakevenDays !== null) {
         const estimatedDate = new Date(Date.now() + breakevenDays * 86_400_000);
-        breakevenText = `${breakevenDays.toLocaleString()} days · about ${estimatedDate.toLocaleDateString()}`;
+        breakevenText = `${breakevenDays.toLocaleString()} days · about ${formatDate(estimatedDate)}`;
       }
       const breakevenCell = tableCell(breakevenText, profitLoss < 0 ? "estimate" : "");
       if (profitLoss !== null && profitLoss < 0 && Number.isFinite(currentPrice) && currentPrice > 0) {
@@ -254,7 +255,7 @@
         symbol.disabled = true;
         quantity.value = item.quantity;
         buyPrice.value = item.buy_price;
-        boughtOn.value = item.bought_on || "";
+        boughtOn.value = item.bought_on ? formatDate(item.bought_on) : "";
         notes.value = item.notes || "";
         submitSelection.textContent = "Save changes";
         cancelEdit.hidden = false;

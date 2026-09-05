@@ -92,7 +92,7 @@ def test_report_indexes_link_to_dated_reports(tmp_path, monkeypatch):
     date_index = (date_folder / "index.html").read_text(encoding="utf-8")
     root_index = (tmp_path / "reports" / "index.html").read_text(encoding="utf-8")
 
-    assert "StockScanner Reports for 2026-08-03" in date_index
+    assert "StockScanner Reports for 03/Aug/2026" in date_index
     assert "href='StockScanner_Combined_2026-08-03_16-40-23.html'" in date_index
     assert "href='2026-08-03/index.html'" in root_index
     assert "href='2026-08-03/StockScanner_Combined_2026-08-03_16-40-23.html'" in root_index
@@ -407,7 +407,7 @@ def test_current_price_is_displayed_below_symbol_in_smaller_text(tmp_path):
 def test_scan_time_is_formatted_in_new_york_time():
     utc_time = datetime(2026, 8, 13, 15, 21, tzinfo=ZoneInfo("UTC"))
 
-    assert _format_new_york_time(utc_time) == "13 August 2026, 11:21 AM EDT"
+    assert _format_new_york_time(utc_time) == "13/Aug/2026, 11:21 AM EDT"
 
 
 def test_three_report_pages_have_requested_columns_navigation_and_selection():

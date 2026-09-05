@@ -28,10 +28,10 @@
           <input id="symbol" data-symbol type="text" maxlength="15" pattern="[A-Za-z0-9][A-Za-z0-9.-]{0,14}" required>
         </label>
         <label>From date
-          <input id="dateFrom" type="date" required>
+          <input id="dateFrom" type="text" data-date-input placeholder="dd/mmm/yyyy" maxlength="11" required>
         </label>
         <label>To date
-          <input id="dateTo" type="date" required>
+          <input id="dateTo" type="text" data-date-input placeholder="dd/mmm/yyyy" maxlength="11" required>
         </label>
         <label class="wide">Reason
           <input id="reason" type="text" maxlength="500" placeholder="Optional reason">
@@ -55,6 +55,7 @@
   </main>
   <script type="module" src="/StockScanner/auth.js" data-stockscanner-auth></script>
   <script type="module">
+    import { formatDateTime, parseDateInput, validateDateInputs } from "/StockScanner/date-format.js";
     import {
       formatDate, localDateValue, requireApprovedUser, setFormBusy,
       setMessage, supabase, tableCell,
@@ -80,15 +81,15 @@
       const today = new Date();
       const afterThirtyDays = new Date(today);
       afterThirtyDays.setDate(afterThirtyDays.getDate() + 30);
-      dateFrom.value = localDateValue(today);
-      dateTo.value = localDateValue(afterThirtyDays);
+      dateFrom.value = formatDate(localDateValue(today));
+      dateTo.value = formatDate(localDateValue(afterThirtyDays));
       await loadExceptions();
     }
 
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
-      if (!user || !form.reportValidity()) return;
-      if (dateTo.value < dateFrom.value) {
+      if (!user || !validateDateInputs(form)) return;
+      if (parseDateInput(dateTo.value) < parseDateInput(dateFrom.value)) {
         setMessage(message, "The to date must be on or after the from date.");
         return;
       }
@@ -96,8 +97,8 @@
       const ticker = symbol.value.trim().toUpperCase();
       const values = {
         reason: reason.value.trim() || null,
-        date_from: dateFrom.value,
-        date_to: dateTo.value,
+        date_from: parseDateInput(dateFrom.value),
+        date_to: parseDateInput(dateTo.value),
       };
       const operation = editingId
         ? supabase.from("user_exceptions").update(values).eq("id", editingId).eq("user_id", user.id)
@@ -126,8 +127,8 @@
       const today = new Date();
       const afterThirtyDays = new Date(today);
       afterThirtyDays.setDate(afterThirtyDays.getDate() + 30);
-      dateFrom.value = localDateValue(today);
-      dateTo.value = localDateValue(afterThirtyDays);
+      dateFrom.value = formatDate(localDateValue(today));
+      dateTo.value = formatDate(localDateValue(afterThirtyDays));
       symbol.focus();
     }
 
@@ -169,8 +170,8 @@
         symbol.value = item.symbol;
         symbol.disabled = true;
         reason.value = item.reason || "";
-        dateFrom.value = item.date_from;
-        dateTo.value = item.date_to;
+        dateFrom.value = formatDate(item.date_from);
+        dateTo.value = formatDate(item.date_to);
         submitException.textContent = "Save changes";
         cancelEdit.hidden = false;
         reason.focus();
