@@ -308,19 +308,20 @@ def test_portfolio_kpis_filter_the_holdings_table_accessibly():
     assert 'holding.decision.code === portfolioFilter' in page
     assert 'button.setAttribute("aria-pressed", active ? "true" : "false")' in page
     assert 'portfolioFilter === selectedFilter && selectedFilter !== "all"' in page
-    assert "No holdings from this broker match the selected filters." in page
+    assert "No holdings have a price for the selected date." in page
 
 
-def test_portfolio_renders_each_broker_in_a_separate_kpi_filtered_table():
+def test_portfolio_renders_two_price_availability_tables_with_broker_labels():
     page = read("portfolio-analysis.html")
 
     assert 'id="brokerTables"' in page
     assert 'id="portfolioTableTemplate"' in page
     assert 'class="broker-group"' in page
     assert "renderBrokerTables(analyzed, visible)" in page
-    assert "new Set(analyzed.map((holding) => holding.broker))" in page
-    assert "visible.filter((holding) => holding.broker === broker)" in page
-    assert "No holdings from this broker match the selected filters." in page
+    assert "const available = visible.filter((holding) => holding.quote.price !== null)" in page
+    assert "const unavailable = visible.filter((holding) => holding.quote.price === null)" in page
+    assert "Price Unavailable for Date" in page
+    assert "broker.textContent = `(${holding.broker})`" in page
     assert "brokerTables.replaceChildren(...sections)" in page
     assert 'brokerTables.addEventListener("click"' in page
     assert '.eq("user_id", user.id)' in page
