@@ -348,28 +348,27 @@ class PortfolioAnalysis:
 
     @property
     def available_tickers(self) -> List[Dict[str, Any]]:
-        """Rows with a usable, non-stale price for the primary table."""
+        """Rows with a price for the requested date, including stale prices."""
         rows = [
             ticker for ticker in self.tickers
-            if self._is_available(ticker)
+            if self._has_price(ticker)
         ]
         return self._display_rows(sorted(rows, key=self._rank_key))
 
     @property
     def unavailable_tickers(self) -> List[Dict[str, Any]]:
-        """Rows to render in the secondary table below the primary table."""
+        """Rows without a price for the requested date."""
         rows = [
             ticker for ticker in self.tickers
-            if not self._is_available(ticker)
+            if not self._has_price(ticker)
         ]
         return self._display_rows(sorted(rows, key=self._rank_key))
 
     @staticmethod
-    def _is_available(ticker: Dict[str, Any]) -> bool:
+    def _has_price(ticker: Dict[str, Any]) -> bool:
         return (
             ticker.get("price") is not None
             and ticker.get("price_available", True)
-            and not ticker.get("stale", False)
         )
 
     @staticmethod
@@ -388,6 +387,7 @@ class PortfolioAnalysis:
                 display_row["Symbols"] = f"{symbol}\n({broker})"
             else:
                 display_row["Symbols"] = symbol
+            display_row["price_color"] = "orange" if row.get("stale", False) else "green"
             display_rows.append(display_row)
         return display_rows
 
@@ -405,9 +405,9 @@ class PortfolioAnalysis:
         tables = [{"title": "Portfolio Analysis", "rows": self.available_tickers}]
         if self.unavailable_tickers:
             tables.append({
-                "title": "Price Unavailable",
+                "title": "Price Unavailable for Date",
                 "rows": self.unavailable_tickers,
-                "message": "Price unavailable or stale; excluded from the analysis above.",
+                "message": "No price was collected for the requested date.",
             })
         return tables
 

@@ -179,10 +179,13 @@ def test_portfolio_analysis_moves_unavailable_tickers_to_secondary_table():
         {"ticker": "NVDA", "rank": 0, "price": 190.0, "broker": "Alpaca"},
     ])
 
-    assert [row["ticker"] for row in analysis.tables[0]["rows"]] == ["NVDA", "AAPL"]
+    assert [row["ticker"] for row in analysis.tables[0]["rows"]] == ["NVDA", "AAPL", "TSLA"]
     assert analysis.tables[0]["rows"][0]["Symbols"] == "NVDA\n(Alpaca)"
-    assert analysis.tables[1]["title"] == "Price Unavailable"
-    assert [row["ticker"] for row in analysis.tables[1]["rows"]] == ["MSFT", "TSLA"]
+    assert analysis.tables[0]["rows"][2]["stale"] is True
+    assert analysis.tables[0]["rows"][2]["price_color"] == "orange"
+    assert analysis.tables[0]["rows"][0]["price_color"] == "green"
+    assert analysis.tables[1]["title"] == "Price Unavailable for Date"
+    assert [row["ticker"] for row in analysis.tables[1]["rows"]] == ["MSFT"]
 
 
 def test_download_data_retries_cache_failures(monkeypatch, tmp_path):
