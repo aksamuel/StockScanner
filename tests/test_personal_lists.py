@@ -322,6 +322,8 @@ def test_portfolio_renders_two_price_availability_tables_with_broker_labels():
     assert "const unavailable = visible.filter((holding) => holding.quote.price === null)" in page
     assert "Price Unavailable for Date" in page
     assert "broker.textContent = `(${holding.broker})`" in page
+    assert 'source: "Hourly/daily market snapshot"' in page
+    assert 'const importedPrice = Number(holding.current_price)' not in page
     assert "brokerTables.replaceChildren(...sections)" in page
     assert 'brokerTables.addEventListener("click"' in page
     assert '.eq("user_id", user.id)' in page

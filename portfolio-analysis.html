@@ -496,14 +496,8 @@
 
     function currentQuote(holding) {
       const snapshotPrice = Number(latestPrices[holding.symbol]);
-      const importedPrice = Number(holding.current_price);
-      const snapshotDate = snapshotTime ? new Date(snapshotTime) : null;
-      const importedDate = holding.current_price_at ? new Date(holding.current_price_at) : null;
-      if (Number.isFinite(snapshotPrice) && snapshotPrice >= 0 && (!importedDate || (snapshotDate && snapshotDate >= importedDate))) {
-        return { price: snapshotPrice, at: snapshotTime, source: "Hourly market snapshot" };
-      }
-      if (Number.isFinite(importedPrice) && importedPrice >= 0) {
-        return { price: importedPrice, at: holding.current_price_at || holding.imported_at, source: holding.broker };
+      if (Number.isFinite(snapshotPrice) && snapshotPrice >= 0) {
+        return { price: snapshotPrice, at: snapshotTime, source: "Hourly/daily market snapshot" };
       }
       return { price: null, at: null, source: "Unavailable" };
     }
