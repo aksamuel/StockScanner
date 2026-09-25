@@ -1,16 +1,17 @@
 # Stock Scanner CI Workflow
-# Runs the stock scanner on a schedule (daily at market close) or on-demand.
+# Daily seed loads the NYSE universe; hourly collection resumes the active slot and only retries missing tickers.
 
 name: Stock Scanner
 
 on:
-  # Manual trigger with configurable inputs
   workflow_dispatch:
     inputs:
       mode:
-        description: "Scan mode"
+        description: "Run mode"
         type: choice
         options:
+          - daily-seed
+          - hourly-collection
           - watchlist
           - universe
         default: watchlist
@@ -23,14 +24,64 @@ on:
         type: number
         default: 20
 
-  # Daily at 9:30 PM UTC (~4:30 PM ET, shortly after US market close)
   schedule:
-    - cron: "30 21 * * 1-5"
+    - cron: "30 13 * * 1-5"
+    - cron: "*/15 * * * 1-5"
 
 jobs:
-  scan:
+  daily-seed:
+    if: >-
+      (github.event_name == 'workflow_dispatch' && inputs.mode == 'daily-seed') ||
+      (github.event_name == 'schedule' && github.event.schedule == '30 13 * * 1-5')
     runs-on: ubuntu-latest
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
 
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install -e .
+
+      - name: Run daily universe seed
+        run: python -m stockscanner.cli --daily-seed
+
+  hourly-collection:
+    if: >-
+      (github.event_name == 'workflow_dispatch' && inputs.mode == 'hourly-collection') ||
+      (github.event_name == 'schedule' && github.event.schedule == '*/15 * * * 1-5')
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install -e .
+
+      - name: Resume hourly collection for missing tickers
+        run: python -m stockscanner.cli --hourly-collection --batch-size 25
+
+  scan:
+    if: github.event_name == 'workflow_dispatch' && (inputs.mode == 'watchlist' || inputs.mode == 'universe')
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5

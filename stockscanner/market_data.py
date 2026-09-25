@@ -1,12 +1,14 @@
+
 import os
+import threading
 import time
 from datetime import datetime, timedelta
 
 import pandas as pd
 import yfinance as yf
 
-
 CACHE_DAYS = 7
+_CACHE_LOCK = threading.RLock()
 
 
 def _cache_path(symbol):
@@ -17,6 +19,26 @@ def _cache_path(symbol):
     return os.path.join(history_dir, f"{safe}.csv")
 
 
+def _initialize_cache_directory():
+    root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data"))
+    os.makedirs(os.path.join(root, "history"), exist_ok=True)
+
+
+def _download_with_retry(symbol, fetcher, *, max_retries=3, base_delay=0.25):
+    last_error = None
+    for attempt in range(1, max_retries + 1):
+        try:
+            return fetcher()
+        except Exception as exc:
+            last_error = exc
+            if attempt >= max_retries:
+                break
+            time.sleep(base_delay * attempt)
+    if last_error is not None:
+        raise last_error
+    raise RuntimeError(f"Download retry failed for {symbol!r}")
+
+
 def download_data(symbol, force=False, period="1y", cache_days=CACHE_DAYS):
     """Download historical data for `symbol` with a simple on-disk CSV cache.
 
@@ -24,6 +46,7 @@ def download_data(symbol, force=False, period="1y", cache_days=CACHE_DAYS):
     - `period`: yfinance period (default "1y")
     - `cache_days`: TTL in days for cached files
     """
+    _initialize_cache_directory()
     path = _cache_path(symbol)
     if not force and os.path.exists(path):
         try:
@@ -31,29 +54,34 @@ def download_data(symbol, force=False, period="1y", cache_days=CACHE_DAYS):
             age_days = (time.time() - mtime) / 86400.0
             if age_days <= cache_days:
                 df = pd.read_csv(path, index_col=0, parse_dates=True)
-                # ensure DataFrame has expected columns
                 if not df.empty:
                     return df
         except Exception:
-            # fall through to re-download on any cache read error
             pass
 
-    stock = yf.Ticker(symbol)
-    df = stock.history(period=period)
+    with _CACHE_LOCK:
+        if not force and os.path.exists(path):
+            try:
+                mtime = os.path.getmtime(path)
+                age_days = (time.time() - mtime) / 86400.0
+                if age_days <= cache_days:
+                    df = pd.read_csv(path, index_col=0, parse_dates=True)
+                    if not df.empty:
+                        return df
+            except Exception:
+                pass
 
-    if df is None:
-        return df
+        def fetcher():
+            stock = yf.Ticker(symbol)
+            df = stock.history(period=period)
+            if df is None:
+                return df
+            tmp = path + ".tmp"
+            df.to_csv(tmp)
+            os.replace(tmp, path)
+            return df
 
-    # persist to CSV (safe write)
-    try:
-        tmp = path + ".tmp"
-        df.to_csv(tmp)
-        os.replace(tmp, path)
-    except Exception:
-        # ignore cache write errors
-        pass
-
-    return df
+        return _download_with_retry(symbol, fetcher)
 
 
 def _chunked(iterable, size):
@@ -77,6 +105,7 @@ def download_data_bulk(symbols, force=False, period="1y", cache_days=CACHE_DAYS,
     if not symbols:
         return results
 
+    _initialize_cache_directory()
     to_download = []
     for s in symbols:
         path = _cache_path(s)
@@ -98,9 +127,6 @@ def download_data_bulk(symbols, force=False, period="1y", cache_days=CACHE_DAYS,
                 pass
         to_download.append(s)
 
-    import yfinance as yf
-    import time as _time
-
     total = len(to_download)
     if progress:
         try:
@@ -108,6 +134,7 @@ def download_data_bulk(symbols, force=False, period="1y", cache_days=CACHE_DAYS,
         except Exception:
             pass
 
+    import time as _time
     num_chunks = (total + chunk_size - 1) // chunk_size if total else 0
     chunk_idx = 0
 
@@ -119,16 +146,20 @@ def download_data_bulk(symbols, force=False, period="1y", cache_days=CACHE_DAYS,
             except Exception:
                 pass
         try:
-            df_all = yf.download(tickers=chunk, period=period, group_by="ticker", threads=True, progress=False)
+            with _CACHE_LOCK:
+                df_all = yf.download(tickers=chunk, period=period, group_by="ticker", threads=True, progress=False)
         except Exception:
             df_all = None
 
         before_count = len(results)
         if df_all is None or df_all.empty:
-            # try per-symbol fallback
             for s in chunk:
                 try:
-                    df = yf.Ticker(s).history(period=period)
+                    def fetcher():
+                        return yf.Ticker(s).history(period=period)
+
+                    with _CACHE_LOCK:
+                        df = _download_with_retry(s, fetcher)
                     if df is not None and not df.empty:
                         path = _cache_path(s)
                         try:
@@ -146,15 +177,12 @@ def download_data_bulk(symbols, force=False, period="1y", cache_days=CACHE_DAYS,
                 except Exception:
                     continue
         else:
-            # df_all may be a multi-column DataFrame grouped by ticker
-            # yfinance returns either a MultiIndex columns (ticker, field) or a flat DF for single-ticker
             if isinstance(df_all.columns, pd.MultiIndex):
                 for s in chunk:
                     try:
                         if s in df_all.columns.levels[0]:
                             df = df_all[s].copy()
                         else:
-                            # some tickers may have '.' suffixes in yfinance output, try case-insensitive match
                             matches = [c for c in df_all.columns.levels[0] if str(c).upper() == s]
                             if matches:
                                 df = df_all[matches[0]].copy()
@@ -177,8 +205,6 @@ def download_data_bulk(symbols, force=False, period="1y", cache_days=CACHE_DAYS,
                     except Exception:
                         continue
             else:
-                # flat DataFrame, assume single ticker requested
-                # attempt to map chunk[0] to df_all
                 for s in chunk:
                     try:
                         df = df_all.copy()
