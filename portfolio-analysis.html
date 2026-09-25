@@ -65,6 +65,8 @@
     .broker-group-header h2 { margin: 0; color: #b3e5fc; font-size: 1.15rem; }
     .broker-result-count { color: #90a4ae; font-size: .86rem; }
     .broker-empty td { padding: 22px 12px; color: #90a4ae; text-align: center; }
+    .broker-name { display: block; margin-top: 3px; color: #90a4ae; font-size: .8rem; }
+    .price-stale { color: #ffb74d; font-weight: 700; }
     .portfolio-table { min-width: 1560px; }
     .portfolio-table td { vertical-align: top; }
     .sort-button {
@@ -592,28 +594,31 @@
     }
 
     function renderBrokerTables(analyzed, visible) {
-      const brokers = [...new Set(analyzed.map((holding) => holding.broker))]
-        .sort((left, right) => left.localeCompare(right, undefined, { sensitivity: "base" }));
-      const sections = brokers.map((broker, index) => {
+      const available = visible.filter((holding) => holding.quote.price !== null);
+      const unavailable = visible.filter((holding) => holding.quote.price === null);
+      const tableGroups = [
+        { title: "Portfolio Analysis", holdings: available, emptyMessage: "No holdings have a price for the selected date." },
+        { title: "Price Unavailable for Date", holdings: unavailable, emptyMessage: "All holdings have a price for the selected date." },
+      ];
+      const sections = tableGroups.map((group, index) => {
         const fragment = portfolioTableTemplate.content.cloneNode(true);
         const section = fragment.querySelector(".broker-group");
         const heading = section.querySelector("h2");
         const resultCount = section.querySelector(".broker-result-count");
         const body = section.querySelector("tbody");
-        const brokerHoldings = visible.filter((holding) => holding.broker === broker);
-        const headingId = `brokerHeading-${index}`;
+        const headingId = `portfolioTableHeading-${index}`;
         heading.id = headingId;
-        heading.textContent = broker;
+        heading.textContent = group.title;
         section.setAttribute("aria-labelledby", headingId);
-        resultCount.textContent = `${brokerHoldings.length} matching holding${brokerHoldings.length === 1 ? "" : "s"}`;
-        if (brokerHoldings.length) {
-          body.replaceChildren(...brokerHoldings.map(holdingRow));
+        resultCount.textContent = `${group.holdings.length} holding${group.holdings.length === 1 ? "" : "s"}`;
+        if (group.holdings.length) {
+          body.replaceChildren(...group.holdings.map(holdingRow));
         } else {
           const row = document.createElement("tr");
           row.className = "broker-empty";
           const cell = document.createElement("td");
           cell.colSpan = section.querySelectorAll("thead th").length;
-          cell.textContent = "No holdings from this broker match the selected filters.";
+          cell.textContent = group.emptyMessage;
           row.append(cell);
           body.append(row);
         }
@@ -692,10 +697,18 @@
 
     function holdingRow(holding) {
       const row = document.createElement("tr");
-      const symbolCell = tableCell(holding.symbol, "symbol");
+      const symbolCell = tableCell("", "symbol");
+      const symbol = document.createElement("strong");
+      symbol.textContent = holding.symbol;
+      const broker = document.createElement("span");
+      broker.className = "broker-name";
+      broker.textContent = `(${holding.broker})`;
+      symbolCell.append(symbol, broker);
       symbolCell.title = holding.description || holding.symbol;
       const priceCell = tableCell(holding.quote.price === null ? "Unavailable" : `${holding.currency} ${numberFormat.format(holding.quote.price)}`);
       priceCell.title = holding.quote.source;
+      const quoteAge = holding.quote.at ? Date.now() - Date.parse(holding.quote.at) : Number.POSITIVE_INFINITY;
+      if (quoteAge > 75 * 60 * 1000) priceCell.classList.add("price-stale");
       const returnCell = tableCell(
         holding.returnPercent === null ? "Unavailable" : `${holding.returnPercent >= 0 ? "+" : ""}${holding.returnPercent.toFixed(2)}%`,
         holding.returnPercent === null ? "pl-unavailable" : holding.returnPercent > 0 ? "pl-profit" : holding.returnPercent < 0 ? "pl-loss" : "pl-neutral",
