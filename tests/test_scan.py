@@ -7,6 +7,7 @@ import pandas as pd
 from portfolio import (
     PortfolioAnalysis,
     PortfolioScheduler,
+    SnapshotStatus,
     SupabaseCollectionLock,
     YahooCache,
     as_ny,
@@ -164,7 +165,24 @@ def test_status_and_analysis_report_stale_price_as_no_snapshot_collected():
     assert status.status == "No snapshot collected"
     analysis = PortfolioAnalysis(status)
     assert "Stale prices" in analysis.summary
+    assert status.price_color == "orange"
+    assert analysis.price_color == "orange"
     assert market_is_open(as_ny(now))
+
+
+def test_portfolio_analysis_moves_unavailable_tickers_to_secondary_table():
+    status = SnapshotStatus("2024-05-01T15:00", "green", prices_stored=True)
+    analysis = PortfolioAnalysis(status, [
+        {"ticker": "AAPL", "rank": 20, "price": 190.0},
+        {"ticker": "MSFT", "rank": 0, "price": None, "price_available": False},
+        {"ticker": "TSLA", "rank": 100, "price": 170.0, "stale": True},
+        {"ticker": "NVDA", "rank": 0, "price": 190.0, "broker": "Alpaca"},
+    ])
+
+    assert [row["ticker"] for row in analysis.tables[0]["rows"]] == ["NVDA", "AAPL"]
+    assert analysis.tables[0]["rows"][0]["Symbols"] == "NVDA\n(Alpaca)"
+    assert analysis.tables[1]["title"] == "Price Unavailable"
+    assert [row["ticker"] for row in analysis.tables[1]["rows"]] == ["MSFT", "TSLA"]
 
 
 def test_download_data_retries_cache_failures(monkeypatch, tmp_path):

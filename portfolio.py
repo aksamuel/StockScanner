@@ -61,6 +61,13 @@ class SnapshotStatus:
             return "green"
         return "No snapshot collected"
 
+    @property
+    def price_color(self) -> str:
+        """Color token for Portfolio Analysis price rendering."""
+        if not self.prices_stored:
+            return "gray"
+        return "orange" if self.stale else "green"
+
 
 class SupabaseCollectionLock:
     """In-memory lock for one snapshot collection per hour."""
@@ -310,7 +317,7 @@ class PortfolioScheduler:
             collected_dt = collected_dt.replace(tzinfo=timezone.utc)
         current = as_utc(now or self.clock())
         minutes_old = minutes_since(collected_dt, current)
-        stale = market_is_open(current) and minutes_old > 75
+        stale = minutes_old > 75
 
         if stale:
             return SnapshotStatus(
@@ -335,8 +342,74 @@ class PortfolioScheduler:
 class PortfolioAnalysis:
     """Human-readable summary for snapshot freshness."""
 
-    def __init__(self, status: SnapshotStatus):
+    def __init__(self, status: SnapshotStatus, tickers: Optional[List[Dict[str, Any]]] = None):
         self.status = status
+        self.tickers = list(tickers or [])
+
+    @property
+    def available_tickers(self) -> List[Dict[str, Any]]:
+        """Rows with a usable, non-stale price for the primary table."""
+        rows = [
+            ticker for ticker in self.tickers
+            if self._is_available(ticker)
+        ]
+        return self._display_rows(sorted(rows, key=self._rank_key))
+
+    @property
+    def unavailable_tickers(self) -> List[Dict[str, Any]]:
+        """Rows to render in the secondary table below the primary table."""
+        rows = [
+            ticker for ticker in self.tickers
+            if not self._is_available(ticker)
+        ]
+        return self._display_rows(sorted(rows, key=self._rank_key))
+
+    @staticmethod
+    def _is_available(ticker: Dict[str, Any]) -> bool:
+        return (
+            ticker.get("price") is not None
+            and ticker.get("price_available", True)
+            and not ticker.get("stale", False)
+        )
+
+    @staticmethod
+    def _display_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Add the two-line symbol/broker value used by both analysis tables."""
+        display_rows = []
+        for row in rows:
+            display_row = dict(row)
+            symbol = str(
+                row.get("Symbols", row.get("symbol", row.get("Symbol", row.get("ticker", ""))))
+            ).strip()
+            broker = str(
+                row.get("broker", row.get("Broker", row.get("broker_name", "")))
+            ).strip()
+            if broker:
+                display_row["Symbols"] = f"{symbol}\n({broker})"
+            else:
+                display_row["Symbols"] = symbol
+            display_rows.append(display_row)
+        return display_rows
+
+    @staticmethod
+    def _rank_key(ticker: Dict[str, Any]) -> tuple[int, str]:
+        rank = ticker.get("rank", ticker.get("Rank"))
+        try:
+            return (int(rank), "")
+        except (TypeError, ValueError):
+            return (2**31 - 1, str(ticker.get("ticker", ticker.get("Symbol", ""))))
+
+    @property
+    def tables(self) -> List[Dict[str, Any]]:
+        """Ordered table model for the My Portfolio Analysis page."""
+        tables = [{"title": "Portfolio Analysis", "rows": self.available_tickers}]
+        if self.unavailable_tickers:
+            tables.append({
+                "title": "Price Unavailable",
+                "rows": self.unavailable_tickers,
+                "message": "Price unavailable or stale; excluded from the analysis above.",
+            })
+        return tables
 
     @property
     def summary(self) -> str:
@@ -345,6 +418,11 @@ class PortfolioAnalysis:
         if self.status.stale:
             return self.status.message or "Stale prices"
         return "Snapshot collected"
+
+    @property
+    def price_color(self) -> str:
+        """Color token for the price value in the Portfolio Analysis page."""
+        return self.status.price_color
 
     def __str__(self) -> str:
         return self.summary
