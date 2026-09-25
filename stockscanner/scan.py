@@ -1,5 +1,7 @@
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from stockscanner.config import (
     MIN_PRICE,
@@ -8,15 +10,23 @@ from stockscanner.config import (
     TOP_RESULTS,
 )
 from stockscanner.universe import load_nyse_tickers
+from stockscanner.ticker_universe_store import load_latest_ticker_universe
 from stockscanner.watchlist import load_watchlist
-from stockscanner.market_data import download_data
+from stockscanner.market_data import (
+    completed_daily_data,
+    download_data,
+    download_intraday_snapshot,
+)
 from stockscanner.indicators import calculate_indicators
 from stockscanner.scoring import score_stock
 from stockscanner.trade_plan import generate_trade_plan
 from stockscanner.report import export_report, export_batch_reports
+from stockscanner.html_report import export_html_report
 from stockscanner.ranking import rank_stocks
+from stockscanner.analyst_data import get_analyst_data
 from stockscanner.signals import generate_signal
 from stockscanner.relative_strength import calculate_relative_strength
+from stockscanner.support_resistance import analyze_support_resistance
 
 
 def _prefer_emoji(text_emoji: str, text_ascii: str) -> str:
@@ -42,11 +52,20 @@ def get_recommendation(score):
     return _prefer_emoji("🔴 AVOID", "AVOID")
 
 
-def process_stock(row, quiet=False):
+def process_stock(
+    row,
+    quiet=False,
+    available_cash=1000,
+    risk_percent=1,
+    include_reason=False,
+):
     symbol = str(row.get("Symbol", "")).strip().upper()
     market = row.get("Market", "Unknown")
     sector = row.get("Sector", "Unknown")
     priority = row.get("Priority", "Normal")
+
+    def excluded(reason):
+        return (None, reason) if include_reason else None
 
     if not quiet:
         print("=" * 80)
@@ -57,34 +76,59 @@ def process_stock(row, quiet=False):
         df = download_data(symbol)
     except Exception as error:
         print(f"Download Error: {error}")
-        return None
+        return excluded("download_failure")
 
+    df = completed_daily_data(df)
     if df is None or df.empty or len(df) < 200:
         if not quiet:
             print("Not enough historical data.")
-        return None
+        return excluded("insufficient_history")
 
     try:
         df = calculate_indicators(df)
         latest = df.iloc[-1]
-
-        current_price = float(latest["Close"])
         average_volume = float(df["Volume"].tail(AVERAGE_VOLUME_DAYS).mean())
-        average_dollar_volume = current_price * average_volume
     except Exception as error:
         if not quiet:
             print(f"Indicator Error: {error}")
-        return None
+        return excluded("indicator_failure")
+
+    analysis_df = df.copy()
+    price_timestamp = str(analysis_df.index[-1])
+    try:
+        intraday = download_intraday_snapshot(symbol)
+    except Exception as error:
+        if not quiet:
+            print(f"Intraday Data Error: {error}")
+        intraday = None
+    if intraday is not None:
+        analysis_df.loc[analysis_df.index[-1], "Close"] = intraday["price"]
+        analysis_df.loc[analysis_df.index[-1], "High"] = max(
+            float(analysis_df["High"].iloc[-1]),
+            intraday["price"],
+        )
+        analysis_df.loc[analysis_df.index[-1], "Volume"] = intraday["volume"]
+        price_timestamp = intraday["timestamp"]
+
+    latest = analysis_df.iloc[-1]
+    current_price = float(latest["Close"])
+    average_dollar_volume = current_price * average_volume
+    try:
+        zone_analysis = analyze_support_resistance(df, current_price=current_price)
+    except Exception as error:
+        if not quiet:
+            print(f"Support/Resistance Error: {error}")
+        zone_analysis = analyze_support_resistance(None)
 
     if current_price < MIN_PRICE:
         if not quiet:
             print("Skipped: price below minimum price.")
-        return None
+        return excluded("price_below_minimum")
 
     if average_dollar_volume < MIN_AVERAGE_DOLLAR_VOLUME:
         if not quiet:
             print("Skipped: dollar volume below threshold.")
-        return None
+        return excluded("liquidity_below_minimum")
 
     if not quiet:
         print(f"Liquidity Check       : PASSED (${average_dollar_volume:,.0f})")
@@ -97,21 +141,35 @@ def process_stock(row, quiet=False):
         relative_strength = 0.0
 
     try:
-        score = score_stock(df, relative_strength)
-        signal = generate_signal(df)
+        score = score_stock(analysis_df, relative_strength)
+        signal = generate_signal(analysis_df)
     except Exception as error:
         if not quiet:
             print(f"Score or Signal Error: {error}")
-        return None
+        return excluded("analysis_failure")
 
     recommendation = get_recommendation(score)
 
     try:
-        plan = generate_trade_plan(df, available_cash=1000, risk_percent=1)
+        plan = generate_trade_plan(
+            analysis_df,
+            available_cash=available_cash,
+            risk_percent=risk_percent,
+        )
     except Exception as error:
         if not quiet:
             print(f"Trade Plan Error: {error}")
-        return None
+        return excluded("trade_plan_failure")
+
+    try:
+        analyst_data = get_analyst_data(symbol, current_price)
+    except Exception as error:
+        if not quiet:
+            print(f"Analyst Data Error: {error}")
+        analyst_data = {
+            "Analyst Rating": "Unavailable",
+            "Target Upside": None,
+        }
 
     market_cap = row.get("Market Cap", 0)
     try:
@@ -123,15 +181,21 @@ def process_stock(row, quiet=False):
         "Symbol": symbol,
         "Market": market,
         "Sector": sector,
+        "Analyst Rating": analyst_data["Analyst Rating"],
+        "Target Upside": analyst_data["Target Upside"],
+        "Suggested Shares": int(plan["Shares"]),
+        "Risk/Reward": round(float(plan["RR"]), 2),
         "Priority": priority,
         "Market Cap": market_cap,
         "Current Price": round(current_price, 2),
+        "Price As Of": price_timestamp,
         "Average Volume": round(average_volume, 0),
         "Average Dollar Volume": round(average_dollar_volume, 0),
         "Liquidity Status": "PASS",
         "20 MA": round(float(latest["MA20"]), 2),
         "50 MA": round(float(latest["MA50"]), 2),
         "200 MA": round(float(latest["MA200"]), 2),
+        **zone_analysis,
         "RSI": round(float(latest["RSI"]), 2),
         "MACD": round(float(latest["MACD"]), 2),
         "Relative Strength": round(relative_strength, 2),
@@ -144,8 +208,6 @@ def process_stock(row, quiet=False):
         "Target 1": round(float(plan["Target1"]), 2),
         "Target 2": round(float(plan["Target2"]), 2),
         "Target 3": round(float(plan["Target3"]), 2),
-        "Risk/Reward": round(float(plan["RR"]), 2),
-        "Suggested Shares": int(plan["Shares"]),
         "Investment": round(float(plan["Investment"]), 2),
     }
 
@@ -153,10 +215,24 @@ def process_stock(row, quiet=False):
         print(f"Recommendation       : {recommendation}")
         print()
 
-    return result
+    return (result, "analysed") if include_reason else result
 
 
-def scan_universe(stock_df, export_to_excel=True, parallel=False, max_workers=10, batch_reports=False, quiet=False, progress=False):
+def _scan_summary(universe_count, reasons):
+    return {
+        "universe_count": universe_count,
+        "download_failure": reasons.get("download_failure", 0),
+        "insufficient_history": reasons.get("insufficient_history", 0),
+        "indicator_failure": reasons.get("indicator_failure", 0),
+        "price_below_minimum": reasons.get("price_below_minimum", 0),
+        "liquidity_below_minimum": reasons.get("liquidity_below_minimum", 0),
+        "analysis_failure": reasons.get("analysis_failure", 0)
+        + reasons.get("trade_plan_failure", 0),
+        "analysed": reasons.get("analysed", 0),
+    }
+
+
+def scan_universe(stock_df, export_to_excel=True, parallel=False, max_workers=10, batch_reports=False, quiet=False, progress=False, html_report=False, available_cash=1000, risk_percent=1):
     if parallel:
         return scan_universe_parallel(
             stock_df,
@@ -165,6 +241,9 @@ def scan_universe(stock_df, export_to_excel=True, parallel=False, max_workers=10
             batch_reports=batch_reports,
             quiet=quiet,
             progress=progress,
+            html_report=html_report,
+            available_cash=available_cash,
+            risk_percent=risk_percent,
         )
 
     if not quiet:
@@ -180,16 +259,19 @@ def scan_universe(stock_df, export_to_excel=True, parallel=False, max_workers=10
         print(f"Progress: 0/{len(stock_df)} (0%)")
 
     results = []
-    download_failed_count = 0
-    insufficient_data_count = 0
-    indicator_failed_count = 0
-    price_filtered_count = 0
-    liquidity_filtered_count = 0
+    reason_counts = {}
 
     total_stocks = len(stock_df)
     processed = 0
     for _, row in stock_df.iterrows():
-        result = process_stock(row, quiet=quiet)
+        result, reason = process_stock(
+            row,
+            quiet=quiet,
+            available_cash=available_cash,
+            risk_percent=risk_percent,
+            include_reason=True,
+        )
+        reason_counts[reason] = reason_counts.get(reason, 0) + 1
         processed += 1
         if progress:
             if total_stocks <= 20 or processed % max(1, total_stocks // 20) == 0 or processed == total_stocks:
@@ -209,7 +291,14 @@ def scan_universe(stock_df, export_to_excel=True, parallel=False, max_workers=10
                 export_batch_reports(ranked.to_dict("records"), top_count=10, batch_size=50)
             else:
                 export_report(ranked.to_dict("records"))
+        if html_report:
+            export_html_report(
+                ranked.to_dict("records"),
+                quiet=quiet,
+                scan_summary=_scan_summary(total_stocks, reason_counts),
+            )
         if not quiet:
+            summary = _scan_summary(total_stocks, reason_counts)
             print()
             print("=" * 80)
             print("TOP OPPORTUNITIES")
@@ -237,22 +326,23 @@ def scan_universe(stock_df, export_to_excel=True, parallel=False, max_workers=10
             print("=" * 80)
             print("SCAN SUMMARY")
             print("=" * 80)
-            print(f"Stocks Processed        : {len(stock_df)}")
-            print(f"Stocks Passing Filters  : {len(ranked)}")
-            print(f"Price Filtered          : {price_filtered_count}")
-            print(f"Liquidity Filtered      : {liquidity_filtered_count}")
-            print(f"Insufficient Data       : {insufficient_data_count}")
-            print(f"Download Failures       : {download_failed_count}")
-            print(f"Indicator Failures      : {indicator_failed_count}")
+            print(f"Universe Received       : {summary['universe_count']}")
+            print(f"Successfully Analysed   : {summary['analysed']}")
+            print(f"Price Filtered          : {summary['price_below_minimum']}")
+            print(f"Liquidity Filtered      : {summary['liquidity_below_minimum']}")
+            print(f"Insufficient Data       : {summary['insufficient_history']}")
+            print(f"Download Failures       : {summary['download_failure']}")
+            print(f"Analysis Failures       : {summary['analysis_failure'] + summary['indicator_failure']}")
     else:
         if not quiet:
+            summary = _scan_summary(total_stocks, reason_counts)
             print("No stocks passed the price and liquidity filters.")
             print()
-            print(f"Stocks Processed       : {len(stock_df)}")
-            print(f"Price Filtered         : {price_filtered_count}")
-            print(f"Liquidity Filtered     : {liquidity_filtered_count}")
-            print(f"Insufficient Data      : {insufficient_data_count}")
-            print(f"Download Failures      : {download_failed_count}")
+            print(f"Universe Received      : {summary['universe_count']}")
+            print(f"Price Filtered         : {summary['price_below_minimum']}")
+            print(f"Liquidity Filtered     : {summary['liquidity_below_minimum']}")
+            print(f"Insufficient Data      : {summary['insufficient_history']}")
+            print(f"Download Failures      : {summary['download_failure']}")
 
     if not quiet:
         print("=" * 80)
@@ -261,7 +351,7 @@ def scan_universe(stock_df, export_to_excel=True, parallel=False, max_workers=10
     return results
 
 
-def scan_universe_parallel(stock_df, export_to_excel=True, max_workers=10, batch_reports=False, quiet=False, progress=False):
+def scan_universe_parallel(stock_df, export_to_excel=True, max_workers=10, batch_reports=False, quiet=False, progress=False, html_report=False, available_cash=1000, risk_percent=1):
     if not quiet:
         print("=" * 80)
         print("              AI STOCK SCANNER V3.2 - LIQUIDITY FILTERS")
@@ -278,10 +368,21 @@ def scan_universe_parallel(stock_df, export_to_excel=True, max_workers=10, batch
     results = []
     futures = []
     completed = 0
+    total_stocks = len(stock_df)
+    reason_counts = {}
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         for _, row in stock_df.iterrows():
-            futures.append(executor.submit(process_stock, row, quiet))
+            futures.append(
+                executor.submit(
+                    process_stock,
+                    row,
+                    quiet,
+                    available_cash,
+                    risk_percent,
+                    True,
+                )
+            )
 
         for future in as_completed(futures):
             completed += 1
@@ -289,10 +390,12 @@ def scan_universe_parallel(stock_df, export_to_excel=True, max_workers=10, batch
                 if total_stocks <= 20 or completed % max(1, total_stocks // 20) == 0 or completed == total_stocks:
                     print(f"Progress: {completed}/{total_stocks} ({completed / total_stocks * 100:.0f}%)")
             try:
-                result = future.result()
+                result, reason = future.result()
+                reason_counts[reason] = reason_counts.get(reason, 0) + 1
                 if result is not None:
                     results.append(result)
             except Exception as error:
+                reason_counts["analysis_failure"] = reason_counts.get("analysis_failure", 0) + 1
                 if not quiet:
                     print(f"Parallel scan error: {error}")
 
@@ -308,6 +411,12 @@ def scan_universe_parallel(stock_df, export_to_excel=True, max_workers=10, batch
                 export_batch_reports(ranked.to_dict("records"), top_count=10, batch_size=50)
             else:
                 export_report(ranked.to_dict("records"))
+        if html_report:
+            export_html_report(
+                ranked.to_dict("records"),
+                quiet=quiet,
+                scan_summary=_scan_summary(total_stocks, reason_counts),
+            )
         if not quiet:
             print()
             print("=" * 80)
@@ -336,13 +445,14 @@ def scan_universe_parallel(stock_df, export_to_excel=True, max_workers=10, batch
             print("=" * 80)
             print("SCAN SUMMARY")
             print("=" * 80)
-            print(f"Stocks Processed        : {len(stock_df)}")
-            print(f"Stocks Passing Filters  : {len(ranked)}")
-            print(f"Price Filtered          : 0")
-            print(f"Liquidity Filtered      : 0")
-            print(f"Insufficient Data       : 0")
-            print(f"Download Failures       : 0")
-            print(f"Indicator Failures      : 0")
+            summary = _scan_summary(total_stocks, reason_counts)
+            print(f"Universe Received       : {summary['universe_count']}")
+            print(f"Successfully Analysed   : {summary['analysed']}")
+            print(f"Price Filtered          : {summary['price_below_minimum']}")
+            print(f"Liquidity Filtered      : {summary['liquidity_below_minimum']}")
+            print(f"Insufficient Data       : {summary['insufficient_history']}")
+            print(f"Download Failures       : {summary['download_failure']}")
+            print(f"Analysis Failures       : {summary['analysis_failure'] + summary['indicator_failure']}")
     else:
         if not quiet:
             print("No stocks passed the price and liquidity filters.")
@@ -360,7 +470,7 @@ def scan_universe_parallel(stock_df, export_to_excel=True, max_workers=10, batch
     return results
 
 
-def scan_watchlist(export_to_excel=True, parallel=False, max_workers=10, batch_reports=False, quiet=False, progress=False):
+def scan_watchlist(export_to_excel=True, parallel=False, max_workers=10, batch_reports=False, quiet=False, progress=False, html_report=False, available_cash=1000, risk_percent=1):
     try:
         watchlist = load_watchlist()
     except Exception as error:
@@ -375,16 +485,30 @@ def scan_watchlist(export_to_excel=True, parallel=False, max_workers=10, batch_r
         batch_reports=batch_reports,
         quiet=quiet,
         progress=progress,
+        html_report=html_report,
+        available_cash=available_cash,
+        risk_percent=risk_percent,
     )
 
 
-def scan_nyse(export_to_excel=True, limit=None, force_download=False, parallel=False, max_workers=10, batch_reports=False, quiet=False, progress=False):
+def scan_nyse(export_to_excel=True, limit=None, force_download=False, universe_source="download", supabase_url="", supabase_secret_key="", parallel=False, max_workers=10, batch_reports=False, quiet=False, progress=False, html_report=False, available_cash=1000, risk_percent=1):
     try:
-        tickers = load_nyse_tickers(
-            force_download=force_download,
-            limit=limit,
-            use_yfinance=True,
-        )
+        if universe_source == "supabase":
+            tickers = load_latest_ticker_universe(
+                supabase_url=supabase_url,
+                secret_key=supabase_secret_key,
+                limit=limit,
+                required_market_date=datetime.now(
+                    ZoneInfo("America/New_York")
+                ).date(),
+                minimum_symbols=2000 if limit is None else None,
+            )
+        else:
+            tickers = load_nyse_tickers(
+                force_download=force_download,
+                limit=limit,
+                use_yfinance=True,
+            )
     except Exception as error:
         print(f"Could not load NYSE universe: {error}")
         raise SystemExit(1)
@@ -405,6 +529,9 @@ def scan_nyse(export_to_excel=True, limit=None, force_download=False, parallel=F
         batch_reports=batch_reports,
         quiet=quiet,
         progress=progress,
+        html_report=html_report,
+        available_cash=available_cash,
+        risk_percent=risk_percent,
     )
 
 

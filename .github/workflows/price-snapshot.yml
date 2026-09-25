@@ -1,0 +1,199 @@
+name: Hourly Price Snapshot
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Price collection mode"
+        type: choice
+        options: [auto, hourly, close]
+        default: auto
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/price-snapshot.yml"
+      - "stockscanner/price_snapshot.py"
+      - "stockscanner/display_time.py"
+      - "stockscanner/price_providers.py"
+      - "stockscanner/market_data.py"
+      - "stockscanner/portfolio_symbols.py"
+      - "stockscanner/supabase_snapshot.py"
+      - "stockscanner/price_run_state.py"
+      - "supabase/migrations/**"
+  # The hourly UTC range maps to 08:45-15:45 New York through both EDT and
+  # EST; the New York gate rejects the single off-season endpoint. A separate
+  # candidate pair captures the close through both daylight-saving offsets.
+  schedule:
+    - cron: "45 12-20 * * 1-5"
+    - cron: "5 20,21 * * 1-5"
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: "hourly-price-snapshot"
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install -e ".[dev]"
+
+      - name: Test snapshot code
+        run: pytest -q tests/test_price_snapshot.py tests/test_price_run_state.py tests/test_portfolio_symbols.py tests/test_supabase_snapshot.py
+
+      - name: Resolve New York collection window
+        id: window
+        env:
+          REQUESTED_MODE: ${{ github.event.inputs.mode || 'auto' }}
+          TRIGGER_SCHEDULE: ${{ github.event.schedule || '' }}
+        run: |
+          python - <<'PY'
+          import os
+          from datetime import datetime, time
+          from zoneinfo import ZoneInfo
+
+          now = datetime.now(ZoneInfo("America/New_York"))
+          mode = os.environ["REQUESTED_MODE"]
+          if mode == "auto":
+              scheduled_close = os.environ["TRIGGER_SCHEDULE"].startswith("5 ")
+              manual_close = not os.environ["TRIGGER_SCHEDULE"] and now.time() >= time(16, 0)
+              mode = "close" if scheduled_close or manual_close else "hourly"
+          valid = now.weekday() < 5 and (
+              time(8, 45) <= now.time() < time(16, 0)
+              if mode == "hourly"
+              else time(16, 0) <= now.time() <= time(18, 0)
+          )
+          slot = f"{now.date().isoformat()}:{'close' if mode == 'close' else now.strftime('%H')}"
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"valid={str(valid).lower()}\n")
+              output.write(f"mode={mode}\n")
+              output.write(f"market_date={now.date().isoformat()}\n")
+              output.write(f"slot={slot}\n")
+          PY
+
+      - name: Acquire collection slot
+        id: lease
+        if: steps.window.outputs.valid == 'true'
+        env:
+          SUPABASE_URL: https://cszzbkssxxgwgafwuonc.supabase.co
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          python -m stockscanner.price_run_state acquire \
+            --slot "${{ steps.window.outputs.slot }}" \
+            --market-date "${{ steps.window.outputs.market_date }}" \
+            --workflow-run-id "${{ github.run_id }}" \
+            --github-output "$GITHUB_OUTPUT"
+
+      - name: Download current singleton from Supabase
+        if: steps.lease.outputs.acquired == 'true'
+        env:
+          SUPABASE_URL: https://cszzbkssxxgwgafwuonc.supabase.co
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          if ! python -m stockscanner.supabase_snapshot --download "$RUNNER_TEMP/prices.json"; then
+            echo "Bootstrapping an uninitialized singleton from the repository."
+            cp prices.json "$RUNNER_TEMP/prices.json"
+          fi
+
+      - name: Refresh prices through free provider failover
+        if: steps.lease.outputs.acquired == 'true'
+        env:
+          SUPABASE_URL: https://cszzbkssxxgwgafwuonc.supabase.co
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          ALPACA_API_KEY_ID: ${{ secrets.ALPACA_API_KEY_ID }}
+          ALPACA_API_SECRET_KEY: ${{ secrets.ALPACA_API_SECRET_KEY }}
+          TWELVE_DATA_API_KEY: ${{ secrets.TWELVE_DATA_API_KEY }}
+        run: |
+          python -m stockscanner.price_snapshot \
+            --output "$RUNNER_TEMP/prices.json" \
+            --mode "${{ steps.window.outputs.mode }}"
+
+      - name: Store singleton in Supabase
+        if: steps.lease.outputs.acquired == 'true'
+        env:
+          SUPABASE_URL: https://cszzbkssxxgwgafwuonc.supabase.co
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: python -m stockscanner.supabase_snapshot --input "$RUNNER_TEMP/prices.json"
+
+      - name: Read purchased-stock coverage
+        id: coverage
+        if: steps.lease.outputs.acquired == 'true'
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          payload = json.loads((Path(os.environ["RUNNER_TEMP"]) / "prices.json").read_text())
+          missing = payload.get("portfolio_missing_symbols", [])
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"complete={str(not missing).lower()}\n")
+              output.write(f"missing_count={len(missing)}\n")
+              output.write(f"missing_symbols={','.join(missing)}\n")
+          PY
+
+      - name: Finish collection slot
+        if: steps.lease.outputs.acquired == 'true'
+        env:
+          SUPABASE_URL: https://cszzbkssxxgwgafwuonc.supabase.co
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          python -m stockscanner.price_run_state finish \
+            --slot "${{ steps.window.outputs.slot }}" \
+            --workflow-run-id "${{ github.run_id }}" \
+            --status completed
+
+      - name: Report incomplete purchased-stock coverage
+        if: steps.coverage.outputs.complete == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MISSING_COUNT: ${{ steps.coverage.outputs.missing_count }}
+          MISSING_SYMBOLS: ${{ steps.coverage.outputs.missing_symbols }}
+        run: |
+          TITLE="Hourly prices missing purchased stocks"
+          EXISTING=$(gh issue list --state open --search "$TITLE in:title" --json number,title --jq ".[] | select(.title == \"$TITLE\") | .number" | head -1)
+          BODY="${MISSING_COUNT} purchased symbols were not refreshed: ${MISSING_SYMBOLS}. Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          if [ -n "$EXISTING" ]; then
+            gh issue comment "$EXISTING" --body "$BODY"
+          else
+            gh issue create --title "$TITLE" --body "$BODY"
+          fi
+          exit 1
+
+      - name: Close recovered coverage issue
+        if: steps.coverage.outputs.complete == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TITLE="Hourly prices missing purchased stocks"
+          gh issue list --state open --search "$TITLE in:title" --json number,title \
+            --jq ".[] | select(.title == \"$TITLE\") | .number" | \
+          while read -r ISSUE_NUMBER; do
+            [ -z "$ISSUE_NUMBER" ] || gh issue close "$ISSUE_NUMBER" --comment "All purchased symbols refreshed successfully."
+          done
+
+      - name: Release failed collection slot
+        if: failure() && steps.lease.outputs.acquired == 'true' && steps.coverage.outputs.complete != 'false'
+        env:
+          SUPABASE_URL: https://cszzbkssxxgwgafwuonc.supabase.co
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          python -m stockscanner.price_run_state finish \
+            --slot "${{ steps.window.outputs.slot }}" \
+            --workflow-run-id "${{ github.run_id }}" \
+            --status failed

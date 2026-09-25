@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>My exceptions | StockScanner</title>
+  <link rel="stylesheet" href="/StockScanner/personal-lists.css">
+</head>
+<body>
+  <main>
+    <div class="page-header">
+      <div>
+        <h1>My exception list</h1>
+        <p class="subtitle">Your personal list of ticker exceptions and the reason for each entry.</p>
+      </div>
+      <nav class="page-nav" aria-label="Personal lists">
+        <a href="/StockScanner/index.html">Dashboard</a>
+        <a href="/StockScanner/my-exceptions.html" aria-current="page">My exceptions</a>
+        <a href="/StockScanner/my-bought-selection.html">My bought list</a>
+        <a href="/StockScanner/portfolio-analysis.html">Portfolio analysis</a>
+      </nav>
+    </div>
+    <section class="panel" aria-labelledby="addTitle">
+      <h2 id="addTitle">Add an exception</h2>
+      <form id="exceptionForm">
+        <label>Symbol
+          <input id="symbol" data-symbol type="text" maxlength="15" pattern="[A-Za-z0-9][A-Za-z0-9.-]{0,14}" required>
+        </label>
+        <label>From date
+          <input id="dateFrom" type="text" data-date-input placeholder="dd/mmm/yyyy" maxlength="11" required>
+        </label>
+        <label>To date
+          <input id="dateTo" type="text" data-date-input placeholder="dd/mmm/yyyy" maxlength="11" required>
+        </label>
+        <label class="wide">Reason
+          <input id="reason" type="text" maxlength="500" placeholder="Optional reason">
+        </label>
+        <button id="submitException" type="submit">Add exception</button>
+        <button id="cancelEdit" class="secondary" type="button" hidden>Cancel edit</button>
+      </form>
+      <p id="message" role="status" aria-live="polite"></p>
+    </section>
+    <div class="list-toolbar">
+      <span id="count" class="count">0 exceptions</span>
+      <select id="filter" class="filter" aria-label="Select a stock"><option value="">All stocks</option></select>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Symbol</th><th>From</th><th>To</th><th>Reason</th><th>Action</th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+      <div id="empty" class="empty" hidden>No exceptions in your list.</div>
+    </div>
+  </main>
+  <script type="module" src="/StockScanner/auth.js" data-stockscanner-auth></script>
+  <script type="module">
+    import { formatDateTime, parseDateInput, validateDateInputs } from "/StockScanner/date-format.js";
+    import { setFilterOptions } from "/StockScanner/table-filters.js";
+    import {
+      formatDate, localDateValue, requireApprovedUser, setFormBusy,
+      setMessage, supabase, tableCell,
+    } from "/StockScanner/personal-lists.js";
+
+    const form = document.querySelector("#exceptionForm");
+    const symbol = document.querySelector("#symbol");
+    const reason = document.querySelector("#reason");
+    const dateFrom = document.querySelector("#dateFrom");
+    const dateTo = document.querySelector("#dateTo");
+    const filter = document.querySelector("#filter");
+    const rows = document.querySelector("#rows");
+    const empty = document.querySelector("#empty");
+    const message = document.querySelector("#message");
+    const count = document.querySelector("#count");
+    const submitException = document.querySelector("#submitException");
+    const cancelEdit = document.querySelector("#cancelEdit");
+    const user = await requireApprovedUser();
+    let exceptions = [];
+    let editingId = null;
+
+    if (user) {
+      const today = new Date();
+      const afterThirtyDays = new Date(today);
+      afterThirtyDays.setDate(afterThirtyDays.getDate() + 30);
+      dateFrom.value = formatDate(localDateValue(today));
+      dateTo.value = formatDate(localDateValue(afterThirtyDays));
+      await loadExceptions();
+    }
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (!user || !validateDateInputs(form)) return;
+      if (parseDateInput(dateTo.value) < parseDateInput(dateFrom.value)) {
+        setMessage(message, "The to date must be on or after the from date.");
+        return;
+      }
+      setFormBusy(form, true);
+      const ticker = symbol.value.trim().toUpperCase();
+      const values = {
+        reason: reason.value.trim() || null,
+        date_from: parseDateInput(dateFrom.value),
+        date_to: parseDateInput(dateTo.value),
+      };
+      const operation = editingId
+        ? supabase.from("user_exceptions").update(values).eq("id", editingId).eq("user_id", user.id)
+        : supabase.from("user_exceptions").insert({ user_id: user.id, symbol: ticker, ...values });
+      const { error } = await operation;
+      setFormBusy(form, false);
+      if (editingId) symbol.disabled = true;
+      if (error) {
+        setMessage(message, error.code === "23505" ? `${ticker} is already in your exception list.` : error.message);
+        return;
+      }
+      const wasEditing = Boolean(editingId);
+      resetForm();
+      setMessage(message, `${ticker} was ${wasEditing ? "updated" : "added to your exception list"}.`, true);
+      await loadExceptions();
+    });
+
+    cancelEdit.addEventListener("click", resetForm);
+
+    function resetForm() {
+      editingId = null;
+      form.reset();
+      symbol.disabled = false;
+      submitException.textContent = "Add exception";
+      cancelEdit.hidden = true;
+      const today = new Date();
+      const afterThirtyDays = new Date(today);
+      afterThirtyDays.setDate(afterThirtyDays.getDate() + 30);
+      dateFrom.value = formatDate(localDateValue(today));
+      dateTo.value = formatDate(localDateValue(afterThirtyDays));
+      symbol.focus();
+    }
+
+    filter.addEventListener("change", renderExceptions);
+
+    async function loadExceptions() {
+      const { data, error } = await supabase
+        .from("user_exceptions")
+        .select("id,symbol,reason,date_from,date_to")
+        .eq("user_id", user.id)
+        .order("symbol");
+      if (error) {
+        setMessage(message, error.message);
+        return;
+      }
+      exceptions = data;
+      count.textContent = `${data.length} exception${data.length === 1 ? "" : "s"}`;
+      renderExceptions();
+    }
+
+    function renderExceptions() {
+      const selected = setFilterOptions(filter, exceptions.map(item => item.symbol));
+      const visible = exceptions.filter(item => !selected || item.symbol === selected);
+      rows.replaceChildren(...visible.map(exceptionRow));
+      empty.hidden = visible.length !== 0;
+    }
+
+    function exceptionRow(item) {
+      const row = document.createElement("tr");
+      const action = document.createElement("td");
+      const edit = document.createElement("button");
+      edit.type = "button";
+      edit.className = "secondary";
+      edit.textContent = "Edit";
+      edit.addEventListener("click", () => {
+        editingId = item.id;
+        symbol.value = item.symbol;
+        symbol.disabled = true;
+        reason.value = item.reason || "";
+        dateFrom.value = formatDate(item.date_from);
+        dateTo.value = formatDate(item.date_to);
+        submitException.textContent = "Save changes";
+        cancelEdit.hidden = false;
+        reason.focus();
+      });
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "delete";
+      remove.textContent = "Delete";
+      remove.addEventListener("click", async () => {
+        remove.disabled = true;
+        const { error } = await supabase
+          .from("user_exceptions")
+          .delete()
+          .eq("id", item.id)
+          .eq("user_id", user.id);
+        if (error) {
+          remove.disabled = false;
+          setMessage(message, error.message);
+          return;
+        }
+        setMessage(message, `${item.symbol} was deleted from your exception list.`, true);
+        await loadExceptions();
+      });
+      action.className = "row-actions";
+      action.append(edit, remove);
+      row.append(
+        tableCell(item.symbol, "symbol"), tableCell(formatDate(item.date_from)),
+        tableCell(formatDate(item.date_to)), tableCell(item.reason || "—"), action,
+      );
+      return row;
+    }
+  </script>
+</body>
+</html>

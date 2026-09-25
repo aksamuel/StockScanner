@@ -8,8 +8,8 @@ NYSE_URL = "https://ftp.nasdaqtrader.com/SymbolDirectory/nyse-listed.txt"
 NYSE_CSV = BASE_DIR / "data" / "nyse_tickers.csv"
 
 
-def download_nyse_tickers(path: Path = NYSE_CSV) -> pd.DataFrame:
-    path.parent.mkdir(parents=True, exist_ok=True)
+def fetch_nyse_tickers_nasdaq() -> pd.DataFrame:
+    """Download the current NYSE list from Nasdaq Trader without a local file."""
     df = pd.read_csv(NYSE_URL, sep="|", dtype=str)
     df = df[df["ETF"] == "N"]
     df = df[df["Test Issue"] == "N"]
@@ -17,13 +17,19 @@ def download_nyse_tickers(path: Path = NYSE_CSV) -> pd.DataFrame:
     df = df[["ACT Symbol", "Security Name", "Exchange"]]
     df.columns = ["Symbol", "Security Name", "Exchange"]
     df["Symbol"] = df["Symbol"].str.strip().str.upper()
+    return df
+
+
+def download_nyse_tickers(path: Path = NYSE_CSV) -> pd.DataFrame:
+    """Download the Nasdaq Trader NYSE list and retain legacy CSV compatibility."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    df = fetch_nyse_tickers_nasdaq()
     df.to_csv(path, index=False)
     return df
 
 
-def download_nyse_tickers_yfinance(path: Path = NYSE_CSV, limit: int | None = None) -> pd.DataFrame:
-    path.parent.mkdir(parents=True, exist_ok=True)
-
+def fetch_nyse_tickers_yfinance(limit: int | None = None) -> pd.DataFrame:
+    """Download the current NYSE universe without writing a local CSV."""
     query = yf.screener.query.EquityQuery("is-in", ["exchange", "NYQ"])
     rows = []
     offset = 0
@@ -60,8 +66,26 @@ def download_nyse_tickers_yfinance(path: Path = NYSE_CSV, limit: int | None = No
     if limit is not None:
         df = df.head(limit)
 
+    return df
+
+
+def download_nyse_tickers_yfinance(path: Path = NYSE_CSV, limit: int | None = None) -> pd.DataFrame:
+    """Download the current NYSE universe and retain legacy CSV compatibility."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    df = fetch_nyse_tickers_yfinance(limit=limit)
     df.to_csv(path, index=False)
     return df
+
+
+def fetch_current_nyse_tickers(limit: int | None = None):
+    """Fetch current tickers from Yahoo, falling back to Nasdaq Trader."""
+    try:
+        return fetch_nyse_tickers_yfinance(limit=limit), "yahoo_screener"
+    except Exception:
+        frame = fetch_nyse_tickers_nasdaq()
+        if limit is not None:
+            frame = frame.head(limit)
+        return frame, "nasdaqtrader"
 
 
 def load_nyse_tickers(path: Path = NYSE_CSV, force_download: bool = False, limit: int | None = None, use_yfinance: bool = False) -> pd.DataFrame:

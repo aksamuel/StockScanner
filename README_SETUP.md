@@ -1,10 +1,11 @@
-# Python environment setup
+# StockScanner v2.15.0 setup and operations
 
 Windows PowerShell commands to create and activate a virtual environment, install dependencies from `requirements.txt`, and verify installation.
 
 1. Create a venv and activate (PowerShell):
 
 ```powershell
+cd C:\StockScanner
 python -m venv .venv
 ./.venv/Scripts/Activate.ps1
 ```
@@ -16,7 +17,13 @@ python -m pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-3. Quick verification:
+3. Install in editable mode:
+
+```powershell
+pip install -e .
+```
+
+4. Quick verification:
 
 ```powershell
 python -c "import pandas; import yfinance; import ta; import openpyxl; print('OK')"
@@ -29,58 +36,89 @@ If the last command prints `OK`, the environment is set up.
 Use the existing launcher from the repo root:
 
 ```cmd
-cd C:\StockScanner
+cd /d C:\StockScanner
 run.bat
 ```
 
 or run the package CLI directly:
 
 ```cmd
-cd C:\StockScanner
+cd /d C:\StockScanner
 .venv\Scripts\python.exe -m stockscanner.cli
 ```
 
-### Scan the watchlist
+## Common commands
+
+### Full local NYSE scan with HTML dashboard
 
 ```cmd
-cd C:\StockScanner
-run.bat
+cd /d C:\StockScanner
+.venv\Scripts\python.exe -m stockscanner.cli --universe --universe-source download --parallel --workers 20 --html
 ```
 
-### Scan the full NYSE universe by descending market cap
+This mode downloads the universe locally and is intended for development or
+recovery testing. Production uses the Supabase command below.
+
+### Production-style scan using the Supabase universe
 
 ```cmd
-cd C:\StockScanner
-run.bat --universe --limit 50
+cd /d C:\StockScanner
+.venv\Scripts\python.exe -m stockscanner.cli --universe --universe-source supabase --parallel --workers 20 --html
 ```
 
-This scans the universe starting from the highest market capitalization tickers.
+Before running this command, set `SUPABASE_URL` and `SUPABASE_SECRET_KEY` in the
+current secured session. Do not put the secret value in a batch file, command
+example, documentation, or source control.
 
-### Skip Excel report export
+### Watchlist scan with HTML dashboard
 
 ```cmd
-cd C:\StockScanner
-.venv\Scripts\python.exe -m stockscanner.cli --universe --limit 20 --no-report
+cd /d C:\StockScanner
+.venv\Scripts\python.exe -m stockscanner.cli --parallel --workers 20 --html
 ```
 
-### Show progress during a long scan
+### Quick test (limited tickers + progress)
 
 ```cmd
-cd C:\StockScanner
-.venv\Scripts\python.exe -m stockscanner.cli --universe --limit 20 --progress
+cd /d C:\StockScanner
+.venv\Scripts\python.exe -m stockscanner.cli --universe --limit 20 --parallel --workers 20 --html --progress
 ```
 
-### Force download the latest NYSE ticker universe file
+### NYSE scan with batch Excel reports + HTML
 
 ```cmd
-cd C:\StockScanner
+cd /d C:\StockScanner
+.venv\Scripts\python.exe -m stockscanner.cli --universe --universe-source download --batch-reports --parallel --workers 20 --html
+```
+
+### Custom position sizing
+
+```cmd
+cd /d C:\StockScanner
+.venv\Scripts\python.exe -m stockscanner.cli --universe --parallel --workers 20 --html --portfolio 100000 --position-size 5 --risk 1
+```
+
+### Force-refresh the local NYSE ticker CSV
+
+```cmd
+cd /d C:\StockScanner
 .venv\Scripts\python.exe -m stockscanner.cli --universe --force-download
+```
+
+This command affects the legacy local CSV path only. The production ticker
+universe is replaced by the **Daily NYSE Ticker Universe** GitHub workflow.
+
+### Skip all report export (console output only)
+
+```cmd
+cd /d C:\StockScanner
+.venv\Scripts\python.exe -m stockscanner.cli --universe --limit 10 --no-report
 ```
 
 ### View CLI help
 
 ```cmd
-cd C:\StockScanner
+cd /d C:\StockScanner
 .venv\Scripts\python.exe -m stockscanner.cli --help
 ```
 
@@ -97,3 +135,293 @@ Then run:
 ```cmd
 .venv\Scripts\python.exe -m pytest
 ```
+
+## Apply the Supabase migrations
+
+Apply the migrations in timestamp order:
+
+1. `20260822204558_create_price_snapshots.sql`
+2. `20260828000000_add_admin_user_approval.sql`
+3. `20260828085119_optimize_admin_rls.sql`
+4. `20260828093000_store_latest_market_data.sql`
+5. `20260828094500_fix_ticker_replace_delete.sql`
+6. `20260828120000_add_user_portfolio_imports.sql`
+7. `20260828123000_enable_personal_exception_updates.sql`
+8. `20260831193000_add_scanner_daily_run_state.sql`
+9. `20260831213000_market_price_reliability.sql`
+10. `20260831214500_document_backend_only_rls.sql`
+
+The final two migrations add backend-only daily-scan and price-collection
+leases, scanner/price telemetry, previous-close and market-close fields, and
+purchased-position coverage. Apply them before deploying v2.15.0 workflows.
+
+## Activate invite-only Supabase authentication
+
+The application migration creates `public.signup_allowlist` and the
+`private.hook_require_admin_permission` Auth hook. After applying the migration
+to the StockScanner Supabase project:
+
+1. Open **Authentication → Hooks → Before User Created**.
+2. Select the Postgres hook in schema `private` named
+   `hook_require_admin_permission`.
+3. Enable and save the hook before deploying the updated login page.
+
+The administrator `aaksamuel@zohomail.com` can then open `admin.html` and permit
+an email address. Only permitted email addresses can create an account. Supabase
+Auth manages password hashes; StockScanner never stores user passwords.
+
+User-management and activity pages are accessible only to that administrator.
+Deleting a user also removes the user's exception, bought-selection, imported
+portfolio, and portfolio-import-status rows through database foreign-key
+cascading. Blocked or rejected users cannot use the protected application pages.
+
+## Store the current NYSE universe in Supabase
+
+Apply both market-data migrations listed above, then keep
+`SUPABASE_SECRET_KEY` in the protected GitHub `github-pages` environment.
+The **Daily NYSE Ticker Universe** workflow refreshes `public.nyse_tickers`
+once each weekday at or after 03:07 New York time. It uses both possible UTC
+hours plus database date guards so daylight-saving changes and delayed GitHub
+jobs do not create duplicate downloads.
+
+The production universe scan reads the current rows from Supabase. Each refresh
+atomically replaces the table; ticker history is not retained. The market-data
+migrations keep one singleton `public.price_snapshots` row. Within that row,
+intraday samples are limited to the current New York market date. The workflow
+writes directly to Supabase; it does not commit `prices.json` or trigger a Pages
+deployment.
+
+### Configure free hourly price providers
+
+Create an Alpaca Basic account and store its credentials in the protected
+GitHub `github-pages` environment as `ALPACA_API_KEY_ID` and
+`ALPACA_API_SECRET_KEY`. The workflow explicitly requests Alpaca's free IEX
+feed. Optionally add a Twelve Data Basic key as `TWELVE_DATA_API_KEY`; the code
+uses no more than eight Twelve Data symbols per run so the scheduled workflow
+stays below its free minute and daily quotas.
+
+The hourly symbol list is the union of the latest scanner snapshot and all
+distinct symbols in `public.user_portfolio_holdings`. This keeps the daily scan
+NYSE-only while still pricing existing NASDAQ and AMEX holdings. The workflow
+uses `SUPABASE_SECRET_KEY` to read only the holdings' `symbol` column; it never
+places portfolio rows or the secret in the public site.
+
+The authenticated `database.html` page shows the current price-snapshot status
+and RLS-filtered counts for the signed-in user's portfolio and personal lists.
+For `aaksamuel@zohomail.com`, it also shows recent application activity and a
+link to the protected Supabase Logs Explorer. Never put a Supabase management
+token or secret key in this static page.
+
+The combined list is split evenly between Alpaca and Yahoo. Missing or timed-out
+prices cross over to the other provider once, then up to eight remaining gaps
+use Twelve Data. Retries are intentionally bounded: an endless loop could
+exceed a free quota and still cannot guarantee a current quote for an inactive
+or unsupported security. A failed live symbol retains its prior stored price
+and is listed in the snapshot's `failures` object.
+
+Free-provider terms can restrict redistribution or public display. Confirm that
+the selected account plan permits the way the protected StockScanner site is
+used before enabling an optional provider.
+
+The `public.nyse_tickers` table is backend-only: `anon` and `authenticated`
+have no table privileges. The `service_role` can replace the current universe.
+The replacement RPC uses `SECURITY INVOKER`, an empty `search_path`, and an
+explicit `EXECUTE` grant only for `service_role`.
+
+## Personal lists
+
+The signed-in user pages serve different purposes:
+
+- `my-exceptions.html`: tickers the user does not want considered.
+- `my-bought-selection.html`: positions the user owns or tracks, with quantity,
+  buy price, present price, profit/loss percentage, days held, and an estimated
+  breakeven period using the Equal-weight Top 20 as a reference scenario.
+- `portfolio-analysis.html`: on-demand broker CSV holdings, including native IBKR exports, current
+  return, holding duration, daily scanner evidence, concentration, and
+  sell/partial-sell/hold review signals. The profit-review threshold is 7%.
+  Manual targets override the conservative automatic target, which selects the
+  closest valid profit-side price from the return objective, Technical Target 1,
+  resistance, and analyst target proxy. Each import atomically replaces only
+  the signed-in user's older rows for that broker before the page recalculates
+  the analysis; it never truncates another user or broker.
+- `help.html`: the current user guide and FAQ, available from the shared Menu,
+  portfolio navigation, and report Help links.
+
+Do not duplicate bought positions into the Exception List. The authenticated
+Top 20 hides that user's bought/imported holdings and active exceptions by
+default. **Show Already Bought** and **Show My Exceptions** expose them without
+altering the shared All Results table. Candidate-page add actions update
+Supabase directly rather than opening GitHub issues.
+
+All protected pages use a compact upper-left **Menu** button. It opens the same
+responsive navigation drawer on PC and mobile; the close button, backdrop,
+Escape key, or choosing a destination closes it. Admin links appear only for
+`aaksamuel@zohomail.com`.
+
+On the KPI Dashboard, Stocks Scanned, Strong Buy, Buy, Accumulate, Watch, and
+Avoid are clickable and open stock lists generated from the same scan as their
+counts. Searchable dropdowns list the symbols in the selected table or category
+and include All stocks. Users can type to narrow the list, click a choice or use
+the arrow keys and Enter. The shared table-filter module is included in new reports and added
+to archived report displays during deployment.
+
+The bought-list breakeven value is an illustrative benchmark calculation. It
+uses the Equal-weight Top 20's observed daily compound return over the chart
+window and calculates how many calendar days that rate would need to recover
+the gap from the latest price to the buy price. It is not a forecast or promise,
+and it does not estimate the historical first-profit day because individual
+daily ticker histories are not retained.
+
+### Portfolio page deployment and checks
+
+Stable release v2.17.0 retains Symbol, Action review, Recovery scenario / days
+held, and Profit / Loss % first, in that order. Technical strength appears once
+inside Action review. The recovery timeline keeps Today undated and displays
+blue stock-history and orange Top 20 estimates in chronological order. Both the
+table and graph disclose that recovery dates are estimates without guarantees.
+
+Publish `bought-price.js`, `table-filters.js`, and `searchable-filter.js` alongside
+`auth.js`. The shared guard reads the approved user's purchase prices and
+quantities, paginating by ID so portfolio averages include all lots. The purchase
+labels prefer portfolio lots over duplicate bought-list entries. The table-filter
+module retains the native select as the selected-value store and presents a
+searchable combobox with keyboard support. New and archived reports load it
+directly, including archived pages that do not load the shared guard.
+
+The existing Stock Scanner workflow publishes GitHub Pages on pushes to `main`
+that change the portfolio page, its helper modules, or the shared date module.
+Push deployments reuse the latest scanner reports; they do not launch a full
+market scan. Publish `date-format.js`, `portfolio-recovery.js`, and
+`recovery-chart.js` with the page. The graph renders locally as SVG and adds no
+chart dependency, database migration, or provider request beyond existing history.
+`tools/format_report_dates.py` updates archived report dates during deployment
+without rewriting their URLs or committing hundreds of regenerated files.
+
+Deploy `supabase/functions/portfolio-history/index.ts` with its `handler.mjs`
+dependency. The function validates the caller with `auth.getUser()`, checks approved
+access, and verifies ownership through the caller's JWT and existing RLS before
+every history request, including cache hits. Gateway JWT verification is disabled
+because authentication is performed explicitly in the handler, supporting the
+project's current signing keys. No service-role key or new secret is required.
+
+The response contains `points: [["YYYY-MM-DD", adjustedClose], ...]`, source, and
+generation time. Only ticker symbols are sent to Yahoo Finance; user IDs, broker
+names, quantities, and purchase prices are never forwarded. History uses one year
+of adjusted daily closes, excludes today's potentially incomplete candle, and is
+cached in function memory for one hour after ownership validation. Responses use
+`Cache-Control: private, no-store`; no holdings-derived public file is generated.
+The UI requests at most four symbols concurrently, reports unavailable history
+explicitly, and retains the independent benchmark breakeven date. At least 60
+daily closes are required; history older than seven days is not used.
+
+The recovery graph uses `expm1(log(lastClose / firstClose) / elapsedCalendarDays)`
+for the stock's daily growth rate and the existing equal-weight Top 20 daily rate
+for comparison. Both compound from the holding's latest quote today toward its
+buy price. Dates retain the existing calendar-day breakeven calculation. Drawn
+projections stop at the target or five years, whichever comes first; estimates
+beyond five years stay visible as text. Non-positive rates have no recovery date.
+Missing stock history still allows the independent Top 20 projection. The dialog
+shows quote time, sample dates, annualized rates, an accessible date slider, and
+historical drawdown statistics. No recovery calculation changes action decisions.
+
+Run `node tests/portfolio-history.test.mjs` to verify authentication, ownership,
+cache isolation, provider failure handling, and completed-candle parsing.
+
+Run `python -m pytest -q`, `node tests/date-format.test.mjs`, and
+`node tests/portfolio-recovery.test.mjs` before publishing. Verify broker selection,
+12-column table alignment, a single strength badge inside Action review, score
+boundaries (39, 40, 70, 71), positive and
+non-positive stock/benchmark returns, both projection start points and recovery
+markers, missing history, dates beyond the five-year chart, keyboard/modal use,
+mobile chart scrolling, and manual date validation.
+
+Dates are presentation changes only: do not rewrite ISO database dates or
+historical report paths. The IBKR Flex import code is retired; CSV import uses
+the existing owner-scoped replacement function and requires no schema migration.
+
+All displayed times use `America/New_York`, 24-hour `HH:mm` without seconds,
+and an EST/EDT suffix. Browser formatting is shared in `date-format.js`; generated
+reports and snapshot display labels use `stockscanner/display_time.py`. Raw ISO
+timestamps keep their seconds and offsets. Report snapshot labels are formatted
+from those ISO timestamps so previously stored 12-hour labels cannot override
+the display convention. The report deployment formatter also normalizes archive
+text, treating unzoned legacy CI report timestamps as UTC; timezone-labelled
+timestamps retain their original instant. Stored dates and report URLs are not
+rewritten. Date-only purchase and chart values remain calendar dates.
+
+### Stable releases
+
+Keep the version in `pyproject.toml`, `stockscanner/__init__.py`, README,
+`help.html`, and `RELEASE_NOTES.md` aligned. A push to `main` runs the Python
+suite and JavaScript checks, deploys the complete site, and then creates the
+matching non-prerelease GitHub release from that commit using the checked-in
+release notes. Existing releases are preserved on later deployments of the same
+version. A test or deployment failure prevents a new stable release.
+
+The Pages build applies the current date/time formatter, Help links and shared
+searchable filters to archived HTML reports. This preserves original report URLs
+and ISO source data. No new database migration or history-function deployment is
+required for v2.17.0.
+For rollback, revert the release commit on `main` and deploy through the same
+workflow; do not rewrite existing release tags or modify user holdings.
+
+### Configure admin manual scanner controls
+
+The admin dashboard provides **Run daily scanner** and **Run hourly prices**
+buttons only to `aaksamuel@zohomail.com`. Create a fine-grained GitHub personal
+access token scoped only to `aksamuel/StockScanner`, grant it **Actions: Read
+and write**, and store it as the Supabase Edge Function secret
+`GITHUB_ACTIONS_TOKEN`. Deploy the `trigger-scanner` Edge Function after that
+secret is configured. Never place the token in `admin.html`, browser storage,
+GitHub Pages, or a repository secret used by client code.
+
+The daily button dispatches a forced full-universe scan. The hourly button
+dispatches the hourly price workflow, whose New York market-window validation
+still applies. The dashboard links to GitHub Actions for progress and logs.
+
+## Production GitHub workflows
+
+| Workflow | Purpose | Schedule |
+|---|---|---|
+| `ticker-universe.yml` | Atomically replaces `public.nyse_tickers` | Once per weekday at or after 03:07 New York time |
+| `scan.yml` | Runs the universe scan and publishes GitHub Pages | After a successful ticker refresh, with 09:17 primary and 10:47 fallback schedules |
+| `price-snapshot.yml` | Updates hourly/current, previous-close, and market-close prices directly in Supabase | Weekdays at 08:45 New York time, then every 60 minutes through 15:45, plus a post-close run and manual dispatch |
+| `invite-admin.yml` | Invites or promotes an administrator without handling a password | Manual only |
+
+GitHub cron is UTC-only and may deliver runs several hours late. The ticker and
+scan workflows schedule redundant candidate UTC hours and use New York date
+and database lease guards to remain daylight-saving safe. A delayed scanner
+candidate is accepted any time after 09:00 New York when that market date has
+not already completed. The
+scanner uses `public.scanner_run_state` as a backend-only atomic daily lease,
+requires today's refreshed universe with at least 2,000 rows, and batch-caches
+daily histories before analysis. `public.price_collection_runs` similarly
+deduplicates each hourly/close slot. Failed scans can be retried by the next
+fallback and never publish partial reports. Non-zero minutes avoid GitHub
+Actions' busiest top-of-hour window.
+
+### Verify a production release
+
+1. Confirm the ticker-universe workflow replaced at least 2,000 rows for the
+   current New York market date.
+2. Confirm the universe scan completed and the dashboard shows exclusion
+   counts rather than treating every universe symbol as successfully analysed.
+3. Confirm `public.price_snapshots` has one row, current-day intraday samples,
+   previous-close data, and purchased-position coverage.
+4. Confirm no unresolved **StockScanner price coverage incomplete** issue was
+   created by the hourly workflow.
+5. Run the complete test suite and review Supabase Security and Performance
+   Advisors before tagging the release.
+
+## Security checklist
+
+- Use a publishable/anonymous key only in browser code.
+- Store `SUPABASE_SECRET_KEY` only in the protected GitHub environment.
+- Store Alpaca and Twelve Data API credentials only in the protected GitHub
+  environment; never add them to the repository or static site.
+- Keep RLS enabled on exposed `public` tables and use ownership predicates for
+  personal rows.
+- Use `app_metadata`, not user-editable `user_metadata`, for authorization
+  claims.
+- Enable leaked-password protection in Supabase Auth.
+- Review Supabase Security and Performance Advisors after schema changes.

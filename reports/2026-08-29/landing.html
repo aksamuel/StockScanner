@@ -1,0 +1,858 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>StockScanner Dashboard - 29 August 2026, 01:21 PM EDT</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #0f1923;
+    color: #e0e0e0;
+    line-height: 1.6;
+    overflow-x: clip;
+}
+.container { max-width: 1400px; margin: 0 auto; padding: 20px; }
+header {
+    background: linear-gradient(135deg, #1a2a3a 0%, #0f1923 100%);
+    border-bottom: 2px solid #1f4e78;
+    padding: 10px 0;
+    margin-bottom: 14px;
+}
+header h1 { color: #4fc3f7; font-size: 1.4rem; line-height: 1.2; text-align: center; }
+header .subtitle { color: #90a4ae; text-align: center; margin-top: 2px; font-size: 0.82rem; }
+.dashboard-nav { margin-top: 7px; text-align: center; }
+.dashboard-nav a,
+.dashboard-nav .nav-current {
+    display: inline-block;
+    padding: 7px 14px;
+    color: #4fc3f7;
+    border: 1px solid #1f4e78;
+    border-radius: 6px;
+    text-decoration: none;
+}
+.dashboard-nav .nav-current {
+    color: #607d8b;
+    background: #162534;
+    border-color: #263d50;
+    cursor: not-allowed;
+    opacity: 0.65;
+}
+.cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 16px;
+    margin-bottom: 32px;
+}
+.card {
+    background: #1a2a3a;
+    border: 1px solid #263d50;
+    border-radius: 8px;
+    padding: 16px;
+    text-align: center;
+}
+.kpi-card {
+    display: block;
+    width: 100%;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+}
+.kpi-card:hover,
+.kpi-card:focus-visible { border-color: #4fc3f7; transform: translateY(-1px); }
+.kpi-card[aria-expanded="true"] { border-color: #4fc3f7; box-shadow: 0 0 0 2px #4fc3f733; }
+.card .value { font-size: 1.8rem; font-weight: 700; color: #4fc3f7; }
+.card .label { font-size: 0.8rem; color: #90a4ae; margin-top: 4px; text-transform: uppercase; }
+.kpi-card .value,
+.kpi-card .label { display: block; }
+.kpi-details {
+    --active-kpi-symbol-color: #4fc3f7;
+    padding: 18px;
+    border: 1px solid #3b5368;
+    border-radius: 8px;
+    background: #142433;
+}
+.kpi-details[hidden] { display: none; }
+.kpi-details-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+.kpi-details-count { color: #90a4ae; font-size: 0.85rem; }
+.kpi-details-close {
+    padding: 7px 12px;
+    border: 1px solid #546e7a;
+    border-radius: 6px;
+    color: #e0e0e0;
+    background: #24384a;
+    cursor: pointer;
+}
+.kpi-search-label { display: block; margin: 12px 0 5px; color: #b0bec5; font-size: .8rem; }
+.kpi-stock-search {
+    width: min(100%, 380px);
+    margin-bottom: 12px;
+    padding: 8px 11px;
+    border: 1px solid #3b5368;
+    border-radius: 6px;
+    color: #fff;
+    background: #0f1923;
+}
+.kpi-symbol { color: var(--active-kpi-symbol-color); font-weight: 700; }
+.section { margin-bottom: 32px; }
+.section h2 {
+    color: #4fc3f7;
+    font-size: 1.2rem;
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #263d50;
+}
+.chart-container {
+    background: #1a2a3a;
+    border: 1px solid #263d50;
+    border-radius: 8px;
+    padding: 20px;
+    width: 100%;
+    max-width: none;
+    margin: 0 auto 32px;
+}
+.refresh-time {
+    color: #90a4ae;
+    font-size: 0.8rem;
+    margin-bottom: 10px;
+    text-align: right;
+}
+.price-notice {
+    color: #fdd835;
+    font-size: 0.85rem;
+    margin-bottom: 12px;
+    text-align: right;
+}
+.chart-explanation { color: #b0bec5; font-size: 0.85rem; margin: 4px 0; }
+.chart-unavailable {
+    color: #ffcc80;
+    margin-top: 20px;
+    padding: 18px;
+    text-align: center;
+    border: 1px solid #6d4c2f;
+    border-radius: 6px;
+}
+.top20-drilldown { margin-top: 20px; }
+.top20-drilldown summary {
+    color: #4fc3f7;
+    cursor: pointer;
+    font-weight: 600;
+    padding: 10px 0;
+}
+.top20-drilldown .table-wrapper { margin-top: 10px; }
+.price-gain { color: #66bb6a; font-weight: 600; }
+.price-loss { color: #ef5350; font-weight: 600; }
+.below-support { color: #66bb6a; font-weight: 600; }
+.entry-opportunity { background: #1b5e20; color: #fff; font-weight: 600; }
+.table-wrapper {
+    width: calc(100vw - 40px);
+    margin-left: calc(50% - 50vw + 20px);
+    overflow-x: auto;
+    border-radius: 8px;
+    border: 1px solid #263d50;
+}
+table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+}
+th {
+    background: #1f4e78;
+    color: #172217;
+    padding: 10px 12px;
+    text-align: left;
+    white-space: nowrap;
+    cursor: pointer;
+    user-select: none;
+    position: sticky;
+    top: 0;
+}
+th:hover { filter: brightness(0.92); }
+th::after { content: ' ⇅'; opacity: 0.4; font-size: 0.7rem; }
+th.no-sort::after { content: none; }
+td {
+    padding: 8px 12px;
+    border-bottom: 1px solid #1a2a3a;
+    white-space: nowrap;
+}
+tr:nth-child(even) { background: #162330; }
+tr:hover { background: #1e3348; }
+.rec-strong-buy { background: #1b5e20 !important; color: #c8e6c9; font-weight: 600; }
+.rec-buy { background: #2e7d32 !important; color: #c8e6c9; }
+.rec-hold { background: #f9a825 !important; color: #1a1a1a; }
+.rec-watch { background: #e65100 !important; color: #fff3e0; }
+.rec-avoid { background: #b71c1c !important; color: #ffcdd2; }
+.score-excellent { background: #1b5e20 !important; color: #c8e6c9; font-weight: 700; }
+.score-good { background: #2e7d32 !important; color: #c8e6c9; }
+.score-fair { background: #f9a825 !important; color: #1a1a1a; }
+.score-poor { background: #b71c1c !important; color: #ffcdd2; }
+.price-rsi-overbought { background: #4fb52a !important; color: #102000; font-weight: 600; }
+.price-rsi-upper { background: #d8edcc !important; color: #172217; }
+.price-rsi-neutral { background: #bfe7f5 !important; color: #10242d; }
+.price-rsi-lower { background: #f8ddcc !important; color: #352015; }
+.price-rsi-oversold { background: #f47732 !important; color: #2b1105; font-weight: 600; }
+.symbol-rs-strong { background: #4fb52a !important; color: #102000; font-weight: 600; }
+.symbol-rs-upper { background: #d8edcc !important; color: #172217; }
+.symbol-rs-neutral { background: #bfe7f5 !important; color: #10242d; }
+.symbol-rs-lower { background: #f8ddcc !important; color: #352015; }
+.symbol-rs-weak { background: #f47732 !important; color: #2b1105; font-weight: 600; }
+.symbol-support-above-five { background: #f47732 !important; color: #2b1105; font-weight: 600; }
+.symbol-support-above-zero { background: #f8ddcc !important; color: #352015; }
+.symbol-support-zero { background: #bfe7f5 !important; color: #10242d; }
+.symbol-support-below-zero { background: #d8edcc !important; color: #172217; }
+.symbol-support-below-five { background: #4fb52a !important; color: #102000; font-weight: 600; }
+.symbol-name { display: block; font-weight: 600; }
+.symbol-price { display: block; font-size: 0.78em; font-weight: 400; margin-top: -2px; }
+.target-arrow-up { color: #66bb6a; font-size: 1.1em; font-weight: 700; }
+.target-arrow-down { color: #ef5350; font-size: 1.1em; font-weight: 700; }
+.tabs {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 16px;
+}
+.tab {
+    padding: 8px 20px;
+    background: #1a2a3a;
+    border: 1px solid #263d50;
+    border-bottom: none;
+    border-radius: 6px 6px 0 0;
+    cursor: pointer;
+    color: #90a4ae;
+    font-size: 0.85rem;
+}
+.tab.active { background: #1f4e78; color: #172217; }
+.tab-content { display: none; }
+.tab-content.active { display: block; }
+.filter-bar {
+    margin-bottom: 12px;
+    display: flex;
+    gap: 12px;
+    align-items: center;
+}
+.filter-bar input {
+    background: #1a2a3a;
+    border: 1px solid #263d50;
+    border-radius: 4px;
+    padding: 6px 12px;
+    color: #e0e0e0;
+    font-size: 0.85rem;
+    width: 250px;
+}
+.filter-bar input::placeholder { color: #607d8b; }
+.filter-bar { justify-content: space-between; flex-wrap: wrap; }
+#addExceptions, #addBought {
+    padding: 7px 14px;
+    color: #fff;
+    background: #1b5e20;
+    border: 1px solid #66bb6a;
+    border-radius: 5px;
+    cursor: pointer;
+}
+#addExceptions:hover:not(:disabled), #addBought:hover:not(:disabled) { background: #2e7d32; }
+#addExceptions:disabled, #addBought:disabled { cursor: not-allowed; opacity: 0.45; }
+#requestYahooRefresh {
+    padding: 7px 14px;
+    color: #172217;
+    background: #c6efce;
+    border: 1px solid #70ad47;
+    border-radius: 5px;
+    cursor: pointer;
+}
+#requestYahooRefresh:hover:not(:disabled) { filter: brightness(0.92); }
+#requestYahooRefresh:disabled { cursor: wait; opacity: 0.65; }
+.target-sort-controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+#targetSortStatus { color: #90a4ae; font-size: 0.8rem; }
+#targetSortStatus.refresh-error { color: #ef9a9a; }
+#targetSortStatus.refresh-success { color: #a5d6a7; }
+.select-column { width: 48px; text-align: center; }
+.select-column input { width: 18px; height: 18px; cursor: pointer; accent-color: #4caf50; }
+@media (max-width: 720px) {
+    .container { padding: 12px; }
+    header { padding: 8px 0; margin-bottom: 10px; }
+    header h1 { font-size: 1.25rem; }
+    .table-wrapper {
+        width: calc(100vw - 24px);
+        margin-left: calc(50% - 50vw + 12px);
+    }
+    .dashboard-nav a,
+    .dashboard-nav .nav-current { margin: 3px 1px; padding: 7px 10px; }
+    .cards { grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; }
+    .chart-container { padding: 12px; }
+    .filter-bar { align-items: stretch; }
+    .filter-bar input { width: 100%; }
+    .target-sort-controls { width: 100%; }
+    .tabs { overflow-x: auto; }
+    .tab { flex: 0 0 auto; padding: 8px 14px; }
+    th { padding: 9px 10px; }
+    td { padding: 8px 10px; }
+}
+footer {
+    text-align: center;
+    color: #607d8b;
+    font-size: 0.75rem;
+    margin-top: 40px;
+    padding: 16px;
+    border-top: 1px solid #263d50;
+}
+</style>
+</head>
+<body>
+<header>
+    <div class="container">
+        <h1>StockScanner KPI Dashboard</h1>
+        <div class="dashboard-nav">
+            <span class="nav-current" aria-current="page">KPI Dashboard</span>
+            <a href="technical.html">Technical Analysis</a>
+            <a href="analysts.html">Analysts Rating</a>
+            <a href="bought-selection.html">Bought Selection</a>
+            <a href="my-exceptions.html">My Exceptions</a>
+        </div>
+    </div>
+</header>
+
+<div class="container">
+    
+    <div class="cards">
+        <button class="card kpi-card" type="button" data-kpi-filter="all" data-kpi-label="Stocks Scanned" data-kpi-color="#4fc3f7" aria-controls="kpiDetails" aria-expanded="false"><span class="value">327</span><span class="label">Stocks Scanned</span></button>
+        <button class="card kpi-card" type="button" data-kpi-filter="strong-buy" data-kpi-label="Strong Buy" data-kpi-color="#4caf50" aria-controls="kpiDetails" aria-expanded="false"><span class="value" style="color:#4caf50">1</span><span class="label">Strong Buy</span></button>
+        <button class="card kpi-card" type="button" data-kpi-filter="buy" data-kpi-label="Buy" data-kpi-color="#66bb6a" aria-controls="kpiDetails" aria-expanded="false"><span class="value" style="color:#66bb6a">0</span><span class="label">Buy</span></button>
+        <button class="card kpi-card" type="button" data-kpi-filter="accumulate" data-kpi-label="Accumulate" data-kpi-color="#fdd835" aria-controls="kpiDetails" aria-expanded="false"><span class="value" style="color:#fdd835">0</span><span class="label">Accumulate</span></button>
+        <button class="card kpi-card" type="button" data-kpi-filter="watch" data-kpi-label="Watch" data-kpi-color="#ffa726" aria-controls="kpiDetails" aria-expanded="false"><span class="value" style="color:#ffa726">0</span><span class="label">Watch</span></button>
+        <button class="card kpi-card" type="button" data-kpi-filter="avoid" data-kpi-label="Avoid" data-kpi-color="#ef5350" aria-controls="kpiDetails" aria-expanded="false"><span class="value" style="color:#ef5350">326</span><span class="label">Avoid</span></button>
+        <div class="card"><div class="value">11.87</div><div class="label">Avg Score</div></div>
+        <div class="card"><div class="value">90</div><div class="label">Best Score</div></div>
+    </div>
+
+    <section id="kpiDetails" class="section kpi-details" aria-live="polite" hidden>
+        <div class="kpi-details-header">
+            <div>
+                <h2 id="kpiDetailsTitle">Stocks Scanned</h2>
+                <p id="kpiDetailsCount" class="kpi-details-count"></p>
+            </div>
+            <button id="closeKpiDetails" class="kpi-details-close" type="button">Close list</button>
+        </div>
+        <label class="kpi-search-label" for="kpiStockSearch">Filter this list</label>
+        <input id="kpiStockSearch" class="kpi-stock-search" type="search" placeholder="Symbol, sector, recommendation, or score">
+        <div class="table-wrapper">
+            <table id="kpiStockTable">
+                <thead><tr><th>Rank</th><th>Symbol</th><th>Current Price</th><th>Sector</th><th>Recommendation</th><th>Score</th></tr></thead>
+                <tbody><tr data-kpi-category="strong-buy"><td>1</td><td class="kpi-symbol">SHEL</td><td>$90.91</td><td>Shell plc</td><td class="rec-strong-buy">🟢 STRONG BUY</td><td>90</td></tr><tr data-kpi-category="avoid"><td>2</td><td class="kpi-symbol">NOW</td><td></td><td>ServiceNow, Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>30</td></tr><tr data-kpi-category="avoid"><td>3</td><td class="kpi-symbol">PBR</td><td></td><td>Petróleo Brasileiro S.A. - Petrobras</td><td class="rec-avoid">🔴 AVOID</td><td>30</td></tr><tr data-kpi-category="avoid"><td>4</td><td class="kpi-symbol">FCX</td><td></td><td>Freeport-McMoRan Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>30</td></tr><tr data-kpi-category="avoid"><td>5</td><td class="kpi-symbol">CNQ</td><td></td><td>Canadian Natural Resources Limited</td><td class="rec-avoid">🔴 AVOID</td><td>30</td></tr><tr data-kpi-category="avoid"><td>6</td><td class="kpi-symbol">SLB</td><td></td><td>SLB N.V.</td><td class="rec-avoid">🔴 AVOID</td><td>30</td></tr><tr data-kpi-category="avoid"><td>7</td><td class="kpi-symbol">B</td><td></td><td>Barrick Mining Corporation</td><td class="rec-avoid">🔴 AVOID</td><td>30</td></tr><tr data-kpi-category="avoid"><td>8</td><td class="kpi-symbol">NU</td><td></td><td>Nu Holdings Ltd.</td><td class="rec-avoid">🔴 AVOID</td><td>30</td></tr><tr data-kpi-category="avoid"><td>9</td><td class="kpi-symbol">RSG</td><td></td><td>Republic Services, Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>30</td></tr><tr data-kpi-category="avoid"><td>10</td><td class="kpi-symbol">VALE</td><td></td><td>Vale S.A.</td><td class="rec-avoid">🔴 AVOID</td><td>30</td></tr><tr data-kpi-category="avoid"><td>11</td><td class="kpi-symbol">CCJ</td><td></td><td>Cameco Corporation</td><td class="rec-avoid">🔴 AVOID</td><td>30</td></tr><tr data-kpi-category="avoid"><td>12</td><td class="kpi-symbol">PCG</td><td></td><td>PG&amp;E Corporation</td><td class="rec-avoid">🔴 AVOID</td><td>30</td></tr><tr data-kpi-category="avoid"><td>13</td><td class="kpi-symbol">QSR</td><td></td><td>Restaurant Brands International Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>30</td></tr><tr data-kpi-category="avoid"><td>14</td><td class="kpi-symbol">UI</td><td></td><td>Ubiquiti Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>30</td></tr><tr data-kpi-category="avoid"><td>15</td><td class="kpi-symbol">SCCO</td><td></td><td>Southern Copper Corporation</td><td class="rec-avoid">🔴 AVOID</td><td>30</td></tr><tr data-kpi-category="avoid"><td>16</td><td class="kpi-symbol">UBS</td><td></td><td>UBS Group AG</td><td class="rec-avoid">🔴 AVOID</td><td>30</td></tr><tr data-kpi-category="avoid"><td>17</td><td class="kpi-symbol">UL</td><td></td><td>Unilever PLC</td><td class="rec-avoid">🔴 AVOID</td><td>30</td></tr><tr data-kpi-category="avoid"><td>18</td><td class="kpi-symbol">WFC-PC</td><td></td><td>Wells Fargo &amp; Company</td><td class="rec-avoid">🔴 AVOID</td><td>30</td></tr><tr data-kpi-category="avoid"><td>19</td><td class="kpi-symbol">ASX</td><td></td><td>ASE Technology Holding Co., Ltd.</td><td class="rec-avoid">🔴 AVOID</td><td>30</td></tr><tr data-kpi-category="avoid"><td>20</td><td class="kpi-symbol">HLN</td><td></td><td>Haleon plc</td><td class="rec-avoid">🔴 AVOID</td><td>30</td></tr><tr data-kpi-category="avoid"><td>21</td><td class="kpi-symbol">NMR</td><td></td><td>Nomura Holdings, Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>30</td></tr><tr data-kpi-category="avoid"><td>22</td><td class="kpi-symbol">V</td><td></td><td>Visa Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>23</td><td class="kpi-symbol">MA</td><td></td><td>Mastercard Incorporated</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>24</td><td class="kpi-symbol">DIS</td><td></td><td>The Walt Disney Company</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>25</td><td class="kpi-symbol">DHR</td><td></td><td>Danaher Corporation</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>26</td><td class="kpi-symbol">SPGI</td><td></td><td>S&amp;P Global Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>27</td><td class="kpi-symbol">WMB</td><td></td><td>The Williams Companies, Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>28</td><td class="kpi-symbol">ET</td><td></td><td>Energy Transfer LP</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>29</td><td class="kpi-symbol">WPM</td><td></td><td>Wheaton Precious Metals Corp.</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>30</td><td class="kpi-symbol">TAK</td><td></td><td>Takeda Pharmaceutical Company Limited</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>31</td><td class="kpi-symbol">LNG</td><td></td><td>Cheniere Energy, Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>32</td><td class="kpi-symbol">DVN</td><td></td><td>Devon Energy Corporation</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>33</td><td class="kpi-symbol">TEVA</td><td></td><td>Teva Pharmaceutical Industries Limited</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>34</td><td class="kpi-symbol">IQV</td><td></td><td>IQVIA Holdings Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>35</td><td class="kpi-symbol">EQT</td><td></td><td>EQT Corporation</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>36</td><td class="kpi-symbol">JNJ</td><td></td><td>Johnson &amp; Johnson</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>37</td><td class="kpi-symbol">ORCL</td><td></td><td>Oracle Corporation</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>38</td><td class="kpi-symbol">KO</td><td></td><td>The Coca-Cola Company</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>39</td><td class="kpi-symbol">MRK</td><td></td><td>Merck &amp; Co., Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>40</td><td class="kpi-symbol">ABBV</td><td></td><td>AbbVie Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>41</td><td class="kpi-symbol">MUFG</td><td></td><td>Mitsubishi UFJ Financial Group, Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>42</td><td class="kpi-symbol">IBM</td><td></td><td>International Business Machines Corporation</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>43</td><td class="kpi-symbol">CRM</td><td></td><td>Salesforce, Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>44</td><td class="kpi-symbol">VZ</td><td></td><td>Verizon Communications Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>45</td><td class="kpi-symbol">SCHW</td><td></td><td>The Charles Schwab Corporation</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>46</td><td class="kpi-symbol">BLK</td><td></td><td>BlackRock, Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>47</td><td class="kpi-symbol">UNP</td><td></td><td>Union Pacific Corporation</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>48</td><td class="kpi-symbol">T</td><td></td><td>AT&amp;T Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>49</td><td class="kpi-symbol">WELL</td><td></td><td>Welltower Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>50</td><td class="kpi-symbol">DE</td><td></td><td>Deere &amp; Company</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>51</td><td class="kpi-symbol">RIO</td><td></td><td>Rio Tinto Group</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>52</td><td class="kpi-symbol">PFE</td><td></td><td>Pfizer Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>53</td><td class="kpi-symbol">UBER</td><td></td><td>Uber Technologies, Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>54</td><td class="kpi-symbol">COP</td><td></td><td>ConocoPhillips</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>55</td><td class="kpi-symbol">NEM</td><td></td><td>Newmont Corporation</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>56</td><td class="kpi-symbol">BMY</td><td></td><td>Bristol-Myers Squibb Company</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>57</td><td class="kpi-symbol">PBR-A</td><td></td><td>Petróleo Brasileiro S.A. - Petrobras</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>58</td><td class="kpi-symbol">ACN</td><td></td><td>Accenture plc</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>59</td><td class="kpi-symbol">SPOT</td><td></td><td>Spotify Technology S.A.</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>60</td><td class="kpi-symbol">BNS</td><td></td><td>The Bank of Nova Scotia</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>61</td><td class="kpi-symbol">AEM</td><td></td><td>Agnico Eagle Mines Limited</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>62</td><td class="kpi-symbol">MCK</td><td></td><td>McKesson Corporation</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>63</td><td class="kpi-symbol">MPC</td><td></td><td>Marathon Petroleum Corporation</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>64</td><td class="kpi-symbol">PSX</td><td></td><td>Phillips 66</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>65</td><td class="kpi-symbol">HCA</td><td></td><td>HCA Healthcare, Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>66</td><td class="kpi-symbol">MCO</td><td></td><td>Moody's Corporation</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>67</td><td class="kpi-symbol">UPS</td><td></td><td>United Parcel Service, Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>68</td><td class="kpi-symbol">ELV</td><td></td><td>Elevance Health, Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>69</td><td class="kpi-symbol">EPD</td><td></td><td>Enterprise Products Partners L.P.</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>70</td><td class="kpi-symbol">CP</td><td></td><td>Canadian Pacific Kansas City Limited</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>71</td><td class="kpi-symbol">AMT</td><td></td><td>American Tower Corporation</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>72</td><td class="kpi-symbol">CVNA</td><td></td><td>Carvana Co.</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>73</td><td class="kpi-symbol">MSI</td><td></td><td>Motorola Solutions, Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>74</td><td class="kpi-symbol">ECL</td><td></td><td>Ecolab Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>75</td><td class="kpi-symbol">GM</td><td></td><td>General Motors Company</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>76</td><td class="kpi-symbol">FDX</td><td></td><td>FedEx Corporation</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>77</td><td class="kpi-symbol">APD</td><td></td><td>Air Products and Chemicals, Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>78</td><td class="kpi-symbol">AJG</td><td></td><td>Arthur J. Gallagher &amp; Co.</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>79</td><td class="kpi-symbol">TRGP</td><td></td><td>Targa Resources Corp.</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>80</td><td class="kpi-symbol">COR</td><td></td><td>Cencora, Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>81</td><td class="kpi-symbol">OKE</td><td></td><td>ONEOK, Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>82</td><td class="kpi-symbol">AU</td><td></td><td>AngloGold Ashanti plc</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>83</td><td class="kpi-symbol">NOK</td><td></td><td>Nokia Oyj</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>84</td><td class="kpi-symbol">CTVA</td><td></td><td>Corteva, Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>85</td><td class="kpi-symbol">SRE</td><td></td><td>Sempra</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>86</td><td class="kpi-symbol">FNV</td><td></td><td>Franco-Nevada Corporation</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>87</td><td class="kpi-symbol">XYZ</td><td></td><td>Block, Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>88</td><td class="kpi-symbol">CMG</td><td></td><td>Chipotle Mexican Grill, Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>89</td><td class="kpi-symbol">VTR</td><td></td><td>Ventas, Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>90</td><td class="kpi-symbol">VEEV</td><td></td><td>Veeva Systems Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>91</td><td class="kpi-symbol">HUM</td><td></td><td>Humana Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>92</td><td class="kpi-symbol">A</td><td></td><td>Agilent Technologies, Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>93</td><td class="kpi-symbol">GFI</td><td></td><td>Gold Fields Limited</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>94</td><td class="kpi-symbol">MLM</td><td></td><td>Martin Marietta Materials, Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>95</td><td class="kpi-symbol">KGC</td><td></td><td>Kinross Gold Corporation</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>96</td><td class="kpi-symbol">VG</td><td></td><td>Venture Global, Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>97</td><td class="kpi-symbol">NTR</td><td></td><td>Nutrien Ltd.</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>98</td><td class="kpi-symbol">RMD</td><td></td><td>ResMed Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>99</td><td class="kpi-symbol">RJF</td><td></td><td>Raymond James Financial, Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>100</td><td class="kpi-symbol">BHP</td><td></td><td>BHP Group Limited</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>101</td><td class="kpi-symbol">PGR</td><td></td><td>The Progressive Corporation</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>102</td><td class="kpi-symbol">NSC</td><td></td><td>Norfolk Southern Corporation</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>103</td><td class="kpi-symbol">TGT</td><td></td><td>Target Corporation</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>104</td><td class="kpi-symbol">KVUE</td><td></td><td>Kenvue Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>105</td><td class="kpi-symbol">TECK</td><td></td><td>Teck Resources Limited</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>106</td><td class="kpi-symbol">BBVA</td><td></td><td>Banco Bilbao Vizcaya Argentaria, S.A.</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>107</td><td class="kpi-symbol">TSM</td><td></td><td>Taiwan Semiconductor Manufacturing Company Limited</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>108</td><td class="kpi-symbol">HSBC</td><td></td><td>HSBC Holdings plc</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>109</td><td class="kpi-symbol">PM</td><td></td><td>Philip Morris International Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>110</td><td class="kpi-symbol">TM</td><td></td><td>Toyota Motor Corporation</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>111</td><td class="kpi-symbol">SMFG</td><td></td><td>Sumitomo Mitsui Financial Group, Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>112</td><td class="kpi-symbol">SONY</td><td></td><td>Sony Group Corporation</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>113</td><td class="kpi-symbol">HDB</td><td></td><td>HDFC Bank Limited</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>114</td><td class="kpi-symbol">BNY</td><td></td><td>The Bank of New York Mellon Corporation</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>115</td><td class="kpi-symbol">DB</td><td></td><td>Deutsche Bank Aktiengesellschaft</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>116</td><td class="kpi-symbol">RELX</td><td></td><td>RELX PLC</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>117</td><td class="kpi-symbol">STT</td><td></td><td>State Street Corporation</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>118</td><td class="kpi-symbol">UMC</td><td></td><td>United Microelectronics Corporation</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>119</td><td class="kpi-symbol">SHG</td><td></td><td>Shinhan Financial Group Co., Ltd.</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>120</td><td class="kpi-symbol">CHT</td><td></td><td>Chunghwa Telecom Co., Ltd.</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>121</td><td class="kpi-symbol">HAL</td><td></td><td>Halliburton Company</td><td class="rec-avoid">🔴 AVOID</td><td>20</td></tr><tr data-kpi-category="avoid"><td>122</td><td class="kpi-symbol">ANET</td><td></td><td>Arista Networks, Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>123</td><td class="kpi-symbol">AZN</td><td></td><td>AstraZeneca PLC</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>124</td><td class="kpi-symbol">APH</td><td></td><td>Amphenol Corporation</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>125</td><td class="kpi-symbol">TTE</td><td></td><td>TotalEnergies SE</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>126</td><td class="kpi-symbol">GLW</td><td></td><td>Corning Incorporated</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>127</td><td class="kpi-symbol">ICE</td><td></td><td>Intercontinental Exchange, Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>128</td><td class="kpi-symbol">RACE</td><td></td><td>Ferrari N.V.</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>129</td><td class="kpi-symbol">SE</td><td></td><td>Sea Limited</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>130</td><td class="kpi-symbol">DLR</td><td></td><td>Digital Realty Trust, Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>131</td><td class="kpi-symbol">CRH</td><td></td><td>CRH plc</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>132</td><td class="kpi-symbol">CVE</td><td></td><td>Cenovus Energy Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>133</td><td class="kpi-symbol">CAH</td><td></td><td>Cardinal Health, Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>134</td><td class="kpi-symbol">WAB</td><td></td><td>Westinghouse Air Brake Technologies Corporation</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>135</td><td class="kpi-symbol">MSCI</td><td></td><td>MSCI Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>136</td><td class="kpi-symbol">BRK-B</td><td></td><td>Berkshire Hathaway Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>137</td><td class="kpi-symbol">JPM</td><td></td><td>JPMorgan Chase &amp; Co.</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>138</td><td class="kpi-symbol">BAC</td><td></td><td>Bank of America Corporation</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>139</td><td class="kpi-symbol">CVX</td><td></td><td>Chevron Corporation</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>140</td><td class="kpi-symbol">UNH</td><td></td><td>UnitedHealth Group Incorporated</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>141</td><td class="kpi-symbol">PG</td><td></td><td>The Procter &amp; Gamble Company</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>142</td><td class="kpi-symbol">DELL</td><td></td><td>Dell Technologies Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>143</td><td class="kpi-symbol">WFC</td><td></td><td>Wells Fargo &amp; Company</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>144</td><td class="kpi-symbol">TMO</td><td></td><td>Thermo Fisher Scientific Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>145</td><td class="kpi-symbol">TD</td><td></td><td>The Toronto-Dominion Bank</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>146</td><td class="kpi-symbol">ABT</td><td></td><td>Abbott Laboratories</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>147</td><td class="kpi-symbol">BX</td><td></td><td>Blackstone Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>148</td><td class="kpi-symbol">NEE</td><td></td><td>NextEra Energy, Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>149</td><td class="kpi-symbol">BUD</td><td></td><td>Anheuser-Busch InBev SA/NV</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>150</td><td class="kpi-symbol">PLD</td><td></td><td>Prologis, Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>151</td><td class="kpi-symbol">COF</td><td></td><td>Capital One Financial Corporation</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>152</td><td class="kpi-symbol">MDT</td><td></td><td>Medtronic plc</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>153</td><td class="kpi-symbol">SNOW</td><td></td><td>Snowflake Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>154</td><td class="kpi-symbol">ENB</td><td></td><td>Enbridge Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>155</td><td class="kpi-symbol">NET</td><td></td><td>Cloudflare, Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>156</td><td class="kpi-symbol">BP</td><td></td><td>BP p.l.c.</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>157</td><td class="kpi-symbol">CM</td><td></td><td>Canadian Imperial Bank of Commerce</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>158</td><td class="kpi-symbol">VLO</td><td></td><td>Valero Energy Corporation</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>159</td><td class="kpi-symbol">KKR</td><td></td><td>KKR &amp; Co. Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>160</td><td class="kpi-symbol">USB</td><td></td><td>U.S. Bancorp</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>161</td><td class="kpi-symbol">BCS</td><td></td><td>Barclays PLC</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>162</td><td class="kpi-symbol">MMM</td><td></td><td>3M Company</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>163</td><td class="kpi-symbol">EMR</td><td></td><td>Emerson Electric Co.</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>164</td><td class="kpi-symbol">BAM</td><td></td><td>Brookfield Asset Management Ltd.</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>165</td><td class="kpi-symbol">ITUB</td><td></td><td>Itaú Unibanco Holding S.A.</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>166</td><td class="kpi-symbol">APO</td><td></td><td>Apollo Global Management, Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>167</td><td class="kpi-symbol">SU</td><td></td><td>Suncor Energy Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>168</td><td class="kpi-symbol">EOG</td><td></td><td>EOG Resources, Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>169</td><td class="kpi-symbol">CI</td><td></td><td>The Cigna Group</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>170</td><td class="kpi-symbol">HLT</td><td></td><td>Hilton Worldwide Holdings Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>171</td><td class="kpi-symbol">MFC</td><td></td><td>Manulife Financial Corporation</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>172</td><td class="kpi-symbol">AMX</td><td></td><td>América Móvil, S.A.B. de C.V.</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>173</td><td class="kpi-symbol">HPE</td><td></td><td>Hewlett Packard Enterprise Company</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>174</td><td class="kpi-symbol">URI</td><td></td><td>United Rentals, Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>175</td><td class="kpi-symbol">BE</td><td></td><td>Bloom Energy Corporation</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>176</td><td class="kpi-symbol">MET</td><td></td><td>MetLife, Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>177</td><td class="kpi-symbol">MPLX</td><td></td><td>MPLX LP</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>178</td><td class="kpi-symbol">OXY</td><td></td><td>Occidental Petroleum Corporation</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>179</td><td class="kpi-symbol">MT</td><td></td><td>ArcelorMittal S.A.</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>180</td><td class="kpi-symbol">KEYS</td><td></td><td>Keysight Technologies, Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>181</td><td class="kpi-symbol">CIEN</td><td></td><td>Ciena Corporation</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>182</td><td class="kpi-symbol">AME</td><td></td><td>AMETEK, Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>183</td><td class="kpi-symbol">EW</td><td></td><td>Edwards Lifesciences Corporation</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>184</td><td class="kpi-symbol">DEO</td><td></td><td>Diageo plc</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>185</td><td class="kpi-symbol">BDX</td><td></td><td>Becton, Dickinson and Company</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>186</td><td class="kpi-symbol">FITB</td><td></td><td>Fifth Third Bancorp</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>187</td><td class="kpi-symbol">AMP</td><td></td><td>Ameriprise Financial, Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>188</td><td class="kpi-symbol">ETR</td><td></td><td>Entergy Corporation</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>189</td><td class="kpi-symbol">CARR</td><td></td><td>Carrier Global Corporation</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>190</td><td class="kpi-symbol">ARES</td><td></td><td>Ares Management Corporation</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>191</td><td class="kpi-symbol">STM</td><td></td><td>STMicroelectronics N.V.</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>192</td><td class="kpi-symbol">CBRE</td><td></td><td>CBRE Group, Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>193</td><td class="kpi-symbol">BSBR</td><td></td><td>Banco Santander (Brasil) S.A.</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>194</td><td class="kpi-symbol">YUM</td><td></td><td>Yum! Brands, Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>195</td><td class="kpi-symbol">FMX</td><td></td><td>Fomento Económico Mexicano, S.A.B. de C.V.</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>196</td><td class="kpi-symbol">WAT</td><td></td><td>Waters Corporation</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>197</td><td class="kpi-symbol">RKT</td><td></td><td>Rocket Companies, Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>198</td><td class="kpi-symbol">EL</td><td></td><td>The Estée Lauder Companies Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>199</td><td class="kpi-symbol">TWLO</td><td></td><td>Twilio Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>200</td><td class="kpi-symbol">KR</td><td></td><td>The Kroger Co.</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>201</td><td class="kpi-symbol">ALC</td><td></td><td>Alcon Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>202</td><td class="kpi-symbol">BBD</td><td></td><td>Banco Bradesco S.A.</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>203</td><td class="kpi-symbol">CCI</td><td></td><td>Crown Castle Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>204</td><td class="kpi-symbol">CCL</td><td></td><td>Carnival Corporation Ltd.</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>205</td><td class="kpi-symbol">EME</td><td></td><td>EMCOR Group, Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>206</td><td class="kpi-symbol">CNC</td><td></td><td>Centene Corporation</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>207</td><td class="kpi-symbol">GS</td><td></td><td>The Goldman Sachs Group, Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>208</td><td class="kpi-symbol">NVS</td><td></td><td>Novartis AG</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>209</td><td class="kpi-symbol">SAN</td><td></td><td>Banco Santander, S.A.</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>210</td><td class="kpi-symbol">NVO</td><td></td><td>Novo Nordisk A/S</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>211</td><td class="kpi-symbol">BMO</td><td></td><td>Bank of Montreal</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>212</td><td class="kpi-symbol">GSK</td><td></td><td>GSK plc</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>213</td><td class="kpi-symbol">SO</td><td></td><td>The Southern Company</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>214</td><td class="kpi-symbol">EQNR</td><td></td><td>Equinor ASA</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>215</td><td class="kpi-symbol">MRSH</td><td></td><td>Marsh &amp; McLennan Companies, Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>216</td><td class="kpi-symbol">TRV</td><td></td><td>The Travelers Companies, Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>217</td><td class="kpi-symbol">GWW</td><td></td><td>W.W. Grainger, Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>218</td><td class="kpi-symbol">NKE</td><td></td><td>NIKE, Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>219</td><td class="kpi-symbol">AFL</td><td></td><td>Aflac Incorporated</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>220</td><td class="kpi-symbol">ABEV</td><td></td><td>Ambev S.A.</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>221</td><td class="kpi-symbol">IX</td><td></td><td>ORIX Corporation</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>222</td><td class="kpi-symbol">DHI</td><td></td><td>D.R. Horton, Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>223</td><td class="kpi-symbol">PRU</td><td></td><td>Prudential Financial, Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>224</td><td class="kpi-symbol">ED</td><td></td><td>Consolidated Edison, Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>225</td><td class="kpi-symbol">CQP</td><td></td><td>Cheniere Energy Partners, L.P.</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>226</td><td class="kpi-symbol">MS</td><td></td><td>Morgan Stanley</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>227</td><td class="kpi-symbol">C</td><td></td><td>Citigroup Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>228</td><td class="kpi-symbol">MFG</td><td></td><td>Mizuho Financial Group, Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>229</td><td class="kpi-symbol">BTI</td><td></td><td>British American Tobacco p.l.c.</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>230</td><td class="kpi-symbol">MO</td><td></td><td>Altria Group, Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>231</td><td class="kpi-symbol">IBN</td><td></td><td>ICICI Bank Limited</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>232</td><td class="kpi-symbol">ING</td><td></td><td>ING Groep N.V.</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>233</td><td class="kpi-symbol">NWG</td><td></td><td>NatWest Group plc</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>234</td><td class="kpi-symbol">GRMN</td><td></td><td>Garmin Ltd.</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>235</td><td class="kpi-symbol">KB</td><td></td><td>KB Financial Group Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>236</td><td class="kpi-symbol">HMC</td><td></td><td>Honda Motor Co., Ltd.</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>237</td><td class="kpi-symbol">BBDO</td><td></td><td>Banco Bradesco S.A.</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>238</td><td class="kpi-symbol">P</td><td></td><td>Everpure, Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>239</td><td class="kpi-symbol">ZTS</td><td></td><td>Zoetis Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>240</td><td class="kpi-symbol">JBL</td><td></td><td>Jabil Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>10</td></tr><tr data-kpi-category="avoid"><td>241</td><td class="kpi-symbol">GE</td><td></td><td>GE Aerospace</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>242</td><td class="kpi-symbol">BABA</td><td></td><td>Alibaba Group Holding Limited</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>243</td><td class="kpi-symbol">CVS</td><td></td><td>CVS Health Corporation</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>244</td><td class="kpi-symbol">HWM</td><td></td><td>Howmet Aerospace Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>245</td><td class="kpi-symbol">VRT</td><td></td><td>Vertiv Holdings Co</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>246</td><td class="kpi-symbol">PWR</td><td></td><td>Quanta Services, Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>247</td><td class="kpi-symbol">FIX</td><td></td><td>Comfort Systems USA, Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>248</td><td class="kpi-symbol">DAL</td><td></td><td>Delta Air Lines, Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>249</td><td class="kpi-symbol">VST</td><td></td><td>Vistra Corp.</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>250</td><td class="kpi-symbol">WCN</td><td></td><td>Waste Connections, Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>251</td><td class="kpi-symbol">VIK</td><td></td><td>Viking Holdings Ltd</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>252</td><td class="kpi-symbol">CLS</td><td></td><td>Celestica Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>253</td><td class="kpi-symbol">TKO</td><td></td><td>TKO Group Holdings, Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>254</td><td class="kpi-symbol">XOM</td><td></td><td>ExxonMobil Holdings Corporation</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>255</td><td class="kpi-symbol">LLY</td><td></td><td>Eli Lilly and Company</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>256</td><td class="kpi-symbol">CAT</td><td></td><td>Caterpillar Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>257</td><td class="kpi-symbol">HD</td><td></td><td>The Home Depot, Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>258</td><td class="kpi-symbol">RY</td><td></td><td>Royal Bank of Canada</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>259</td><td class="kpi-symbol">RTX</td><td></td><td>RTX Corporation</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>260</td><td class="kpi-symbol">SAP</td><td></td><td>SAP SE</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>261</td><td class="kpi-symbol">GEV</td><td></td><td>GE Vernova Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>262</td><td class="kpi-symbol">AXP</td><td></td><td>American Express Company</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>263</td><td class="kpi-symbol">MCD</td><td></td><td>McDonald's Corporation</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>264</td><td class="kpi-symbol">BA</td><td></td><td>The Boeing Company</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>265</td><td class="kpi-symbol">ETN</td><td></td><td>Eaton Corporation plc</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>266</td><td class="kpi-symbol">TJX</td><td></td><td>The TJX Companies, Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>267</td><td class="kpi-symbol">CB</td><td></td><td>Chubb Limited</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>268</td><td class="kpi-symbol">SYK</td><td></td><td>Stryker Corporation</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>269</td><td class="kpi-symbol">PH</td><td></td><td>Parker-Hannifin Corporation</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>270</td><td class="kpi-symbol">LOW</td><td></td><td>Lowe's Companies, Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>271</td><td class="kpi-symbol">TT</td><td></td><td>Trane Technologies plc</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>272</td><td class="kpi-symbol">DUK</td><td></td><td>Duke Energy Corporation</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>273</td><td class="kpi-symbol">BN</td><td></td><td>Brookfield Corporation</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>274</td><td class="kpi-symbol">WM</td><td></td><td>Waste Management, Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>275</td><td class="kpi-symbol">JCI</td><td></td><td>Johnson Controls International plc</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>276</td><td class="kpi-symbol">SHW</td><td></td><td>The Sherwin-Williams Company</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>277</td><td class="kpi-symbol">SPG</td><td></td><td>Simon Property Group, Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>278</td><td class="kpi-symbol">NOC</td><td></td><td>Northrop Grumman Corporation</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>279</td><td class="kpi-symbol">CMI</td><td></td><td>Cummins Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>280</td><td class="kpi-symbol">CNI</td><td></td><td>Canadian National Railway Company</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>281</td><td class="kpi-symbol">AON</td><td></td><td>Aon plc</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>282</td><td class="kpi-symbol">RCL</td><td></td><td>Royal Caribbean Cruises Ltd.</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>283</td><td class="kpi-symbol">CL</td><td></td><td>Colgate-Palmolive Company</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>284</td><td class="kpi-symbol">KMI</td><td></td><td>Kinder Morgan, Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>285</td><td class="kpi-symbol">BSX</td><td></td><td>Boston Scientific Corporation</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>286</td><td class="kpi-symbol">TDG</td><td></td><td>TransDigm Group Incorporated</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>287</td><td class="kpi-symbol">TRP</td><td></td><td>TC Energy Corporation</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>288</td><td class="kpi-symbol">TEL</td><td></td><td>TE Connectivity plc</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>289</td><td class="kpi-symbol">O</td><td></td><td>Realty Income Corporation</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>290</td><td class="kpi-symbol">NUE</td><td></td><td>Nucor Corporation</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>291</td><td class="kpi-symbol">F</td><td></td><td>Ford Motor Company</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>292</td><td class="kpi-symbol">COHR</td><td></td><td>Coherent Corp.</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>293</td><td class="kpi-symbol">LHX</td><td></td><td>L3Harris Technologies, Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>294</td><td class="kpi-symbol">ROK</td><td></td><td>Rockwell Automation, Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>295</td><td class="kpi-symbol">HEI</td><td></td><td>HEICO Corporation</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>296</td><td class="kpi-symbol">FERG</td><td></td><td>Ferguson Enterprises Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>297</td><td class="kpi-symbol">SLF</td><td></td><td>Sun Life Financial Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>298</td><td class="kpi-symbol">LYV</td><td></td><td>Live Nation Entertainment, Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>299</td><td class="kpi-symbol">AIG</td><td></td><td>American International Group, Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>300</td><td class="kpi-symbol">SYY</td><td></td><td>Sysco Corporation</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>301</td><td class="kpi-symbol">PEG</td><td></td><td>Public Service Enterprise Group Incorporated</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>302</td><td class="kpi-symbol">HSY</td><td></td><td>The Hershey Company</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>303</td><td class="kpi-symbol">VMC</td><td></td><td>Vulcan Materials Company</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>304</td><td class="kpi-symbol">IRM</td><td></td><td>Iron Mountain Incorporated</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>305</td><td class="kpi-symbol">WEC</td><td></td><td>WEC Energy Group, Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>306</td><td class="kpi-symbol">PUK</td><td></td><td>Prudential plc</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>307</td><td class="kpi-symbol">BRK-A</td><td></td><td>Berkshire Hathaway Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>308</td><td class="kpi-symbol">LMT</td><td></td><td>Lockheed Martin Corporation</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>309</td><td class="kpi-symbol">ITW</td><td></td><td>Illinois Tool Works Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>310</td><td class="kpi-symbol">E</td><td></td><td>Eni S.p.A.</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>311</td><td class="kpi-symbol">ALL</td><td></td><td>The Allstate Corporation</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>312</td><td class="kpi-symbol">PSA</td><td></td><td>Public Storage</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>313</td><td class="kpi-symbol">D</td><td></td><td>Dominion Energy, Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>314</td><td class="kpi-symbol">INFY</td><td></td><td>Infosys Limited</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>315</td><td class="kpi-symbol">ADM</td><td></td><td>Archer-Daniels-Midland Company</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>316</td><td class="kpi-symbol">MTB</td><td></td><td>M&amp;T Bank Corporation</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>317</td><td class="kpi-symbol">EC</td><td></td><td>Ecopetrol S.A.</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>318</td><td class="kpi-symbol">GD</td><td></td><td>General Dynamics Corporation</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>319</td><td class="kpi-symbol">PNC</td><td></td><td>The PNC Financial Services Group, Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>320</td><td class="kpi-symbol">LYG</td><td></td><td>Lloyds Banking Group plc</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>321</td><td class="kpi-symbol">NGG</td><td></td><td>National Grid plc</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>322</td><td class="kpi-symbol">TFC</td><td></td><td>Truist Financial Corporation</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>323</td><td class="kpi-symbol">HIG</td><td></td><td>The Hartford Insurance Group, Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>324</td><td class="kpi-symbol">HEI-A</td><td></td><td>HEICO Corporation</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>325</td><td class="kpi-symbol">EXR</td><td></td><td>Extra Space Storage Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>326</td><td class="kpi-symbol">BIP</td><td></td><td>Brookfield Infrastructure Partners L.P.</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr><tr data-kpi-category="avoid"><td>327</td><td class="kpi-symbol">IR</td><td></td><td>Ingersoll Rand Inc.</td><td class="rec-avoid">🔴 AVOID</td><td>0</td></tr></tbody>
+            </table>
+        </div>
+    </section>
+
+    <div class="section">
+        <h2>One-Year Performance: S&amp;P 500 vs Equal-Weight Top 20</h2>
+        <div class="chart-container">
+            <div class="refresh-time">Scan completed: 29 August 2026, 01:21 PM EDT</div>
+            <div class="refresh-time" id="yahooPriceTime">
+                Latest Yahoo price: Loading snapshot time...
+            </div>
+            <div class="refresh-time" id="backendRefreshTime">
+                Backend price refresh: Loading snapshot time...
+            </div>
+            <div class="price-notice">Manual Yahoo refreshes run securely on GitHub Actions and redeploy these pages.</div>
+            <p class="chart-explanation">Completed daily closes, normalized to 100 on the first common date. Values are indexed performance, not raw dollars.</p>
+            <p class="chart-explanation">Equal-weight index uses 20 of 20 selected Top 20 symbols with usable aligned history.</p>
+            <canvas id="performanceChart" height="200" aria-label="One-year indexed performance comparison"></canvas>
+            <details class="top20-drilldown"><summary>Top 20 Qualifying Stocks: Suggested Entry vs Current Price</summary><p class="chart-explanation">Entry is the scanner suggestion, not an actual purchase price. Symbols at or above Resistance Low are excluded.</p><div class="table-wrapper"><table id="top20DetailsTable"><thead><tr><th>Symbol</th><th>Suggested Entry</th><th>Support Low</th><th>Resistance Low</th><th>Difference</th><th>Change %</th></tr></thead><tbody><tr data-symbol="NOW" data-entry="140.71" data-support-low="" data-resistance-low=""><td>NOW <span class="detail-current">(Unavailable)</span></td><td class="detail-entry">$140.71</td><td class="detail-support-low">Unavailable</td><td class="detail-resistance-low">Unavailable</td><td class="detail-difference ">Unavailable</td><td class="detail-percent ">Unavailable</td></tr><tr data-symbol="PBR" data-entry="18.92" data-support-low="" data-resistance-low=""><td>PBR <span class="detail-current">(Unavailable)</span></td><td class="detail-entry">$18.92</td><td class="detail-support-low">Unavailable</td><td class="detail-resistance-low">Unavailable</td><td class="detail-difference ">Unavailable</td><td class="detail-percent ">Unavailable</td></tr><tr data-symbol="FCX" data-entry="81.04" data-support-low="" data-resistance-low=""><td>FCX <span class="detail-current">(Unavailable)</span></td><td class="detail-entry">$81.04</td><td class="detail-support-low">Unavailable</td><td class="detail-resistance-low">Unavailable</td><td class="detail-difference ">Unavailable</td><td class="detail-percent ">Unavailable</td></tr><tr data-symbol="CNQ" data-entry="51.99" data-support-low="" data-resistance-low=""><td>CNQ <span class="detail-current">(Unavailable)</span></td><td class="detail-entry">$51.99</td><td class="detail-support-low">Unavailable</td><td class="detail-resistance-low">Unavailable</td><td class="detail-difference ">Unavailable</td><td class="detail-percent ">Unavailable</td></tr><tr data-symbol="SLB" data-entry="56.45" data-support-low="" data-resistance-low=""><td>SLB <span class="detail-current">(Unavailable)</span></td><td class="detail-entry">$56.45</td><td class="detail-support-low">Unavailable</td><td class="detail-resistance-low">Unavailable</td><td class="detail-difference ">Unavailable</td><td class="detail-percent ">Unavailable</td></tr><tr data-symbol="B" data-entry="49.63" data-support-low="" data-resistance-low=""><td>B <span class="detail-current">(Unavailable)</span></td><td class="detail-entry">$49.63</td><td class="detail-support-low">Unavailable</td><td class="detail-resistance-low">Unavailable</td><td class="detail-difference ">Unavailable</td><td class="detail-percent ">Unavailable</td></tr><tr data-symbol="NU" data-entry="16.38" data-support-low="" data-resistance-low=""><td>NU <span class="detail-current">(Unavailable)</span></td><td class="detail-entry">$16.38</td><td class="detail-support-low">Unavailable</td><td class="detail-resistance-low">Unavailable</td><td class="detail-difference ">Unavailable</td><td class="detail-percent ">Unavailable</td></tr><tr data-symbol="RSG" data-entry="226.47" data-support-low="" data-resistance-low=""><td>RSG <span class="detail-current">(Unavailable)</span></td><td class="detail-entry">$226.47</td><td class="detail-support-low">Unavailable</td><td class="detail-resistance-low">Unavailable</td><td class="detail-difference ">Unavailable</td><td class="detail-percent ">Unavailable</td></tr><tr data-symbol="VALE" data-entry="15.56" data-support-low="" data-resistance-low=""><td>VALE <span class="detail-current">(Unavailable)</span></td><td class="detail-entry">$15.56</td><td class="detail-support-low">Unavailable</td><td class="detail-resistance-low">Unavailable</td><td class="detail-difference ">Unavailable</td><td class="detail-percent ">Unavailable</td></tr><tr data-symbol="CCJ" data-entry="112.66" data-support-low="" data-resistance-low=""><td>CCJ <span class="detail-current">(Unavailable)</span></td><td class="detail-entry">$112.66</td><td class="detail-support-low">Unavailable</td><td class="detail-resistance-low">Unavailable</td><td class="detail-difference ">Unavailable</td><td class="detail-percent ">Unavailable</td></tr><tr data-symbol="PCG" data-entry="18.59" data-support-low="" data-resistance-low=""><td>PCG <span class="detail-current">(Unavailable)</span></td><td class="detail-entry">$18.59</td><td class="detail-support-low">Unavailable</td><td class="detail-resistance-low">Unavailable</td><td class="detail-difference ">Unavailable</td><td class="detail-percent ">Unavailable</td></tr><tr data-symbol="QSR" data-entry="82.7" data-support-low="" data-resistance-low=""><td>QSR <span class="detail-current">(Unavailable)</span></td><td class="detail-entry">$82.70</td><td class="detail-support-low">Unavailable</td><td class="detail-resistance-low">Unavailable</td><td class="detail-difference ">Unavailable</td><td class="detail-percent ">Unavailable</td></tr><tr data-symbol="UI" data-entry="619.56" data-support-low="" data-resistance-low=""><td>UI <span class="detail-current">(Unavailable)</span></td><td class="detail-entry">$619.56</td><td class="detail-support-low">Unavailable</td><td class="detail-resistance-low">Unavailable</td><td class="detail-difference ">Unavailable</td><td class="detail-percent ">Unavailable</td></tr><tr data-symbol="SCCO" data-entry="222.99" data-support-low="" data-resistance-low=""><td>SCCO <span class="detail-current">(Unavailable)</span></td><td class="detail-entry">$222.99</td><td class="detail-support-low">Unavailable</td><td class="detail-resistance-low">Unavailable</td><td class="detail-difference ">Unavailable</td><td class="detail-percent ">Unavailable</td></tr><tr data-symbol="UBS" data-entry="55.29" data-support-low="" data-resistance-low=""><td>UBS <span class="detail-current">(Unavailable)</span></td><td class="detail-entry">$55.29</td><td class="detail-support-low">Unavailable</td><td class="detail-resistance-low">Unavailable</td><td class="detail-difference ">Unavailable</td><td class="detail-percent ">Unavailable</td></tr><tr data-symbol="UL" data-entry="66.29" data-support-low="" data-resistance-low=""><td>UL <span class="detail-current">(Unavailable)</span></td><td class="detail-entry">$66.29</td><td class="detail-support-low">Unavailable</td><td class="detail-resistance-low">Unavailable</td><td class="detail-difference ">Unavailable</td><td class="detail-percent ">Unavailable</td></tr><tr data-symbol="WFC-PC" data-entry="17.18" data-support-low="" data-resistance-low=""><td>WFC-PC <span class="detail-current">(Unavailable)</span></td><td class="detail-entry">$17.18</td><td class="detail-support-low">Unavailable</td><td class="detail-resistance-low">Unavailable</td><td class="detail-difference ">Unavailable</td><td class="detail-percent ">Unavailable</td></tr><tr data-symbol="ASX" data-entry="40.71" data-support-low="" data-resistance-low=""><td>ASX <span class="detail-current">(Unavailable)</span></td><td class="detail-entry">$40.71</td><td class="detail-support-low">Unavailable</td><td class="detail-resistance-low">Unavailable</td><td class="detail-difference ">Unavailable</td><td class="detail-percent ">Unavailable</td></tr><tr data-symbol="HLN" data-entry="10.36" data-support-low="" data-resistance-low=""><td>HLN <span class="detail-current">(Unavailable)</span></td><td class="detail-entry">$10.36</td><td class="detail-support-low">Unavailable</td><td class="detail-resistance-low">Unavailable</td><td class="detail-difference ">Unavailable</td><td class="detail-percent ">Unavailable</td></tr><tr data-symbol="NMR" data-entry="10.26" data-support-low="" data-resistance-low=""><td>NMR <span class="detail-current">(Unavailable)</span></td><td class="detail-entry">$10.26</td><td class="detail-support-low">Unavailable</td><td class="detail-resistance-low">Unavailable</td><td class="detail-difference ">Unavailable</td><td class="detail-percent ">Unavailable</td></tr></tbody></table></div></details>
+        </div>
+    </div>
+
+    
+</div>
+
+<footer>
+    Generated by StockScanner
+    &nbsp;|&nbsp; <a href="https://github.com/aksamuel/StockScanner#readme" style="color: #4fc3f7;">Help &amp; FAQ</a>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<script id="kpiBenchmarkData" type="application/json">{"labels": ["2025-08-29", "2025-09-02", "2025-09-03", "2025-09-04", "2025-09-05", "2025-09-08", "2025-09-09", "2025-09-10", "2025-09-11", "2025-09-12", "2025-09-15", "2025-09-16", "2025-09-17", "2025-09-18", "2025-09-19", "2025-09-22", "2025-09-23", "2025-09-24", "2025-09-25", "2025-09-26", "2025-09-29", "2025-09-30", "2025-10-01", "2025-10-02", "2025-10-03", "2025-10-06", "2025-10-07", "2025-10-08", "2025-10-09", "2025-10-10", "2025-10-13", "2025-10-14", "2025-10-15", "2025-10-16", "2025-10-17", "2025-10-20", "2025-10-21", "2025-10-22", "2025-10-23", "2025-10-24", "2025-10-27", "2025-10-28", "2025-10-29", "2025-10-30", "2025-10-31", "2025-11-03", "2025-11-04", "2025-11-05", "2025-11-06", "2025-11-07", "2025-11-10", "2025-11-11", "2025-11-12", "2025-11-13", "2025-11-14", "2025-11-17", "2025-11-18", "2025-11-19", "2025-11-20", "2025-11-21", "2025-11-24", "2025-11-25", "2025-11-26", "2025-11-28", "2025-12-01", "2025-12-02", "2025-12-03", "2025-12-04", "2025-12-05", "2025-12-08", "2025-12-09", "2025-12-10", "2025-12-11", "2025-12-12", "2025-12-15", "2025-12-16", "2025-12-17", "2025-12-18", "2025-12-19", "2025-12-22", "2025-12-23", "2025-12-24", "2025-12-26", "2025-12-29", "2025-12-30", "2025-12-31", "2026-01-02", "2026-01-05", "2026-01-06", "2026-01-07", "2026-01-08", "2026-01-09", "2026-01-12", "2026-01-13", "2026-01-14", "2026-01-15", "2026-01-16", "2026-01-20", "2026-01-21", "2026-01-22", "2026-01-23", "2026-01-26", "2026-01-27", "2026-01-28", "2026-01-29", "2026-01-30", "2026-02-02", "2026-02-03", "2026-02-04", "2026-02-05", "2026-02-06", "2026-02-09", "2026-02-10", "2026-02-11", "2026-02-12", "2026-02-13", "2026-02-17", "2026-02-18", "2026-02-19", "2026-02-20", "2026-02-23", "2026-02-24", "2026-02-25", "2026-02-26", "2026-02-27", "2026-03-02", "2026-03-03", "2026-03-04", "2026-03-05", "2026-03-06", "2026-03-09", "2026-03-10", "2026-03-11", "2026-03-12", "2026-03-13", "2026-03-16", "2026-03-17", "2026-03-18", "2026-03-19", "2026-03-20", "2026-03-23", "2026-03-24", "2026-03-25", "2026-03-26", "2026-03-27", "2026-03-30", "2026-03-31", "2026-04-01", "2026-04-02", "2026-04-06", "2026-04-07", "2026-04-08", "2026-04-09", "2026-04-10", "2026-04-13", "2026-04-14", "2026-04-15", "2026-04-16", "2026-04-17", "2026-04-20", "2026-04-21", "2026-04-22", "2026-04-23", "2026-04-24", "2026-04-27", "2026-04-28", "2026-04-29", "2026-04-30", "2026-05-01", "2026-05-04", "2026-05-05", "2026-05-06", "2026-05-07", "2026-05-08", "2026-05-11", "2026-05-12", "2026-05-13", "2026-05-14", "2026-05-15", "2026-05-18", "2026-05-19", "2026-05-20", "2026-05-21", "2026-05-22", "2026-05-26", "2026-05-27", "2026-05-28", "2026-05-29", "2026-06-01", "2026-06-02", "2026-06-03", "2026-06-04", "2026-06-05", "2026-06-08", "2026-06-09", "2026-06-10", "2026-06-11", "2026-06-12", "2026-06-15", "2026-06-16", "2026-06-17", "2026-06-18", "2026-06-22", "2026-06-23", "2026-06-24", "2026-06-25", "2026-06-26", "2026-06-29", "2026-06-30", "2026-07-01", "2026-07-02", "2026-07-06", "2026-07-07", "2026-07-08", "2026-07-09", "2026-07-10", "2026-07-13", "2026-07-14", "2026-07-15", "2026-07-16", "2026-07-17", "2026-07-20", "2026-07-21", "2026-07-22", "2026-07-23", "2026-07-24", "2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21", "2026-08-24", "2026-08-25", "2026-08-26", "2026-08-27"], "sp500": [100.0, 99.3078, 99.8142, 100.6473, 100.3288, 100.5401, 100.8103, 101.1111, 101.9691, 101.9199, 102.3996, 102.2677, 102.1685, 102.6578, 103.1593, 103.6143, 103.0442, 102.7508, 102.2361, 102.8395, 103.1106, 103.5324, 103.8844, 103.9486, 103.9554, 104.3345, 103.9368, 104.5425, 104.2545, 101.428, 103.0101, 102.849, 103.263, 102.6131, 103.1539, 104.2548, 104.2582, 103.7017, 104.306, 105.1303, 106.4223, 106.6658, 106.6612, 105.6047, 105.8812, 106.0634, 104.8185, 105.2015, 104.0255, 104.1568, 105.7609, 105.9804, 106.0471, 104.2913, 104.239, 103.2839, 102.4312, 102.8157, 101.2151, 102.2094, 103.7903, 104.7308, 105.4541, 106.0188, 105.4544, 105.7136, 106.0286, 106.1431, 106.3487, 105.9789, 105.886, 106.6007, 106.8223, 105.6832, 105.5145, 105.2629, 104.0427, 104.8682, 105.793, 106.4739, 106.9584, 107.303, 107.2703, 106.8957, 106.7487, 105.9632, 106.164, 106.8386, 107.5006, 107.1308, 107.139, 107.8328, 108.0029, 107.7935, 107.2186, 107.4952, 107.4262, 105.2103, 106.4295, 107.0135, 107.0485, 107.5844, 108.0235, 108.0147, 107.8751, 107.411, 107.9901, 107.0825, 106.5394, 105.2342, 107.3068, 107.8102, 107.454, 107.4488, 105.766, 105.8188, 105.9279, 106.5175, 106.2169, 106.9541, 105.8433, 106.6531, 107.5209, 106.944, 106.4799, 106.5223, 105.5163, 106.3347, 105.7343, 104.3305, 105.1969, 104.9722, 104.8843, 103.2872, 102.6614, 103.7014, 103.9601, 102.5454, 102.2635, 100.7155, 101.869, 101.4877, 102.0377, 100.2616, 98.585, 98.1961, 101.0566, 101.781, 101.8951, 102.3462, 102.4239, 104.9928, 105.6406, 105.5204, 106.5939, 107.8498, 108.71, 108.9938, 110.3061, 110.0442, 109.3456, 110.4894, 110.0327, 110.9101, 111.0468, 110.5033, 110.4592, 111.5901, 111.9169, 111.4622, 112.3673, 114.0066, 113.573, 114.5299, 114.7452, 114.5613, 115.2314, 116.1136, 114.6781, 114.5937, 113.8284, 115.0568, 115.2542, 115.6837, 116.3904, 116.4096, 117.0793, 117.3337, 117.6417, 117.7937, 116.9253, 117.3995, 114.2948, 114.6352, 114.3398, 112.4876, 114.4582, 115.0335, 116.9348, 116.2701, 114.8576, 116.1034, 115.6732, 114.0118, 113.8998, 113.8885, 113.8347, 115.1723, 116.0845, 115.8348, 115.835, 116.6738, 116.154, 115.8268, 116.7699, 117.2614, 116.3319, 116.7691, 117.2151, 116.6171, 115.4395, 115.2164, 116.2368, 116.0783, 114.675, 114.7319, 114.7505, 114.992, 113.2485, 115.129, 115.9353, 117.6501, 119.7556, 119.5548, 119.3444, 120.0825, 119.6268, 119.941, 120.7225, 120.5178, 119.8877, 119.0627, 119.3138, 118.2795, 118.7935, 118.4606, 118.8386, 118.8141, 119.67], "top20": [100.0, 99.9088, 100.476, 100.7874, 101.0559, 101.9373, 101.6573, 102.68, 103.5846, 102.7632, 104.1917, 103.309, 103.6389, 103.6711, 104.6038, 105.2325, 105.3405, 104.3338, 103.6711, 104.1123, 104.2178, 103.9421, 104.4337, 104.3352, 104.9143, 105.6428, 105.1913, 106.5368, 105.776, 103.2699, 105.7446, 106.137, 106.8326, 106.7296, 106.1701, 107.3806, 105.6111, 105.7751, 107.093, 107.4833, 107.9216, 109.4107, 110.1288, 110.368, 110.6223, 110.6157, 108.4482, 110.0771, 108.8938, 108.3541, 109.4496, 109.9815, 110.0857, 108.2339, 108.1924, 106.7655, 106.6343, 106.7896, 104.8179, 105.9811, 107.1508, 108.3283, 109.7098, 110.7156, 110.6037, 110.258, 111.3829, 112.123, 111.6491, 110.9129, 111.3334, 112.5435, 113.7902, 112.6844, 112.0412, 110.8817, 110.9322, 111.3994, 112.4006, 113.825, 114.4047, 114.3591, 114.7242, 113.8696, 114.3334, 113.7367, 115.7901, 117.3612, 118.7195, 117.608, 117.9846, 119.3629, 120.6779, 121.3079, 122.7024, 122.5963, 122.3855, 122.961, 124.5069, 124.8094, 126.7778, 127.1736, 129.4862, 130.3812, 130.7978, 126.0008, 126.1226, 129.3976, 127.4599, 125.3607, 128.1151, 131.8603, 131.7412, 134.2827, 131.5108, 132.2225, 130.5582, 132.3167, 133.0475, 134.8122, 134.4243, 136.8208, 137.26, 136.8075, 137.7568, 138.6481, 133.3327, 133.7245, 131.2097, 129.6989, 131.306, 132.0887, 131.6966, 129.2036, 127.403, 129.7668, 130.7641, 128.2342, 127.7433, 124.1982, 127.04, 127.4549, 129.1331, 126.8852, 127.2511, 126.5142, 130.152, 131.2885, 131.7067, 131.8725, 131.5341, 135.2895, 135.8476, 137.1285, 139.0384, 139.0149, 139.2122, 139.7507, 140.7788, 141.199, 139.1658, 140.5949, 138.9421, 139.897, 138.4394, 136.447, 135.9797, 139.1796, 138.5431, 137.5588, 138.8388, 140.6102, 137.7642, 137.9052, 139.1279, 138.9065, 138.3135, 137.62, 134.1897, 133.7239, 132.2382, 133.896, 134.9853, 135.8718, 138.9, 137.9862, 139.2214, 138.1062, 138.4958, 140.9025, 139.4494, 138.9521, 132.248, 132.7591, 132.6165, 130.7294, 134.6441, 136.9654, 137.1704, 136.4198, 134.3663, 135.4568, 136.9317, 133.3883, 132.194, 132.8185, 132.1369, 132.8344, 134.3716, 132.0722, 133.3085, 134.6422, 132.6836, 132.2495, 135.1258, 135.5623, 134.2285, 135.1892, 135.198, 133.5857, 132.7623, 131.6508, 135.2669, 137.4474, 135.3153, 134.4861, 134.4175, 133.064, 131.3663, 135.2489, 134.9266, 135.681, 138.4089, 137.9708, 137.7762, 139.2628, 139.5421, 139.9398, 139.6514, 140.1942, 141.1759, 138.6627, 140.7467, 142.4279, 145.0633, 145.4987, 147.0864, 146.2357, 147.4546], "constituents": ["SHEL", "NOW", "PBR", "FCX", "CNQ", "SLB", "B", "NU", "RSG", "VALE", "CCJ", "PCG", "QSR", "UI", "SCCO", "UBS", "UL", "WFC-PC", "ASX", "HLN"], "selected_count": 20}</script>
+<script>
+// Chart
+document.addEventListener('DOMContentLoaded', function() {
+    loadDashboardSnapshotTimes();
+    loadRefreshButtonSnapshotTime();
+    initializeKpiDrilldown();
+    
+    const chartData = {"labels": ["2025-08-29", "2025-09-02", "2025-09-03", "2025-09-04", "2025-09-05", "2025-09-08", "2025-09-09", "2025-09-10", "2025-09-11", "2025-09-12", "2025-09-15", "2025-09-16", "2025-09-17", "2025-09-18", "2025-09-19", "2025-09-22", "2025-09-23", "2025-09-24", "2025-09-25", "2025-09-26", "2025-09-29", "2025-09-30", "2025-10-01", "2025-10-02", "2025-10-03", "2025-10-06", "2025-10-07", "2025-10-08", "2025-10-09", "2025-10-10", "2025-10-13", "2025-10-14", "2025-10-15", "2025-10-16", "2025-10-17", "2025-10-20", "2025-10-21", "2025-10-22", "2025-10-23", "2025-10-24", "2025-10-27", "2025-10-28", "2025-10-29", "2025-10-30", "2025-10-31", "2025-11-03", "2025-11-04", "2025-11-05", "2025-11-06", "2025-11-07", "2025-11-10", "2025-11-11", "2025-11-12", "2025-11-13", "2025-11-14", "2025-11-17", "2025-11-18", "2025-11-19", "2025-11-20", "2025-11-21", "2025-11-24", "2025-11-25", "2025-11-26", "2025-11-28", "2025-12-01", "2025-12-02", "2025-12-03", "2025-12-04", "2025-12-05", "2025-12-08", "2025-12-09", "2025-12-10", "2025-12-11", "2025-12-12", "2025-12-15", "2025-12-16", "2025-12-17", "2025-12-18", "2025-12-19", "2025-12-22", "2025-12-23", "2025-12-24", "2025-12-26", "2025-12-29", "2025-12-30", "2025-12-31", "2026-01-02", "2026-01-05", "2026-01-06", "2026-01-07", "2026-01-08", "2026-01-09", "2026-01-12", "2026-01-13", "2026-01-14", "2026-01-15", "2026-01-16", "2026-01-20", "2026-01-21", "2026-01-22", "2026-01-23", "2026-01-26", "2026-01-27", "2026-01-28", "2026-01-29", "2026-01-30", "2026-02-02", "2026-02-03", "2026-02-04", "2026-02-05", "2026-02-06", "2026-02-09", "2026-02-10", "2026-02-11", "2026-02-12", "2026-02-13", "2026-02-17", "2026-02-18", "2026-02-19", "2026-02-20", "2026-02-23", "2026-02-24", "2026-02-25", "2026-02-26", "2026-02-27", "2026-03-02", "2026-03-03", "2026-03-04", "2026-03-05", "2026-03-06", "2026-03-09", "2026-03-10", "2026-03-11", "2026-03-12", "2026-03-13", "2026-03-16", "2026-03-17", "2026-03-18", "2026-03-19", "2026-03-20", "2026-03-23", "2026-03-24", "2026-03-25", "2026-03-26", "2026-03-27", "2026-03-30", "2026-03-31", "2026-04-01", "2026-04-02", "2026-04-06", "2026-04-07", "2026-04-08", "2026-04-09", "2026-04-10", "2026-04-13", "2026-04-14", "2026-04-15", "2026-04-16", "2026-04-17", "2026-04-20", "2026-04-21", "2026-04-22", "2026-04-23", "2026-04-24", "2026-04-27", "2026-04-28", "2026-04-29", "2026-04-30", "2026-05-01", "2026-05-04", "2026-05-05", "2026-05-06", "2026-05-07", "2026-05-08", "2026-05-11", "2026-05-12", "2026-05-13", "2026-05-14", "2026-05-15", "2026-05-18", "2026-05-19", "2026-05-20", "2026-05-21", "2026-05-22", "2026-05-26", "2026-05-27", "2026-05-28", "2026-05-29", "2026-06-01", "2026-06-02", "2026-06-03", "2026-06-04", "2026-06-05", "2026-06-08", "2026-06-09", "2026-06-10", "2026-06-11", "2026-06-12", "2026-06-15", "2026-06-16", "2026-06-17", "2026-06-18", "2026-06-22", "2026-06-23", "2026-06-24", "2026-06-25", "2026-06-26", "2026-06-29", "2026-06-30", "2026-07-01", "2026-07-02", "2026-07-06", "2026-07-07", "2026-07-08", "2026-07-09", "2026-07-10", "2026-07-13", "2026-07-14", "2026-07-15", "2026-07-16", "2026-07-17", "2026-07-20", "2026-07-21", "2026-07-22", "2026-07-23", "2026-07-24", "2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21", "2026-08-24", "2026-08-25", "2026-08-26", "2026-08-27"], "sp500": [100.0, 99.3078, 99.8142, 100.6473, 100.3288, 100.5401, 100.8103, 101.1111, 101.9691, 101.9199, 102.3996, 102.2677, 102.1685, 102.6578, 103.1593, 103.6143, 103.0442, 102.7508, 102.2361, 102.8395, 103.1106, 103.5324, 103.8844, 103.9486, 103.9554, 104.3345, 103.9368, 104.5425, 104.2545, 101.428, 103.0101, 102.849, 103.263, 102.6131, 103.1539, 104.2548, 104.2582, 103.7017, 104.306, 105.1303, 106.4223, 106.6658, 106.6612, 105.6047, 105.8812, 106.0634, 104.8185, 105.2015, 104.0255, 104.1568, 105.7609, 105.9804, 106.0471, 104.2913, 104.239, 103.2839, 102.4312, 102.8157, 101.2151, 102.2094, 103.7903, 104.7308, 105.4541, 106.0188, 105.4544, 105.7136, 106.0286, 106.1431, 106.3487, 105.9789, 105.886, 106.6007, 106.8223, 105.6832, 105.5145, 105.2629, 104.0427, 104.8682, 105.793, 106.4739, 106.9584, 107.303, 107.2703, 106.8957, 106.7487, 105.9632, 106.164, 106.8386, 107.5006, 107.1308, 107.139, 107.8328, 108.0029, 107.7935, 107.2186, 107.4952, 107.4262, 105.2103, 106.4295, 107.0135, 107.0485, 107.5844, 108.0235, 108.0147, 107.8751, 107.411, 107.9901, 107.0825, 106.5394, 105.2342, 107.3068, 107.8102, 107.454, 107.4488, 105.766, 105.8188, 105.9279, 106.5175, 106.2169, 106.9541, 105.8433, 106.6531, 107.5209, 106.944, 106.4799, 106.5223, 105.5163, 106.3347, 105.7343, 104.3305, 105.1969, 104.9722, 104.8843, 103.2872, 102.6614, 103.7014, 103.9601, 102.5454, 102.2635, 100.7155, 101.869, 101.4877, 102.0377, 100.2616, 98.585, 98.1961, 101.0566, 101.781, 101.8951, 102.3462, 102.4239, 104.9928, 105.6406, 105.5204, 106.5939, 107.8498, 108.71, 108.9938, 110.3061, 110.0442, 109.3456, 110.4894, 110.0327, 110.9101, 111.0468, 110.5033, 110.4592, 111.5901, 111.9169, 111.4622, 112.3673, 114.0066, 113.573, 114.5299, 114.7452, 114.5613, 115.2314, 116.1136, 114.6781, 114.5937, 113.8284, 115.0568, 115.2542, 115.6837, 116.3904, 116.4096, 117.0793, 117.3337, 117.6417, 117.7937, 116.9253, 117.3995, 114.2948, 114.6352, 114.3398, 112.4876, 114.4582, 115.0335, 116.9348, 116.2701, 114.8576, 116.1034, 115.6732, 114.0118, 113.8998, 113.8885, 113.8347, 115.1723, 116.0845, 115.8348, 115.835, 116.6738, 116.154, 115.8268, 116.7699, 117.2614, 116.3319, 116.7691, 117.2151, 116.6171, 115.4395, 115.2164, 116.2368, 116.0783, 114.675, 114.7319, 114.7505, 114.992, 113.2485, 115.129, 115.9353, 117.6501, 119.7556, 119.5548, 119.3444, 120.0825, 119.6268, 119.941, 120.7225, 120.5178, 119.8877, 119.0627, 119.3138, 118.2795, 118.7935, 118.4606, 118.8386, 118.8141, 119.67], "top20": [100.0, 99.9088, 100.476, 100.7874, 101.0559, 101.9373, 101.6573, 102.68, 103.5846, 102.7632, 104.1917, 103.309, 103.6389, 103.6711, 104.6038, 105.2325, 105.3405, 104.3338, 103.6711, 104.1123, 104.2178, 103.9421, 104.4337, 104.3352, 104.9143, 105.6428, 105.1913, 106.5368, 105.776, 103.2699, 105.7446, 106.137, 106.8326, 106.7296, 106.1701, 107.3806, 105.6111, 105.7751, 107.093, 107.4833, 107.9216, 109.4107, 110.1288, 110.368, 110.6223, 110.6157, 108.4482, 110.0771, 108.8938, 108.3541, 109.4496, 109.9815, 110.0857, 108.2339, 108.1924, 106.7655, 106.6343, 106.7896, 104.8179, 105.9811, 107.1508, 108.3283, 109.7098, 110.7156, 110.6037, 110.258, 111.3829, 112.123, 111.6491, 110.9129, 111.3334, 112.5435, 113.7902, 112.6844, 112.0412, 110.8817, 110.9322, 111.3994, 112.4006, 113.825, 114.4047, 114.3591, 114.7242, 113.8696, 114.3334, 113.7367, 115.7901, 117.3612, 118.7195, 117.608, 117.9846, 119.3629, 120.6779, 121.3079, 122.7024, 122.5963, 122.3855, 122.961, 124.5069, 124.8094, 126.7778, 127.1736, 129.4862, 130.3812, 130.7978, 126.0008, 126.1226, 129.3976, 127.4599, 125.3607, 128.1151, 131.8603, 131.7412, 134.2827, 131.5108, 132.2225, 130.5582, 132.3167, 133.0475, 134.8122, 134.4243, 136.8208, 137.26, 136.8075, 137.7568, 138.6481, 133.3327, 133.7245, 131.2097, 129.6989, 131.306, 132.0887, 131.6966, 129.2036, 127.403, 129.7668, 130.7641, 128.2342, 127.7433, 124.1982, 127.04, 127.4549, 129.1331, 126.8852, 127.2511, 126.5142, 130.152, 131.2885, 131.7067, 131.8725, 131.5341, 135.2895, 135.8476, 137.1285, 139.0384, 139.0149, 139.2122, 139.7507, 140.7788, 141.199, 139.1658, 140.5949, 138.9421, 139.897, 138.4394, 136.447, 135.9797, 139.1796, 138.5431, 137.5588, 138.8388, 140.6102, 137.7642, 137.9052, 139.1279, 138.9065, 138.3135, 137.62, 134.1897, 133.7239, 132.2382, 133.896, 134.9853, 135.8718, 138.9, 137.9862, 139.2214, 138.1062, 138.4958, 140.9025, 139.4494, 138.9521, 132.248, 132.7591, 132.6165, 130.7294, 134.6441, 136.9654, 137.1704, 136.4198, 134.3663, 135.4568, 136.9317, 133.3883, 132.194, 132.8185, 132.1369, 132.8344, 134.3716, 132.0722, 133.3085, 134.6422, 132.6836, 132.2495, 135.1258, 135.5623, 134.2285, 135.1892, 135.198, 133.5857, 132.7623, 131.6508, 135.2669, 137.4474, 135.3153, 134.4861, 134.4175, 133.064, 131.3663, 135.2489, 134.9266, 135.681, 138.4089, 137.9708, 137.7762, 139.2628, 139.5421, 139.9398, 139.6514, 140.1942, 141.1759, 138.6627, 140.7467, 142.4279, 145.0633, 145.4987, 147.0864, 146.2357, 147.4546], "constituents": ["SHEL", "NOW", "PBR", "FCX", "CNQ", "SLB", "B", "NU", "RSG", "VALE", "CCJ", "PCG", "QSR", "UI", "SCCO", "UBS", "UL", "WFC-PC", "ASX", "HLN"], "selected_count": 20};
+    const ctx = document.getElementById('performanceChart');
+    if (ctx && chartData && typeof Chart !== 'undefined') {
+        new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: chartData.labels,
+                datasets: [
+                    {
+                        label: 'S&P 500',
+                        data: chartData.sp500,
+                        borderColor: '#4fc3f7',
+                        backgroundColor: 'transparent',
+                        borderWidth: 2,
+                        pointRadius: 0,
+                        tension: 0.1
+                    },
+                    {
+                        label: 'Equal-weight Top 20',
+                        data: chartData.top20,
+                        borderColor: '#66bb6a',
+                        backgroundColor: 'transparent',
+                        borderWidth: 2,
+                        pointRadius: 0,
+                        tension: 0.1
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: { labels: { color: '#e0e0e0' } },
+                    tooltip: {
+                        callbacks: {
+                            label: context => `${context.dataset.label}: ${context.parsed.y.toFixed(2)}`
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        title: { display: true, text: 'Indexed to 100', color: '#b0bec5' },
+                        ticks: { color: '#90a4ae' },
+                        grid: { color: '#263d50' }
+                    },
+                    x: {
+                        ticks: { color: '#90a4ae', maxTicksLimit: 12 },
+                        grid: { display: false }
+                    }
+                }
+            }
+        });
+    }
+
+});
+
+let activeKpiCategory = 'all';
+
+function initializeKpiDrilldown() {
+    const panel = document.getElementById('kpiDetails');
+    if (!panel) return;
+    document.querySelectorAll('.kpi-card').forEach(card => {
+        card.addEventListener('click', () => showKpiStocks(card));
+    });
+    document.getElementById('closeKpiDetails').addEventListener('click', () => {
+        panel.hidden = true;
+        document.querySelectorAll('.kpi-card').forEach(card => card.setAttribute('aria-expanded', 'false'));
+    });
+    document.getElementById('kpiStockSearch').addEventListener('input', filterKpiStockRows);
+}
+
+function showKpiStocks(card) {
+    const panel = document.getElementById('kpiDetails');
+    activeKpiCategory = card.dataset.kpiFilter;
+    panel.style.setProperty('--active-kpi-symbol-color', card.dataset.kpiColor || '#4fc3f7');
+    document.getElementById('kpiDetailsTitle').textContent = card.dataset.kpiLabel;
+    document.getElementById('kpiStockSearch').value = '';
+    document.querySelectorAll('.kpi-card').forEach(item => item.setAttribute('aria-expanded', String(item === card)));
+    panel.hidden = false;
+    filterKpiStockRows();
+    panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function filterKpiStockRows() {
+    const search = document.getElementById('kpiStockSearch').value.trim().toUpperCase();
+    let visible = 0;
+    document.querySelectorAll('#kpiStockTable tbody tr').forEach(row => {
+        const categoryMatches = activeKpiCategory === 'all'
+            || row.dataset.kpiCategory === activeKpiCategory;
+        const searchMatches = !search || row.textContent.toUpperCase().includes(search);
+        row.hidden = !(categoryMatches && searchMatches);
+        if (!row.hidden) visible += 1;
+    });
+    document.getElementById('kpiDetailsCount').textContent = `${visible} stock${visible === 1 ? '' : 's'} shown`;
+}
+
+// Tabs
+function switchTab(name, clickedTab) {
+    document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+    document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
+    document.getElementById('tab-' + name).classList.add('active');
+    clickedTab.classList.add('active');
+}
+
+// Filter
+function filterTable() {
+    const filter = document.getElementById('filterInput').value.toUpperCase();
+    const activeTab = document.querySelector('.tab-content.active');
+    const rows = activeTab.querySelectorAll('tbody tr');
+    rows.forEach(row => {
+        const text = row.textContent.toUpperCase();
+        row.style.display = text.includes(filter) ? '' : 'none';
+    });
+    renumberVisibleRanks(activeTab.querySelector('table'));
+}
+
+function columnIndex(table, label) {
+    return [...table.querySelectorAll('thead th')]
+        .findIndex(th => th.textContent.trim() === label);
+}
+
+function renumberVisibleRanks(table) {
+    if (!table) return;
+    const rankIndex = columnIndex(table, 'Rank');
+    if (rankIndex < 0) return;
+    let visibleRank = 0;
+    table.querySelectorAll('tbody tr').forEach(row => {
+        if (!row.hidden && row.style.display !== 'none') {
+            visibleRank += 1;
+            row.children[rankIndex].textContent = visibleRank;
+        }
+    });
+}
+
+function restoreScannerOrder(table) {
+    const tbody = table.querySelector('tbody');
+    const rows = [...tbody.querySelectorAll('tr')];
+    rows.sort((left, right) => {
+        const leftRank = Number(left.dataset.scannerRank);
+        const rightRank = Number(right.dataset.scannerRank);
+        return (Number.isFinite(leftRank) ? leftRank : Number.MAX_SAFE_INTEGER)
+            - (Number.isFinite(rightRank) ? rightRank : Number.MAX_SAFE_INTEGER);
+    });
+    rows.forEach(row => tbody.appendChild(row));
+    table.querySelectorAll('th').forEach(header => delete header.dataset.sort);
+    renumberVisibleRanks(table);
+}
+
+function snapshotUrl() {
+    const marker = '/reports/';
+    const path = window.location.pathname;
+    const basePath = path.includes(marker)
+        ? path.slice(0, path.indexOf(marker) + 1)
+        : path.slice(0, path.lastIndexOf('/') + 1);
+    const url = new URL(`${basePath}prices.json`, window.location.origin);
+    url.searchParams.set('refresh', Date.now().toString());
+    return url;
+}
+
+async function loadDashboardSnapshotTimes() {
+    const yahooPriceTime = document.getElementById('yahooPriceTime');
+    const backendRefreshTime = document.getElementById('backendRefreshTime');
+    if (!yahooPriceTime || !backendRefreshTime) return;
+    try {
+        const response = await fetch(snapshotUrl(), { cache: 'no-store' });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const snapshot = await response.json();
+        if (typeof snapshot.generated_at_new_york !== 'string') {
+            throw new Error('snapshot schema is invalid');
+        }
+        yahooPriceTime.textContent = snapshot.price_timestamp_new_york
+            ? `Latest Yahoo price: ${snapshot.price_timestamp_new_york}`
+            : 'Latest Yahoo price: Time unavailable';
+        backendRefreshTime.textContent =
+            `Backend price refresh: ${snapshot.generated_at_new_york}`;
+        updateTop20Details(snapshot.prices);
+    } catch (error) {
+        yahooPriceTime.textContent = 'Latest Yahoo price: Unavailable';
+        backendRefreshTime.textContent =
+            `Backend price refresh: Unavailable (${error.message})`;
+    }
+}
+
+function updateTop20Details(prices) {
+    if (!prices || typeof prices !== 'object') return;
+    document.querySelectorAll('#top20DetailsTable tbody tr').forEach(row => {
+        const current = Number(prices[row.dataset.symbol]);
+        if (!Number.isFinite(current) || current <= 0) return;
+        const entry = Number(row.dataset.entry);
+        const supportLow = Number(row.dataset.supportLow);
+        const resistanceLow = Number(row.dataset.resistanceLow);
+        if (
+            row.dataset.resistanceLow !== ''
+            && Number.isFinite(resistanceLow)
+            && current >= resistanceLow
+        ) {
+            row.remove();
+            return;
+        }
+        const currentCell = row.querySelector('.detail-current');
+        const entryCell = row.querySelector('.detail-entry');
+        currentCell.textContent =
+            `($${current.toLocaleString('en-US', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+            })})`;
+        currentCell.classList.toggle(
+            'below-support',
+            row.dataset.supportLow !== ''
+                && Number.isFinite(supportLow)
+                && current < supportLow
+        );
+        entryCell.classList.toggle(
+            'entry-opportunity',
+            row.dataset.entry !== ''
+                && Number.isFinite(entry)
+                && entry > 0
+                && current < entry
+        );
+        if (!Number.isFinite(entry) || entry <= 0 || row.dataset.entry === '') return;
+        const difference = current - entry;
+        const changePercent = difference / entry * 100;
+        const changeClass = difference > 0
+            ? 'price-gain'
+            : difference < 0
+            ? 'price-loss'
+            : '';
+        const differenceCell = row.querySelector('.detail-difference');
+        const percentCell = row.querySelector('.detail-percent');
+        differenceCell.className = `detail-difference ${changeClass}`;
+        percentCell.className = `detail-percent ${changeClass}`;
+        const sign = difference > 0 ? '+' : '';
+        differenceCell.textContent =
+            `${sign}${difference.toLocaleString('en-US', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+            })}`;
+        percentCell.textContent =
+            `${sign}${changePercent.toLocaleString('en-US', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+            })}%`;
+    });
+}
+
+function setRefreshButtonTime(button, snapshot) {
+    button.textContent = snapshot.price_timestamp_new_york
+        ? `Refresh Latest Prices · ${snapshot.price_timestamp_new_york}`
+        : 'Refresh Latest Prices · Time unavailable';
+}
+
+async function loadRefreshButtonSnapshotTime() {
+    const button = document.getElementById('requestYahooRefresh');
+    if (!button) return;
+    try {
+        const response = await fetch(snapshotUrl(), { cache: 'no-store' });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const snapshot = await response.json();
+        setRefreshButtonTime(button, snapshot);
+    } catch (error) {
+        button.textContent = 'Refresh Latest Prices · Time unavailable';
+    }
+}
+
+function updatePriceRow(row, price) {
+    row.dataset.currentPrice = price.toString();
+    const symbolPrice = row.querySelector('.symbol-price');
+    if (symbolPrice) {
+        symbolPrice.textContent = `($${price.toLocaleString('en-US', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+        })})`;
+    }
+
+    const table = row.closest('table');
+    const currentPriceIndex = columnIndex(table, 'Current Price');
+    if (currentPriceIndex >= 0) {
+        row.children[currentPriceIndex].textContent = price.toLocaleString('en-US', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+        });
+    }
+
+    row.querySelectorAll('[data-price-level]').forEach(levelCell => {
+        const level = Number(levelCell.dataset.priceLevel);
+        if (!Number.isFinite(level) || levelCell.dataset.priceLevel === '') return;
+        levelCell.textContent = `$${level.toLocaleString('en-US', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+        })}`;
+        if (level !== price) {
+            const arrow = document.createElement('span');
+            const above = level > price;
+            arrow.className = above ? 'target-arrow-up' : 'target-arrow-down';
+            arrow.title = above ? 'Above current price' : 'Below current price';
+            arrow.textContent = above ? '↑' : '↓';
+            levelCell.append(' ', arrow);
+        }
+    });
+}
+
+const yahooRefreshButton = document.getElementById('requestYahooRefresh');
+const yahooRefreshStatus = document.getElementById('targetSortStatus');
+if (yahooRefreshButton) yahooRefreshButton.addEventListener('click', async () => {
+    yahooRefreshButton.disabled = true;
+    yahooRefreshStatus.className = '';
+    yahooRefreshStatus.textContent = 'Loading the latest backend price snapshot…';
+    try {
+        const response = await fetch(snapshotUrl(), { cache: 'no-store' });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const snapshot = await response.json();
+        if (
+            snapshot?.schema_version !== 1
+            || typeof snapshot.generated_at_new_york !== 'string'
+            || !snapshot.prices
+            || typeof snapshot.prices !== 'object'
+            || Array.isArray(snapshot.prices)
+        ) {
+            throw new Error('snapshot schema is invalid');
+        }
+        setRefreshButtonTime(yahooRefreshButton, snapshot);
+
+        let updatedRows = 0;
+        document.querySelectorAll('table tbody tr').forEach(row => {
+            const symbol = row.querySelector('.symbol-name')?.textContent.trim();
+            const price = Number(snapshot.prices[symbol]);
+            if (symbol && Number.isFinite(price) && price > 0) {
+                updatePriceRow(row, price);
+                updatedRows += 1;
+            }
+        });
+        document.querySelectorAll('table').forEach(restoreScannerOrder);
+        const failureCount = snapshot.failures
+            && typeof snapshot.failures === 'object'
+            ? Object.keys(snapshot.failures).length
+            : 0;
+        yahooRefreshStatus.className = 'refresh-success';
+        yahooRefreshStatus.textContent =
+            `Loaded ${updatedRows} displayed prices. Snapshot generated `
+            + `${snapshot.generated_at_new_york}`
+            + (failureCount ? `; ${failureCount} backend refresh failure(s) retained prior prices.` : '.');
+    } catch (error) {
+        yahooRefreshStatus.className = 'refresh-error';
+        yahooRefreshStatus.textContent =
+            `Could not load the latest price snapshot: ${error.message}`;
+    } finally {
+        yahooRefreshButton.disabled = false;
+    }
+});
+
+// Save selected scan results to the authenticated user's Supabase lists.
+const exceptionSelections = [...document.querySelectorAll('.exception-select')];
+const addExceptions = document.getElementById('addExceptions');
+const addBought = document.getElementById('addBought');
+
+function selectedSymbols() {
+    return [...new Set(
+        exceptionSelections
+            .filter(checkbox => checkbox.checked)
+            .map(checkbox => checkbox.value)
+    )];
+}
+
+function updateExceptionSelection() {
+    const symbols = selectedSymbols();
+    addExceptions.disabled = symbols.length === 0;
+    addBought.disabled = symbols.length === 0;
+    addExceptions.textContent = `Add Selected to My Exceptions (${symbols.length})`;
+    addBought.textContent = `Add Selected to My Bought List (${symbols.length})`;
+    document.querySelectorAll('.tab-content').forEach(tab => {
+        const checkboxes = [...tab.querySelectorAll('.exception-select')];
+        const selected = checkboxes.filter(checkbox => checkbox.checked).length;
+        const selectAll = tab.querySelector('.select-all');
+        selectAll.checked = selected === checkboxes.length && selected > 0;
+        selectAll.indeterminate = selected > 0 && selected < checkboxes.length;
+    });
+}
+
+exceptionSelections.forEach(checkbox => checkbox.addEventListener('change', () => {
+    exceptionSelections
+        .filter(other => other.value === checkbox.value)
+        .forEach(other => other.checked = checkbox.checked);
+    updateExceptionSelection();
+}));
+
+document.querySelectorAll('.select-all').forEach(selectAll => {
+    selectAll.addEventListener('change', event => {
+        event.stopPropagation();
+        const tab = selectAll.closest('.tab-content');
+        tab.querySelectorAll('.exception-select').forEach(checkbox => {
+            checkbox.checked = selectAll.checked;
+            exceptionSelections
+                .filter(other => other.value === checkbox.value)
+                .forEach(other => other.checked = selectAll.checked);
+        });
+        updateExceptionSelection();
+    });
+});
+
+if (addExceptions) addExceptions.addEventListener('click', async () => {
+    const symbols = selectedSymbols();
+    if (symbols.length > 50) {
+        alert('Select no more than 50 tickers per request.');
+        return;
+    }
+    if (!symbols.length || !confirm(`Add ${symbols.length} selected ticker(s) to your exception list for 30 days?`)) return;
+    if (!window.stockscannerPersonalExceptions) {
+        alert('Your authenticated Supabase session is still loading. Please try again.');
+        return;
+    }
+    addExceptions.disabled = true;
+    try {
+        const count = await window.stockscannerPersonalExceptions.add(symbols);
+        alert(`Added ${count} ticker(s) directly to your Supabase exception list.`);
+    } catch (error) {
+        alert(`Could not update your exception list: ${error.message}`);
+    } finally {
+        updateExceptionSelection();
+    }
+});
+
+if (addBought) addBought.addEventListener('click', async () => {
+    const symbols = selectedSymbols();
+    if (!symbols.length || !confirm(
+        `Add ${symbols.length} selected ticker(s) to your bought list using the displayed price and suggested quantity?`
+    )) return;
+    if (!window.stockscannerBoughtSelections) {
+        alert('Your authenticated Supabase session is still loading. Please try again.');
+        return;
+    }
+    const selections = symbols.map(symbol => {
+        const row = exceptionSelections.find(checkbox => checkbox.value === symbol)?.closest('tr');
+        const headers = [...row.closest('table').querySelectorAll('thead th')]
+            .map(header => header.textContent.trim());
+        const suggestedSharesIndex = headers.indexOf('Suggested Shares');
+        return {
+            symbol,
+            quantity: suggestedSharesIndex >= 0
+                ? Number(row.cells[suggestedSharesIndex].textContent.replace(/,/g, '').trim())
+                : 1,
+            buy_price: Number(row.dataset.currentPrice),
+            notes: 'Added from scanner candidate list; verify the execution price and quantity.',
+        };
+    });
+    addBought.disabled = true;
+    try {
+        const count = await window.stockscannerBoughtSelections.add(selections);
+        alert(`Added ${count} ticker(s) directly to your Supabase bought list. Verify the transaction details in My Bought List.`);
+    } catch (error) {
+        alert(`Could not update your bought list: ${error.message}`);
+    } finally {
+        updateExceptionSelection();
+    }
+});
+
+// Sortable columns
+document.querySelectorAll('th:not(.no-sort)').forEach(th => {
+    th.addEventListener('click', function() {
+        const table = this.closest('table');
+        const tbody = table.querySelector('tbody');
+        const rows = Array.from(tbody.querySelectorAll('tr'));
+        const idx = Array.from(this.parentNode.children).indexOf(this);
+        const asc = this.dataset.sort !== 'asc';
+        this.parentNode.querySelectorAll('th').forEach(h => delete h.dataset.sort);
+        this.dataset.sort = asc ? 'asc' : 'desc';
+        rows.sort((a, b) => {
+            let av = a.children[idx].textContent.replace(/[$,%]/g, '').trim();
+            let bv = b.children[idx].textContent.replace(/[$,%]/g, '').trim();
+            const an = parseFloat(av.replace(/,/g, ''));
+            const bn = parseFloat(bv.replace(/,/g, ''));
+            if (!isNaN(an) && !isNaN(bn)) return asc ? an - bn : bn - an;
+            return asc ? av.localeCompare(bv) : bv.localeCompare(av);
+        });
+        rows.forEach(row => tbody.appendChild(row));
+    });
+});
+</script>
+</body>
+</html>

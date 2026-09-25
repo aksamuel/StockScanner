@@ -2,7 +2,13 @@ __pycache__/
 .pytest_cache/
 *.pyc
 
-reports/
+reports/**
+!reports/
+!reports/index.html
+!reports/.nojekyll
+!reports/**/
+!reports/**/*.html
+!reports/**/*.xlsx
 dist/
 stockscanner.egg-info/
 charts/*.png

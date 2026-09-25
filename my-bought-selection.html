@@ -1,0 +1,294 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>My bought selection | StockScanner</title>
+  <link rel="stylesheet" href="/StockScanner/personal-lists.css">
+  <style>
+    .bought-table { min-width: 1120px; }
+    .analysis-note { margin: 0 0 18px; }
+    .analysis-note p { margin: 7px 0; }
+    .benchmark-value { color: #b3e5fc; font-weight: 700; }
+    .estimate { color: #ffcc80; font-weight: 700; }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="page-header">
+      <div>
+        <h1>My bought selection</h1>
+        <p class="subtitle">Stocks you selected or purchased, stored only under your account.</p>
+      </div>
+      <nav class="page-nav" aria-label="Personal lists">
+        <a href="/StockScanner/index.html">Dashboard</a>
+        <a href="/StockScanner/my-exceptions.html">My exceptions</a>
+        <a href="/StockScanner/my-bought-selection.html" aria-current="page">My bought list</a>
+        <a href="/StockScanner/portfolio-analysis.html">Portfolio analysis</a>
+      </nav>
+    </div>
+    <section class="panel" aria-labelledby="addTitle">
+      <h2 id="addTitle">Add a bought selection</h2>
+      <form id="boughtForm">
+        <label>Symbol
+          <input id="symbol" data-symbol type="text" maxlength="15" pattern="[A-Za-z0-9][A-Za-z0-9.-]{0,14}" required>
+        </label>
+        <label>Quantity
+          <input id="quantity" type="number" min="0.000001" step="any" value="1" required>
+        </label>
+        <label>Buy price (USD)
+          <input id="buyPrice" type="number" min="0" step="0.000001" required>
+        </label>
+        <label>Bought date
+          <input id="boughtOn" type="text" data-date-input placeholder="dd/mmm/yyyy" maxlength="11" required>
+        </label>
+        <label class="wide">Notes
+          <input id="notes" type="text" maxlength="500" placeholder="Optional notes">
+        </label>
+        <button id="submitSelection" type="submit">Add selection</button>
+        <button id="cancelEdit" class="secondary" type="button" hidden>Cancel edit</button>
+      </form>
+      <p id="message" role="status" aria-live="polite"></p>
+    </section>
+    <div class="list-toolbar">
+      <span id="count" class="count">0 selections</span>
+      <select id="filter" class="filter" aria-label="Select a stock"><option value="">All stocks</option></select>
+    </div>
+    <section class="panel analysis-note" aria-labelledby="timeToProfitTitle">
+      <h2 id="timeToProfitTitle">Time-to-profit and breakeven scenario</h2>
+      <p id="benchmarkReference" class="benchmark-value" role="status" aria-live="polite">Loading the Equal-weight Top 20 reference…</p>
+      <p>For a losing position, estimated breakeven days assume its price compounds forward at the Equal-weight Top 20's observed daily rate. This is a benchmark scenario, not a forecast or a guaranteed recovery date. It excludes fees, taxes, dividends, and company-specific risk.</p>
+      <p>“Currently profitable” uses today's latest price and days held. The exact first day a ticker became profitable is not claimed because individual daily price history is not retained.</p>
+    </section>
+    <div class="table-wrap">
+      <table class="bought-table">
+        <thead><tr><th>Symbol</th><th>Profit / Loss %</th><th>Time-to-profit status</th><th>Est. breakeven days</th><th>Quantity</th><th>Buy price</th><th>Bought date</th><th>Notes</th><th>Action</th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+      <div id="empty" class="empty" hidden>No stocks in your bought list.</div>
+    </div>
+  </main>
+  <script type="module" src="/StockScanner/auth.js" data-stockscanner-auth></script>
+  <script type="module">
+    import { formatDateTime, parseDateInput, validateDateInputs } from "/StockScanner/date-format.js";
+    import { setFilterOptions } from "/StockScanner/table-filters.js";
+    import {
+      formatDate, localDateValue, requireApprovedUser, setFormBusy,
+      setMessage, supabase, tableCell,
+    } from "/StockScanner/personal-lists.js";
+    import {
+      daysHeld, equalWeightTopTwentyMetrics, estimatedBreakevenDays,
+    } from "/StockScanner/portfolio-analysis.js";
+
+    const form = document.querySelector("#boughtForm");
+    const symbol = document.querySelector("#symbol");
+    const quantity = document.querySelector("#quantity");
+    const buyPrice = document.querySelector("#buyPrice");
+    const boughtOn = document.querySelector("#boughtOn");
+    const notes = document.querySelector("#notes");
+    const filter = document.querySelector("#filter");
+    const rows = document.querySelector("#rows");
+    const empty = document.querySelector("#empty");
+    const message = document.querySelector("#message");
+    const count = document.querySelector("#count");
+    const submitSelection = document.querySelector("#submitSelection");
+    const cancelEdit = document.querySelector("#cancelEdit");
+    const benchmarkReference = document.querySelector("#benchmarkReference");
+    const user = await requireApprovedUser();
+    const priceFormat = new Intl.NumberFormat(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 });
+    let selections = [];
+    let latestPrices = {};
+    let benchmarkMetrics = null;
+    let editingId = null;
+
+    if (user) {
+      boughtOn.value = formatDate(localDateValue());
+      await loadBenchmarkReference();
+      await loadSelections();
+    }
+
+    async function loadBenchmarkReference() {
+      try {
+        const response = await fetch(`/StockScanner/index.html?benchmark=${Date.now()}`, { cache: "no-store" });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const documentCopy = new DOMParser().parseFromString(await response.text(), "text/html");
+        const payload = documentCopy.querySelector("#kpiBenchmarkData")?.textContent;
+        benchmarkMetrics = equalWeightTopTwentyMetrics(payload ? JSON.parse(payload) : null);
+        if (!benchmarkMetrics) throw new Error("benchmark history is unavailable");
+        const sign = benchmarkMetrics.totalReturnPercent >= 0 ? "+" : "";
+        const annualizedSign = benchmarkMetrics.annualizedReturnPercent >= 0 ? "+" : "";
+        benchmarkReference.textContent =
+          `Equal-weight Top 20 reference: ${sign}${benchmarkMetrics.totalReturnPercent.toFixed(2)}% `
+          + `from ${formatDate(benchmarkMetrics.startDate)} to ${formatDate(benchmarkMetrics.endDate)} `
+          + `(${annualizedSign}${benchmarkMetrics.annualizedReturnPercent.toFixed(2)}% annualized).`;
+      } catch (error) {
+        benchmarkMetrics = null;
+        benchmarkReference.textContent = `Equal-weight Top 20 reference unavailable: ${error.message}. Breakeven days cannot be estimated.`;
+      }
+    }
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (!user || !validateDateInputs(form)) return;
+      setFormBusy(form, true);
+      const ticker = symbol.value.trim().toUpperCase();
+      const values = {
+        quantity: quantity.value,
+        buy_price: buyPrice.value,
+        bought_on: parseDateInput(boughtOn.value),
+        notes: notes.value.trim() || null,
+      };
+      const operation = editingId
+        ? supabase.from("user_bought_selections").update(values).eq("id", editingId).eq("user_id", user.id)
+        : supabase.from("user_bought_selections").insert({ user_id: user.id, symbol: ticker, ...values });
+      const { error } = await operation;
+      setFormBusy(form, false);
+      if (editingId) symbol.disabled = true;
+      if (error) {
+        setMessage(message, error.code === "23505" ? `${ticker} is already in your bought list.` : error.message);
+        return;
+      }
+      const wasEditing = Boolean(editingId);
+      resetForm();
+      setMessage(message, `${ticker} was ${wasEditing ? "updated" : "added to your bought list"}.`, true);
+      await loadSelections();
+    });
+
+    cancelEdit.addEventListener("click", resetForm);
+
+    function resetForm() {
+      editingId = null;
+      form.reset();
+      symbol.disabled = false;
+      quantity.value = "1";
+      boughtOn.value = formatDate(localDateValue());
+      submitSelection.textContent = "Add selection";
+      cancelEdit.hidden = true;
+      symbol.focus();
+    }
+
+    filter.addEventListener("change", renderSelections);
+
+    async function loadSelections() {
+      const [selectionResult, priceResult] = await Promise.all([
+        supabase
+          .from("user_bought_selections")
+          .select("id,symbol,quantity,buy_price,bought_on,notes")
+          .eq("user_id", user.id)
+          .order("symbol"),
+        supabase
+          .from("price_snapshots")
+          .select("prices,price_timestamp,generated_at")
+          .eq("source", "hourly_yahoo")
+          .maybeSingle(),
+      ]);
+      if (selectionResult.error) {
+        setMessage(message, selectionResult.error.message);
+        return;
+      }
+      if (priceResult.error) {
+        setMessage(message, `Bought selections loaded, but current prices are unavailable: ${priceResult.error.message}`);
+      }
+      latestPrices = priceResult.data?.prices || {};
+      selections = selectionResult.data;
+      count.textContent = `${selections.length} selection${selections.length === 1 ? "" : "s"}`;
+      renderSelections();
+    }
+
+    function renderSelections() {
+      const selected = setFilterOptions(filter, selections.map(item => item.symbol));
+      const visible = selections.filter(item => !selected || item.symbol === selected);
+      rows.replaceChildren(...visible.map(selectionRow));
+      empty.hidden = visible.length !== 0;
+    }
+
+    function selectionRow(item) {
+      const row = document.createElement("tr");
+      const currentPrice = Number(latestPrices[item.symbol]);
+      const purchasedPrice = Number(item.buy_price);
+      const profitLoss = Number.isFinite(currentPrice) && currentPrice >= 0 && purchasedPrice > 0
+        ? ((currentPrice - purchasedPrice) / purchasedPrice) * 100
+        : null;
+      const profitLossCell = tableCell(
+        profitLoss === null ? "Unavailable" : `${profitLoss >= 0 ? "+" : ""}${profitLoss.toFixed(2)}%`,
+        profitLoss === null ? "pl-unavailable" : profitLoss > 0 ? "pl-profit" : profitLoss < 0 ? "pl-loss" : "pl-neutral",
+      );
+      if (profitLoss !== null) {
+        profitLossCell.title = `Latest price: $${priceFormat.format(currentPrice)}`;
+      }
+      const heldDays = daysHeld(item.bought_on);
+      const duration = heldDays === null
+        ? "buy date needed"
+        : `${heldDays} day${heldDays === 1 ? "" : "s"} held`;
+      const timingCell = tableCell(
+        profitLoss === null
+          ? "Price unavailable"
+          : profitLoss > 0
+          ? `Currently profitable · ${duration}`
+          : profitLoss < 0
+          ? `Not profitable · ${duration}`
+          : `At breakeven · ${duration}`,
+      );
+      const breakevenDays = estimatedBreakevenDays(purchasedPrice, currentPrice, benchmarkMetrics);
+      let breakevenText = "Unavailable";
+      if (profitLoss !== null && profitLoss >= 0) {
+        breakevenText = "0 days · buy price recovered";
+      } else if (breakevenDays !== null) {
+        const estimatedDate = new Date(Date.now() + breakevenDays * 86_400_000);
+        breakevenText = `${breakevenDays.toLocaleString()} days · about ${formatDate(estimatedDate)}`;
+      }
+      const breakevenCell = tableCell(breakevenText, profitLoss < 0 ? "estimate" : "");
+      if (profitLoss !== null && profitLoss < 0 && Number.isFinite(currentPrice) && currentPrice > 0) {
+        const requiredRecovery = (purchasedPrice / currentPrice - 1) * 100;
+        breakevenCell.title = `Requires a ${requiredRecovery.toFixed(2)}% price recovery. Benchmark scenario only.`;
+      }
+      const action = document.createElement("td");
+      const edit = document.createElement("button");
+      edit.type = "button";
+      edit.className = "secondary";
+      edit.textContent = "Edit";
+      edit.addEventListener("click", () => {
+        editingId = item.id;
+        symbol.value = item.symbol;
+        symbol.disabled = true;
+        quantity.value = item.quantity;
+        buyPrice.value = item.buy_price;
+        boughtOn.value = item.bought_on ? formatDate(item.bought_on) : "";
+        notes.value = item.notes || "";
+        submitSelection.textContent = "Save changes";
+        cancelEdit.hidden = false;
+        quantity.focus();
+      });
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "delete";
+      remove.textContent = "Delete";
+      remove.addEventListener("click", async () => {
+        remove.disabled = true;
+        const { error } = await supabase
+          .from("user_bought_selections")
+          .delete()
+          .eq("id", item.id)
+          .eq("user_id", user.id);
+        if (error) {
+          remove.disabled = false;
+          setMessage(message, error.message);
+          return;
+        }
+        setMessage(message, `${item.symbol} was deleted from your bought list.`, true);
+        await loadSelections();
+      });
+      action.className = "row-actions";
+      action.append(edit, remove);
+      row.append(
+        tableCell(item.symbol, "symbol"), profitLossCell, timingCell, breakevenCell,
+        tableCell(Number(item.quantity).toLocaleString()),
+        tableCell(`$${priceFormat.format(Number(item.buy_price))}`), tableCell(formatDate(item.bought_on)),
+        tableCell(item.notes || "—"), action,
+      );
+      return row;
+    }
+  </script>
+</body>
+</html>

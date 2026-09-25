@@ -1,0 +1,107 @@
+name: Remove Exception
+
+on:
+  issues:
+    types: [opened, reopened]
+
+permissions:
+  contents: write
+  issues: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: exception-list-update
+  cancel-in-progress: false
+
+jobs:
+  reject-unauthorized:
+    if: >-
+      startsWith(github.event.issue.title, '[Remove Exceptions] ') &&
+      !contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.issue.author_association)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Reject unauthorized request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_URL: ${{ github.event.issue.html_url }}
+        run: |
+          gh issue comment "$ISSUE_URL" --body "Only authorized repository collaborators can remove exception-list entries."
+          gh issue close "$ISSUE_URL" --reason "not planned"
+
+  remove:
+    if: >-
+      startsWith(github.event.issue.title, '[Remove Exceptions] ') &&
+      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.issue.author_association)
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Validate request
+        id: request
+        shell: bash
+        env:
+          REQUEST_TITLE: ${{ github.event.issue.title }}
+          REQUEST_BODY: ${{ github.event.issue.body }}
+        run: |
+          if [[ "$REQUEST_TITLE" =~ ^\[Remove\ Exceptions\]\ ([0-9]+)\ tickers?$ ]]; then
+            REQUEST_COUNT="${BASH_REMATCH[1]}"
+          else
+            echo "Invalid removal-request title." >&2
+            exit 1
+          fi
+
+          mapfile -t MARKERS < <(grep -oE '<!-- stockscanner-remove-exceptions: [A-Z0-9.,-]+ -->' <<< "$REQUEST_BODY")
+          if [[ "${#MARKERS[@]}" -ne 1 ]]; then
+            echo "The request must contain exactly one valid removal marker." >&2
+            exit 1
+          fi
+          SYMBOLS="${MARKERS[0]#<!-- stockscanner-remove-exceptions: }"
+          SYMBOLS="${SYMBOLS% -->}"
+          IFS=',' read -ra SYMBOL_LIST <<< "$SYMBOLS"
+          UNIQUE_COUNT="$(printf '%s\n' "${SYMBOL_LIST[@]}" | sort -u | wc -l)"
+          if [[ "${#SYMBOL_LIST[@]}" -ne "$REQUEST_COUNT" || "$UNIQUE_COUNT" -ne "$REQUEST_COUNT" ]]; then
+            echo "The ticker count does not match the request title." >&2
+            exit 1
+          fi
+          echo "symbols=$SYMBOLS" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          ref: main
+
+      - name: Remove ticker and regenerate dashboard
+        run: |
+          python -m stockscanner.remove_exception "${{ steps.request.outputs.symbols }}"
+          python -m stockscanner.exceptions_dashboard
+
+      - name: Commit exception-list update
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add watchlists/exceptions.csv exceptions.html
+          git commit -m "Remove selected tickers from exception list"
+          git push
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v3
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: .
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+      - name: Close completed request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_URL: ${{ github.event.issue.html_url }}
+          SYMBOLS: ${{ steps.request.outputs.symbols }}
+        run: |
+          gh issue comment "$ISSUE_URL" --body "Removed **$SYMBOLS** from the exception list and republished the dashboard."
+          gh issue close "$ISSUE_URL" --reason "completed"

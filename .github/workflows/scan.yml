@@ -1,90 +1,150 @@
 # Stock Scanner CI Workflow
-# Daily seed loads the NYSE universe; hourly collection resumes the active slot and only retries missing tickers.
+# Runs the stock scanner at 09:17 New York time on NYSE trading days (Mon-Fri)
+# or on-demand via the GitHub mobile app / Actions tab.
+# Generates an HTML dashboard and deploys it to GitHub Pages.
 
 name: Stock Scanner
+run-name: >-
+  Stock Scanner (${{ github.event_name == 'workflow_dispatch'
+    && 'manual Yahoo refresh'
+    || github.event_name == 'schedule'
+    && 'scheduled scan'
+    || 'site deployment' }})
 
 on:
+  # Deploy application and release changes without waiting for a market scan.
+  push:
+    branches:
+      - main
+    paths:
+      - "auth.js"
+      - "bought-price.js"
+      - "table-filters.js"
+      - "searchable-filter.js"
+      - "help.html"
+      - "README.md"
+      - "README_SETUP.md"
+      - "RELEASE_NOTES.md"
+      - "pyproject.toml"
+      - "stockscanner/__init__.py"
+      - "stockscanner/html_report.py"
+      - "stockscanner/report.py"
+      - "tests/**"
+      - "login.html"
+      - "admin.html"
+      - "users.html"
+      - "my-exceptions.html"
+      - "my-bought-selection.html"
+      - "portfolio-analysis.html"
+      - "portfolio-analysis.js"
+      - "market-prices.html"
+      - "market-prices.js"
+      - "database.html"
+      - "portfolio-holdings-template.csv"
+      - "personal-lists.css"
+      - "personal-lists.js"
+      - "date-format.js"
+      - "portfolio-recovery.js"
+      - "recovery-chart.js"
+      - "supabase/functions/portfolio-history/**"
+      - "supabase/migrations/**"
+      - "tools/inject_auth.py"
+      - "tools/format_report_dates.py"
+      - "stockscanner/display_time.py"
+      - ".github/workflows/scan.yml"
+
+  # Manual server-side Yahoo refresh from the Actions page.
   workflow_dispatch:
     inputs:
       mode:
-        description: "Run mode"
+        description: "Scan mode"
         type: choice
         options:
-          - daily-seed
-          - hourly-collection
           - watchlist
           - universe
-        default: watchlist
+        default: universe
       limit:
-        description: "Max number of tickers to scan (universe mode)"
-        type: number
-        default: 1000
+        description: "Max number of tickers to scan (universe mode, 0 = all)"
+        type: string
+        default: "0"
       workers:
         description: "Number of parallel workers"
-        type: number
-        default: 20
+        type: string
+        default: "8"
+      portfolio:
+        description: "Total portfolio value in dollars"
+        type: string
+        default: "50000"
+      position_size:
+        description: "Max % of portfolio per position"
+        type: string
+        default: "5"
+      risk:
+        description: "Risk % per trade"
+        type: string
+        default: "1"
+      force:
+        description: "Force a new universe scan even if today already completed"
+        type: boolean
+        default: false
 
+  # Candidate 09:17 slots are the primary schedule. Candidate 10:47 slots are
+  # fallbacks for GitHub scheduler delays; the Supabase lease rejects duplicates.
   schedule:
-    - cron: "30 13 * * 1-5"
-    - cron: "*/15 * * * 1-5"
+    - cron: "17 13,14 * * 1-5"
+    - cron: "47 14,15 * * 1-5"
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+  issues: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
 
 jobs:
-  daily-seed:
-    if: >-
-      (github.event_name == 'workflow_dispatch' && inputs.mode == 'daily-seed') ||
-      (github.event_name == 'schedule' && github.event.schedule == '30 13 * * 1-5')
+  schedule-gate:
     runs-on: ubuntu-latest
-    env:
-      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+    outputs:
+      should_run: ${{ steps.gate.outputs.should_run }}
+      new_york_time: ${{ steps.gate.outputs.new_york_time }}
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v5
-
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.11"
-
-      - name: Install dependencies
+      - name: Check primary or fallback New York schedule window
+        id: gate
+        shell: bash
         run: |
-          pip install -r requirements.txt
-          pip install -e .
+          NEW_YORK_TIME=$(TZ=America/New_York date '+%d/%b/%Y %H:%M %Z')
+          NEW_YORK_HOUR=$(TZ=America/New_York date '+%H')
+          echo "new_york_time=$NEW_YORK_TIME" >> "$GITHUB_OUTPUT"
+          # GitHub cron events can be delayed by several hours. Once New York
+          # reaches 09:00, let every delayed candidate try the database lease;
+          # the lease, not a narrow clock window, is the duplicate guard.
+          if [ "$GITHUB_EVENT_NAME" != "schedule" ] || [ "$((10#$NEW_YORK_HOUR))" -ge 9 ]; then
+            echo "should_run=true" >> "$GITHUB_OUTPUT"
+            echo "Scanner is due at $NEW_YORK_TIME."
+          else
+            echo "should_run=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping the off-season UTC slot at $NEW_YORK_TIME."
+          fi
 
-      - name: Run daily universe seed
-        run: python -m stockscanner.cli --daily-seed
-
-  hourly-collection:
-    if: >-
-      (github.event_name == 'workflow_dispatch' && inputs.mode == 'hourly-collection') ||
-      (github.event_name == 'schedule' && github.event.schedule == '*/15 * * * 1-5')
+  build:
+    needs: schedule-gate
+    if: needs.schedule-gate.outputs.should_run == 'true'
     runs-on: ubuntu-latest
-    env:
-      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-      SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+    environment:
+      name: github-pages
+    outputs:
+      lock_acquired: ${{ steps.daily-lock.outputs.acquired || 'false' }}
+      market_date: ${{ steps.daily-lock.outputs.market_date }}
+      publish_ready: ${{ steps.publish-ready.outputs.ready || 'false' }}
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
-
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v6
         with:
-          python-version: "3.11"
-
-      - name: Install dependencies
-        run: |
-          pip install -r requirements.txt
-          pip install -e .
-
-      - name: Resume hourly collection for missing tickers
-        run: python -m stockscanner.cli --hourly-collection --batch-size 25
-
-  scan:
-    if: github.event_name == 'workflow_dispatch' && (inputs.mode == 'watchlist' || inputs.mode == 'universe')
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v5
+          fetch-depth: 0
 
       - name: Set up Python 3.11
         uses: actions/setup-python@v6
@@ -102,25 +162,340 @@ jobs:
       - name: Install dependencies
         run: |
           pip install -r requirements.txt
-          pip install -e .
+          pip install -e '.[dev]'
+
+      - name: Set up Node.js for application checks
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Check application before deployment
+        run: |
+          python -m pytest -q
+          node --test tests/*.test.mjs
+
+      - name: Validate stable release version
+        if: github.event_name == 'push'
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import tomllib
+          from stockscanner import __version__
+          version = tomllib.loads(Path('pyproject.toml').read_text())['project']['version']
+          assert version == __version__, 'Package version mismatch'
+          assert Path('RELEASE_NOTES.md').read_text().startswith(f'# StockScanner v{version}\n'), 'Release notes version mismatch'
+          PY
+
+      - name: Acquire daily universe-scan lease
+        id: daily-lock
+        if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.event.inputs.mode == 'universe')
+        env:
+          SUPABASE_URL: https://cszzbkssxxgwgafwuonc.supabase.co
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        shell: bash
+        run: |
+          FORCE_FLAG=""
+          if [ "${{ github.event.inputs.force }}" = "true" ]; then
+            FORCE_FLAG="--force"
+          fi
+          python -m stockscanner.scanner_run_state acquire \
+            --workflow-run-id "${{ github.run_id }}" \
+            --trigger-source "${{ github.event_name }}" \
+            --github-output "$GITHUB_OUTPUT" \
+            $FORCE_FLAG
+
+      - name: Explain duplicate daily scan
+        if: steps.daily-lock.outcome == 'success' && steps.daily-lock.outputs.acquired != 'true'
+        run: echo "A successful or active universe scan already exists for this New York market date."
+
+      - name: Prime KPI S&P 500 history
+        if: github.event.inputs.mode == 'watchlist' || steps.daily-lock.outputs.acquired == 'true'
+        run: |
+          for attempt in 1 2 3; do
+            if python -c "from stockscanner.market_data import download_data; data = download_data('^GSPC', force=True, period='1y'); assert data is not None and not data.empty, 'S&P 500 history is unavailable'"; then
+              break
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              echo "Unable to cache S&P 500 history after 3 attempts." >&2
+              exit 1
+            fi
+            sleep 20
+          done
+
+      - name: Batch-cache NYSE daily history
+        if: steps.daily-lock.outputs.acquired == 'true'
+        env:
+          SUPABASE_URL: https://cszzbkssxxgwgafwuonc.supabase.co
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          SCAN_LIMIT: ${{ inputs.limit || '0' }}
+        run: |
+          python - <<'PY'
+          import os
+          from datetime import datetime
+          from zoneinfo import ZoneInfo
+          from stockscanner.market_data import download_data_bulk
+          from stockscanner.ticker_universe_store import load_latest_ticker_universe
+
+          tickers = load_latest_ticker_universe(
+              supabase_url=os.environ["SUPABASE_URL"],
+              secret_key=os.environ["SUPABASE_SECRET_KEY"],
+              required_market_date=datetime.now(ZoneInfo("America/New_York")).date(),
+              minimum_symbols=2000,
+          )
+          symbols = tickers["Symbol"].tolist()
+          limit = int(os.environ.get("SCAN_LIMIT", "0") or 0)
+          if limit > 0:
+              symbols = symbols[:limit]
+          cached = download_data_bulk(
+              symbols,
+              force=True,
+              period="1y",
+              chunk_size=100,
+              pause_between_chunks=1,
+              progress=True,
+          )
+          print(f"Batch history cached for {len(cached)} of {len(symbols)} NYSE symbols.")
+          PY
 
       - name: Run scanner (universe mode)
-        if: inputs.mode == 'universe'
+        if: steps.daily-lock.outputs.acquired == 'true'
+        env:
+          SUPABASE_URL: https://cszzbkssxxgwgafwuonc.supabase.co
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
         run: |
+          LIMIT_FLAG=""
+          if [ "${{ inputs.limit }}" != "0" ] && [ -n "${{ inputs.limit }}" ]; then
+            LIMIT_FLAG="--limit ${{ inputs.limit }}"
+          fi
           python -m stockscanner.cli \
             --universe \
-            --limit ${{ inputs.limit }} \
+            --universe-source supabase \
             --parallel \
-            --workers ${{ inputs.workers }}
+            --workers ${{ inputs.workers || 8 }} \
+            --portfolio ${{ inputs.portfolio || 50000 }} \
+            --position-size ${{ inputs.position_size || 5 }} \
+            --risk ${{ inputs.risk || 1 }} \
+            --html \
+            --quiet \
+            $LIMIT_FLAG
 
       - name: Run scanner (watchlist mode)
-        if: inputs.mode != 'universe'
-        run: python -m stockscanner.cli
+        if: github.event.inputs.mode == 'watchlist' && github.event_name != 'schedule'
+        run: |
+          python -m stockscanner.cli \
+            --parallel \
+            --workers ${{ inputs.workers || 8 }} \
+            --portfolio ${{ inputs.portfolio || 50000 }} \
+            --position-size ${{ inputs.position_size || 5 }} \
+            --risk ${{ inputs.risk || 1 }} \
+            --html \
+            --quiet
 
-      - name: Upload reports
+      - name: Deploy Dashboard as landing page
+        if: github.event_name == 'push' || github.event.inputs.mode == 'watchlist' || steps.daily-lock.outputs.acquired == 'true'
+        run: |
+          touch .nojekyll
+          touch reports/.nojekyll
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "Deploying the static pages already committed by this push."
+          else
+            python -m stockscanner.exceptions_dashboard
+            # Publish the newly generated linked report pages at stable site paths.
+            LATEST_LANDING=$(find reports/ -name "landing.html" -type f | sort -r | head -1)
+            if [ -n "$LATEST_LANDING" ]; then
+              LATEST_FOLDER=$(dirname "$LATEST_LANDING")
+              cp "$LATEST_FOLDER/landing.html" index.html
+              cp "$LATEST_FOLDER/technical.html" technical.html
+              cp "$LATEST_FOLDER/analysts.html" analysts.html
+              cp "$LATEST_FOLDER/bought-selection.html" bought-selection.html
+              echo "Deployed linked dashboards from: $LATEST_FOLDER"
+            else
+              cat <<'EOF' > index.html
+          <!DOCTYPE html>
+          <html lang="en">
+          <head>
+              <meta charset="utf-8">
+              <meta http-equiv="refresh" content="0; url=reports/index.html">
+              <meta name="viewport" content="width=device-width, initial-scale=1">
+              <title>StockScanner Reports</title>
+          </head>
+          <body>
+              <p>Redirecting to <a href="reports/index.html">reports/index.html</a>...</p>
+          </body>
+          </html>
+          EOF
+            fi
+          fi
+
+      - name: Apply Supabase Auth guard
+        if: github.event_name == 'push' || github.event.inputs.mode == 'watchlist' || steps.daily-lock.outputs.acquired == 'true'
+        run: |
+          python tools/inject_auth.py \
+            index.html \
+            technical.html \
+            analysts.html \
+            bought-selection.html \
+            exceptions.html
+
+      - name: Commit generated report pages
+        if: github.event_name == 'push' || github.event.inputs.mode == 'watchlist' || steps.daily-lock.outputs.acquired == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html technical.html analysts.html bought-selection.html exceptions.html prices.json .nojekyll reports/
+          if git diff --cached --quiet; then
+            echo "No report changes to commit."
+          else
+            git commit -m "Update published stock scanner reports"
+            # The hourly snapshot can update main while a full scan is running.
+            # Rebase the generated report commit and retry a bounded number of
+            # times instead of failing the Pages deployment on that safe race.
+            for attempt in 1 2 3; do
+              git pull --rebase -X theirs origin main
+              if git push origin HEAD:main; then
+                break
+              fi
+              if [ "$attempt" -eq 3 ]; then
+                echo "Unable to publish generated reports after 3 attempts." >&2
+                exit 1
+              fi
+              sleep $((attempt * 5))
+            done
+          fi
+
+      - name: Upload reports artifact
         uses: actions/upload-artifact@v5
         if: always()
         with:
           name: scan-reports-${{ github.run_id }}
           path: reports/
           retention-days: 30
+
+      - name: Configure Pages
+        if: github.event_name == 'push' || github.event.inputs.mode == 'watchlist' || steps.daily-lock.outputs.acquired == 'true'
+        uses: actions/configure-pages@v3
+
+      - name: Standardize displayed report dates and New York times
+        if: github.event_name == 'push' || github.event.inputs.mode == 'watchlist' || steps.daily-lock.outputs.acquired == 'true'
+        run: python tools/format_report_dates.py
+
+      - name: Upload reports artifact for Pages
+        if: github.event_name == 'push' || github.event.inputs.mode == 'watchlist' || steps.daily-lock.outputs.acquired == 'true'
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: .
+
+      - name: Mark deployment artifact ready
+        id: publish-ready
+        if: github.event_name == 'push' || github.event.inputs.mode == 'watchlist' || steps.daily-lock.outputs.acquired == 'true'
+        run: echo "ready=true" >> "$GITHUB_OUTPUT"
+
+  deploy:
+    needs: build
+    if: needs.build.outputs.publish_ready == 'true'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deploy
+        uses: actions/deploy-pages@v4
+
+  stable-release:
+    needs: deploy
+    if: github.event_name == 'push' && needs.deploy.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout deployed source commit
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Publish stable release after successful deployment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          RELEASE_TAG=$(python -c "import pathlib,tomllib; print('v' + tomllib.loads(pathlib.Path('pyproject.toml').read_text())['project']['version'])")
+          if gh release view "$RELEASE_TAG" > /dev/null 2>&1; then
+            echo "Release $RELEASE_TAG already exists; preserving it."
+          else
+            gh release create "$RELEASE_TAG" --target "$GITHUB_SHA" \
+              --title "StockScanner $RELEASE_TAG" --notes-file RELEASE_NOTES.md --latest
+          fi
+
+  finalize-daily-run:
+    needs: [build, deploy]
+    if: always() && needs.build.outputs.lock_acquired == 'true'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Finish daily universe-scan lease
+        env:
+          SUPABASE_URL: https://cszzbkssxxgwgafwuonc.supabase.co
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          DEPLOY_RESULT: ${{ needs.deploy.result }}
+        shell: bash
+        run: |
+          STATUS="failed"
+          if [ "$DEPLOY_RESULT" = "success" ]; then
+            STATUS="completed"
+            python -m stockscanner.scanner_run_state finish \
+              --market-date "${{ needs.build.outputs.market_date }}" \
+              --workflow-run-id "${{ github.run_id }}" \
+              --status "$STATUS"
+          else
+            python -m stockscanner.scanner_run_state finish \
+              --market-date "${{ needs.build.outputs.market_date }}" \
+              --workflow-run-id "${{ github.run_id }}" \
+              --status "$STATUS" \
+              --error "GitHub Pages deployment result: $DEPLOY_RESULT"
+          fi
+
+      - name: Open one failure issue for the market date
+        if: always() && needs.deploy.result != 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MARKET_DATE: ${{ needs.build.outputs.market_date }}
+        shell: bash
+        run: |
+          TITLE="StockScanner scheduled scan failed: $MARKET_DATE"
+          EXISTING=$(gh issue list --state open --search "$TITLE in:title" --json title --jq ".[] | select(.title == \"$TITLE\") | .title")
+          if [ -z "$EXISTING" ]; then
+            gh issue create \
+              --title "$TITLE" \
+              --body "The daily scan or Pages deployment failed. Review: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}. A later fallback schedule may retry automatically."
+          fi
+
+      - name: Close a recovered failure issue
+        if: always() && needs.deploy.result == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MARKET_DATE: ${{ needs.build.outputs.market_date }}
+        shell: bash
+        run: |
+          TITLE="StockScanner scheduled scan failed: $MARKET_DATE"
+          gh issue list --state open --search "$TITLE in:title" --json number,title \
+            --jq ".[] | select(.title == \"$TITLE\") | .number" | \
+          while read -r ISSUE_NUMBER; do
+            if [ -n "$ISSUE_NUMBER" ]; then
+              gh issue close "$ISSUE_NUMBER" --comment "Recovered by successful run ${{ github.run_id }}."
+            fi
+          done

@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="en" data-admin-only>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Admin dashboard | StockScanner</title>
+  <style data-stockscanner-auth>html:not(.auth-ready) { visibility: hidden; }</style>
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 62px 24px 40px; overflow-x: clip; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #e0e0e0; background: #0f1923; }
+    main { width: min(100%, 1100px); margin: auto; }
+    h1 { margin: 0; color: #4fc3f7; font-size: 1.45rem; line-height: 1.2; }
+    .page-header { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+    .page-header a { padding: 7px 10px; border: 1px solid #4fc3f7; border-radius: 6px; color: #4fc3f7; text-decoration: none; font-weight: 700; }
+    h2 { margin-top: 24px; color: #b3e5fc; }
+    .metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 14px; margin: 22px 0; }
+    .metric { padding: 18px; border: 1px solid #334b5f; border-radius: 9px; background: #1a2a3a; }
+    .metric strong { display: block; margin-top: 7px; color: #81d4fa; font-size: 1.8rem; }
+    .table-wrap { width: calc(100vw - 48px); margin-left: calc(50% - 50vw + 24px); overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; background: #1a2a3a; }
+    th, td { padding: 12px; border-bottom: 1px solid #334b5f; text-align: left; }
+    button { padding: 7px 12px; border: 0; border-radius: 5px; color: #10242d; background: #81c784; font-weight: 700; cursor: pointer; }
+    button:disabled { opacity: .6; cursor: wait; }
+    .run-controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 12px 0 4px; }
+    .run-controls a { color: #81d4fa; }
+    #message { min-height: 24px; color: #ffcc80; }
+    @media (max-width: 720px) {
+      body { padding: 58px 14px 32px; }
+      .table-wrap { width: calc(100vw - 28px); margin-left: calc(50% - 50vw + 14px); }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="page-header">
+      <h1>Admin dashboard</h1>
+      <a href="/StockScanner/users.html">Manage users</a>
+    </div>
+    <p>Activity and account-creation permissions are visible only to <strong>aaksamuel@zohomail.com</strong>.</p>
+    <section class="metrics" aria-label="User activity summary">
+      <div class="metric">Registered users<strong id="registeredCount">—</strong></div>
+      <div class="metric">Approved users<strong id="approvedCount">—</strong></div>
+      <div class="metric">Active now<strong id="activeCount">—</strong></div>
+      <div class="metric">Total logins<strong id="loginCount">—</strong></div>
+      <div class="metric">Total page hits<strong id="hitCount">—</strong></div>
+    </section>
+    <h2>Manual scanner runs</h2>
+    <p>Start a full daily analysis or retry the current hourly price collection. Hourly collection remains limited to its valid New York market window.</p>
+    <div class="run-controls">
+      <button id="runDaily" type="button">Run daily scanner</button>
+      <button id="runHourly" type="button">Run hourly prices</button>
+      <a href="https://github.com/aksamuel/StockScanner/actions" target="_blank" rel="noopener noreferrer">View GitHub Actions</a>
+    </div>
+    <p id="runMessage" role="status" aria-live="polite"></p>
+    <h2>User activity</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Email</th><th>Status</th><th>Logins</th><th>Page hits</th><th>Last login</th><th>Last active</th><th>Last page</th></tr></thead>
+        <tbody id="activityRows"></tbody>
+      </table>
+    </div>
+    <h2>Account creation permissions</h2>
+    <form id="permissionForm">
+      <label for="permissionEmail">User email</label>
+      <input id="permissionEmail" type="email" autocomplete="email" required>
+      <button type="submit">Permit account creation</button>
+    </form>
+    <p id="message" role="status" aria-live="polite"></p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Email</th><th>Permitted</th><th>Action</th></tr></thead>
+        <tbody id="requests"></tbody>
+      </table>
+    </div>
+  </main>
+  <script type="module" src="/StockScanner/auth.js" data-stockscanner-auth></script>
+  <script type="module">
+    import { formatDateTime, parseDateInput, validateDateInputs } from "/StockScanner/date-format.js";
+    import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.112.3/+esm";
+
+    const ADMIN_EMAIL = "aaksamuel@zohomail.com";
+    const supabase = createClient(
+      "https://cszzbkssxxgwgafwuonc.supabase.co",
+      "sb_publishable_VnhkG4H4acjm2Hp1k5tzyw_I9xtUrGI",
+      { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } },
+    );
+    const body = document.querySelector("#requests");
+    const message = document.querySelector("#message");
+    const form = document.querySelector("#permissionForm");
+    const permissionEmail = document.querySelector("#permissionEmail");
+    const activityRows = document.querySelector("#activityRows");
+    const runMessage = document.querySelector("#runMessage");
+    const runDaily = document.querySelector("#runDaily");
+    const runHourly = document.querySelector("#runHourly");
+    let adminUser;
+
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user || (user.email || "").toLowerCase() !== ADMIN_EMAIL) {
+      window.location.replace("/StockScanner/index.html");
+    } else {
+      adminUser = user;
+      await Promise.all([loadRequests(), loadActivity()]);
+    }
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const email = permissionEmail.value.trim().toLowerCase();
+      const submit = form.querySelector("button");
+      submit.disabled = true;
+      const { error } = await supabase
+        .from("signup_allowlist")
+        .insert({ email, permitted_by: adminUser.id });
+      submit.disabled = false;
+      if (error) {
+        message.textContent = error.code === "23505"
+          ? `${email} already has permission.`
+          : error.message;
+        return;
+      }
+      permissionEmail.value = "";
+      message.textContent = `${email} may now create an account.`;
+      await loadRequests();
+    });
+
+    async function triggerWorkflow(kind, button) {
+      button.disabled = true;
+      runMessage.textContent = kind === "daily"
+        ? "Requesting a full daily scanner run…"
+        : "Requesting an hourly price update…";
+      const { data, error } = await supabase.functions.invoke("trigger-scanner", {
+        body: { kind },
+      });
+      button.disabled = false;
+      if (error) {
+        let detail = error.message;
+        try {
+          const response = await error.context?.json();
+          if (response?.error) detail = response.error;
+        } catch {
+          // Retain the client error when the response has no JSON body.
+        }
+        runMessage.textContent = detail;
+        return;
+      }
+      runMessage.textContent = data?.message || "The workflow request was accepted.";
+    }
+
+    runDaily.addEventListener("click", () => triggerWorkflow("daily", runDaily));
+    runHourly.addEventListener("click", () => triggerWorkflow("hourly", runHourly));
+
+    async function loadRequests() {
+      const { data, error } = await supabase
+        .from("signup_allowlist")
+        .select("email,permitted_at")
+        .order("permitted_at", { ascending: true });
+      if (error) {
+        message.textContent = error.message;
+        return;
+      }
+      body.replaceChildren(...data.map(requestRow));
+      if (!data.length) message.textContent = "No user accounts found.";
+    }
+
+    async function loadActivity() {
+      const [accessResult, eventsResult, presenceResult] = await Promise.all([
+        supabase.from("user_access").select("user_id,email,status"),
+        supabase.from("user_activity_events").select("user_id,event_type,occurred_at"),
+        supabase.from("user_presence").select("user_id,last_seen_at,signed_out_at,last_page"),
+      ]);
+      const error = accessResult.error || eventsResult.error || presenceResult.error;
+      if (error) {
+        message.textContent = error.message;
+        return;
+      }
+
+      const eventsByUser = new Map();
+      for (const event of eventsResult.data) {
+        const summary = eventsByUser.get(event.user_id) || { logins: 0, hits: 0, lastLogin: null };
+        if (event.event_type === "login") {
+          summary.logins += 1;
+          if (!summary.lastLogin || event.occurred_at > summary.lastLogin) summary.lastLogin = event.occurred_at;
+        }
+        if (event.event_type === "page_view") summary.hits += 1;
+        eventsByUser.set(event.user_id, summary);
+      }
+      const presenceByUser = new Map(presenceResult.data.map((row) => [row.user_id, row]));
+      const activeCutoff = Date.now() - 10 * 60 * 1000;
+      const activeCount = presenceResult.data.filter((row) => {
+        const lastSeen = new Date(row.last_seen_at).getTime();
+        const signedOut = row.signed_out_at ? new Date(row.signed_out_at).getTime() : 0;
+        return lastSeen >= activeCutoff && signedOut < lastSeen;
+      }).length;
+
+      document.querySelector("#registeredCount").textContent = accessResult.data.length;
+      document.querySelector("#approvedCount").textContent = accessResult.data.filter((row) => row.status === "approved").length;
+      document.querySelector("#activeCount").textContent = activeCount;
+      document.querySelector("#loginCount").textContent = eventsResult.data.filter((row) => row.event_type === "login").length;
+      document.querySelector("#hitCount").textContent = eventsResult.data.filter((row) => row.event_type === "page_view").length;
+      activityRows.replaceChildren(...accessResult.data.map((access) => {
+        const events = eventsByUser.get(access.user_id) || { logins: 0, hits: 0, lastLogin: null };
+        const presence = presenceByUser.get(access.user_id);
+        const row = document.createElement("tr");
+        for (const value of [
+          access.email,
+          access.status,
+          events.logins,
+          events.hits,
+          formatTime(events.lastLogin),
+          formatTime(presence?.last_seen_at),
+          presence?.last_page || "—",
+        ]) {
+          const cell = document.createElement("td");
+          cell.textContent = value;
+          row.append(cell);
+        }
+        return row;
+      }));
+    }
+
+    function formatTime(value) {
+      return value ? formatDateTime(value) : "—";
+    }
+
+    function requestRow(request) {
+      const row = document.createElement("tr");
+      const email = document.createElement("td");
+      const requested = document.createElement("td");
+      const action = document.createElement("td");
+      email.textContent = request.email;
+      requested.textContent = formatDateTime(request.permitted_at);
+      const revoke = document.createElement("button");
+      revoke.type = "button";
+      revoke.textContent = "Revoke";
+      revoke.addEventListener("click", async () => {
+        revoke.disabled = true;
+        const { error } = await supabase
+          .from("signup_allowlist")
+          .delete()
+          .eq("email", request.email);
+        if (error) {
+          message.textContent = error.message;
+          revoke.disabled = false;
+          return;
+        }
+        message.textContent = `${request.email} permission revoked.`;
+        await loadRequests();
+      });
+      action.append(revoke);
+      row.append(email, requested, action);
+      return row;
+    }
+  </script>
+</body>
+</html>

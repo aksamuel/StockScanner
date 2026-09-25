@@ -1,0 +1,701 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>StockScanner Dashboard - 27 August 2026, 06:49 PM EDT</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #0f1923;
+    color: #e0e0e0;
+    line-height: 1.6;
+}
+.container { max-width: 1400px; margin: 0 auto; padding: 20px; }
+header {
+    background: linear-gradient(135deg, #1a2a3a 0%, #0f1923 100%);
+    border-bottom: 2px solid #1f4e78;
+    padding: 24px 0;
+    margin-bottom: 24px;
+}
+header h1 { color: #4fc3f7; font-size: 1.8rem; text-align: center; }
+header .subtitle { color: #90a4ae; text-align: center; margin-top: 4px; font-size: 0.9rem; }
+.dashboard-nav { margin-top: 14px; text-align: center; }
+.dashboard-nav a,
+.dashboard-nav .nav-current {
+    display: inline-block;
+    padding: 7px 14px;
+    color: #4fc3f7;
+    border: 1px solid #1f4e78;
+    border-radius: 6px;
+    text-decoration: none;
+}
+.dashboard-nav .nav-current {
+    color: #607d8b;
+    background: #162534;
+    border-color: #263d50;
+    cursor: not-allowed;
+    opacity: 0.65;
+}
+.cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 16px;
+    margin-bottom: 32px;
+}
+.card {
+    background: #1a2a3a;
+    border: 1px solid #263d50;
+    border-radius: 8px;
+    padding: 16px;
+    text-align: center;
+}
+.card .value { font-size: 1.8rem; font-weight: 700; color: #4fc3f7; }
+.card .label { font-size: 0.8rem; color: #90a4ae; margin-top: 4px; text-transform: uppercase; }
+.section { margin-bottom: 32px; }
+.section h2 {
+    color: #4fc3f7;
+    font-size: 1.2rem;
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #263d50;
+}
+.chart-container {
+    background: #1a2a3a;
+    border: 1px solid #263d50;
+    border-radius: 8px;
+    padding: 20px;
+    max-width: 600px;
+    margin: 0 auto 32px;
+}
+.refresh-time {
+    color: #90a4ae;
+    font-size: 0.8rem;
+    margin-bottom: 10px;
+    text-align: right;
+}
+.price-notice {
+    color: #fdd835;
+    font-size: 0.85rem;
+    margin-bottom: 12px;
+    text-align: right;
+}
+.chart-explanation { color: #b0bec5; font-size: 0.85rem; margin: 4px 0; }
+.chart-unavailable {
+    color: #ffcc80;
+    margin-top: 20px;
+    padding: 18px;
+    text-align: center;
+    border: 1px solid #6d4c2f;
+    border-radius: 6px;
+}
+.top20-drilldown { margin-top: 20px; }
+.top20-drilldown summary {
+    color: #4fc3f7;
+    cursor: pointer;
+    font-weight: 600;
+    padding: 10px 0;
+}
+.top20-drilldown .table-wrapper { margin-top: 10px; }
+.price-gain { color: #66bb6a; font-weight: 600; }
+.price-loss { color: #ef5350; font-weight: 600; }
+.below-support { color: #66bb6a; font-weight: 600; }
+.entry-opportunity { background: #1b5e20; color: #fff; font-weight: 600; }
+.table-wrapper {
+    overflow-x: auto;
+    border-radius: 8px;
+    border: 1px solid #263d50;
+}
+table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+}
+th {
+    background: #1f4e78;
+    color: #172217;
+    padding: 10px 12px;
+    text-align: left;
+    white-space: nowrap;
+    cursor: pointer;
+    user-select: none;
+    position: sticky;
+    top: 0;
+}
+th:hover { filter: brightness(0.92); }
+th::after { content: ' ⇅'; opacity: 0.4; font-size: 0.7rem; }
+th.no-sort::after { content: none; }
+td {
+    padding: 8px 12px;
+    border-bottom: 1px solid #1a2a3a;
+    white-space: nowrap;
+}
+tr:nth-child(even) { background: #162330; }
+tr:hover { background: #1e3348; }
+.rec-strong-buy { background: #1b5e20 !important; color: #c8e6c9; font-weight: 600; }
+.rec-buy { background: #2e7d32 !important; color: #c8e6c9; }
+.rec-hold { background: #f9a825 !important; color: #1a1a1a; }
+.rec-watch { background: #e65100 !important; color: #fff3e0; }
+.rec-avoid { background: #b71c1c !important; color: #ffcdd2; }
+.score-excellent { background: #1b5e20 !important; color: #c8e6c9; font-weight: 700; }
+.score-good { background: #2e7d32 !important; color: #c8e6c9; }
+.score-fair { background: #f9a825 !important; color: #1a1a1a; }
+.score-poor { background: #b71c1c !important; color: #ffcdd2; }
+.price-rsi-overbought { background: #4fb52a !important; color: #102000; font-weight: 600; }
+.price-rsi-upper { background: #d8edcc !important; color: #172217; }
+.price-rsi-neutral { background: #bfe7f5 !important; color: #10242d; }
+.price-rsi-lower { background: #f8ddcc !important; color: #352015; }
+.price-rsi-oversold { background: #f47732 !important; color: #2b1105; font-weight: 600; }
+.symbol-rs-strong { background: #4fb52a !important; color: #102000; font-weight: 600; }
+.symbol-rs-upper { background: #d8edcc !important; color: #172217; }
+.symbol-rs-neutral { background: #bfe7f5 !important; color: #10242d; }
+.symbol-rs-lower { background: #f8ddcc !important; color: #352015; }
+.symbol-rs-weak { background: #f47732 !important; color: #2b1105; font-weight: 600; }
+.symbol-support-above-five { background: #f47732 !important; color: #2b1105; font-weight: 600; }
+.symbol-support-above-zero { background: #f8ddcc !important; color: #352015; }
+.symbol-support-zero { background: #bfe7f5 !important; color: #10242d; }
+.symbol-support-below-zero { background: #d8edcc !important; color: #172217; }
+.symbol-support-below-five { background: #4fb52a !important; color: #102000; font-weight: 600; }
+.symbol-name { display: block; font-weight: 600; }
+.symbol-price { display: block; font-size: 0.78em; font-weight: 400; margin-top: -2px; }
+.target-arrow-up { color: #66bb6a; font-size: 1.1em; font-weight: 700; }
+.target-arrow-down { color: #ef5350; font-size: 1.1em; font-weight: 700; }
+.tabs {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 16px;
+}
+.tab {
+    padding: 8px 20px;
+    background: #1a2a3a;
+    border: 1px solid #263d50;
+    border-bottom: none;
+    border-radius: 6px 6px 0 0;
+    cursor: pointer;
+    color: #90a4ae;
+    font-size: 0.85rem;
+}
+.tab.active { background: #1f4e78; color: #172217; }
+.tab-content { display: none; }
+.tab-content.active { display: block; }
+.filter-bar {
+    margin-bottom: 12px;
+    display: flex;
+    gap: 12px;
+    align-items: center;
+}
+.filter-bar input {
+    background: #1a2a3a;
+    border: 1px solid #263d50;
+    border-radius: 4px;
+    padding: 6px 12px;
+    color: #e0e0e0;
+    font-size: 0.85rem;
+    width: 250px;
+}
+.filter-bar input::placeholder { color: #607d8b; }
+.filter-bar { justify-content: space-between; flex-wrap: wrap; }
+#addExceptions {
+    padding: 7px 14px;
+    color: #fff;
+    background: #1b5e20;
+    border: 1px solid #66bb6a;
+    border-radius: 5px;
+    cursor: pointer;
+}
+#addExceptions:hover:not(:disabled) { background: #2e7d32; }
+#addExceptions:disabled { cursor: not-allowed; opacity: 0.45; }
+#requestYahooRefresh {
+    padding: 7px 14px;
+    color: #172217;
+    background: #c6efce;
+    border: 1px solid #70ad47;
+    border-radius: 5px;
+    cursor: pointer;
+}
+#requestYahooRefresh:hover:not(:disabled) { filter: brightness(0.92); }
+#requestYahooRefresh:disabled { cursor: wait; opacity: 0.65; }
+.target-sort-controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+#targetSortStatus { color: #90a4ae; font-size: 0.8rem; }
+#targetSortStatus.refresh-error { color: #ef9a9a; }
+#targetSortStatus.refresh-success { color: #a5d6a7; }
+.select-column { width: 48px; text-align: center; }
+.select-column input { width: 18px; height: 18px; cursor: pointer; accent-color: #4caf50; }
+footer {
+    text-align: center;
+    color: #607d8b;
+    font-size: 0.75rem;
+    margin-top: 40px;
+    padding: 16px;
+    border-top: 1px solid #263d50;
+}
+</style>
+</head>
+<body>
+<header>
+    <div class="container">
+        <h1>StockScanner KPI Dashboard</h1>
+        <div class="dashboard-nav">
+            <span class="nav-current" aria-current="page">KPI Dashboard</span>
+            <a href="technical.html">Technical Analysis</a>
+            <a href="analysts.html">Analysts Rating</a>
+            <a href="bought-selection.html">Bought Selection</a>
+            <a href="exceptions.html">Exception List</a>
+        </div>
+    </div>
+</header>
+
+<div class="container">
+    
+    <div class="cards">
+        <div class="card"><div class="value">337</div><div class="label">Stocks Scanned</div></div>
+        <div class="card"><div class="value" style="color:#4caf50">90</div><div class="label">Strong Buy</div></div>
+        <div class="card"><div class="value" style="color:#66bb6a">41</div><div class="label">Buy</div></div>
+        <div class="card"><div class="value" style="color:#fdd835">44</div><div class="label">Accumulate</div></div>
+        <div class="card"><div class="value" style="color:#ffa726">45</div><div class="label">Watch</div></div>
+        <div class="card"><div class="value" style="color:#ef5350">62</div><div class="label">Avoid</div></div>
+        <div class="card"><div class="value">66.38</div><div class="label">Avg Score</div></div>
+        <div class="card"><div class="value">100</div><div class="label">Best Score</div></div>
+    </div>
+
+    <div class="section">
+        <h2>One-Year Performance: S&amp;P 500 vs Equal-Weight Top 20</h2>
+        <div class="chart-container">
+            <div class="refresh-time">Scan completed: 27 August 2026, 06:49 PM EDT</div>
+            <div class="refresh-time" id="yahooPriceTime">
+                Latest Yahoo price: Loading snapshot time...
+            </div>
+            <div class="refresh-time" id="backendRefreshTime">
+                Backend price refresh: Loading snapshot time...
+            </div>
+            <div class="price-notice">Manual Yahoo refreshes run securely on GitHub Actions and redeploy these pages.</div>
+            <p class="chart-explanation">Completed daily closes, normalized to 100 on the first common date. Values are indexed performance, not raw dollars.</p>
+            <p class="chart-explanation">Equal-weight index uses 20 of 20 selected Top 20 symbols with usable aligned history.</p>
+            <canvas id="performanceChart" height="200" aria-label="One-year indexed performance comparison"></canvas>
+            <details class="top20-drilldown"><summary>Top 20 Qualifying Stocks: Suggested Entry vs Current Price</summary><p class="chart-explanation">Entry is the scanner suggestion, not an actual purchase price. Symbols at or above Resistance Low are excluded.</p><div class="table-wrapper"><table id="top20DetailsTable"><thead><tr><th>Symbol</th><th>Suggested Entry</th><th>Support Low</th><th>Resistance Low</th><th>Difference</th><th>Change %</th></tr></thead><tbody><tr data-symbol="ABBV" data-entry="253.78" data-support-low="249.78" data-resistance-low="258.37"><td>ABBV <span class="detail-current">($257.96)</span></td><td class="detail-entry">$253.78</td><td class="detail-support-low">$249.78</td><td class="detail-resistance-low">$258.37</td><td class="detail-difference price-gain">+4.18</td><td class="detail-percent price-gain">+1.65%</td></tr><tr data-symbol="ECL" data-entry="282.26" data-support-low="279.85" data-resistance-low="285.92"><td>ECL <span class="detail-current">($285.90)</span></td><td class="detail-entry">$282.26</td><td class="detail-support-low">$279.85</td><td class="detail-resistance-low">$285.92</td><td class="detail-difference price-gain">+3.64</td><td class="detail-percent price-gain">+1.29%</td></tr><tr data-symbol="XYZ" data-entry="81.25" data-support-low="79.73" data-resistance-low="85.55"><td>XYZ <span class="detail-current">($85.50)</span></td><td class="detail-entry">$81.25</td><td class="detail-support-low">$79.73</td><td class="detail-resistance-low">$85.55</td><td class="detail-difference price-gain">+4.25</td><td class="detail-percent price-gain">+5.23%</td></tr><tr data-symbol="KO" data-entry="88.34" data-support-low="87.66" data-resistance-low="90.23"><td>KO <span class="detail-current">($89.38)</span></td><td class="detail-entry">$88.34</td><td class="detail-support-low">$87.66</td><td class="detail-resistance-low">$90.23</td><td class="detail-difference price-gain">+1.04</td><td class="detail-percent price-gain">+1.18%</td></tr><tr data-symbol="UBS" data-entry="53.5" data-support-low="53.87" data-resistance-low="54.83"><td>UBS <span class="detail-current">($54.50)</span></td><td class="detail-entry">$53.50</td><td class="detail-support-low">$53.87</td><td class="detail-resistance-low">$54.83</td><td class="detail-difference price-gain">+1.00</td><td class="detail-percent price-gain">+1.87%</td></tr><tr data-symbol="VEEV" data-entry="233.25" data-support-low="229.3" data-resistance-low=""><td>VEEV <span class="detail-current">($283.02)</span></td><td class="detail-entry">$233.25</td><td class="detail-support-low">$229.30</td><td class="detail-resistance-low">Unavailable</td><td class="detail-difference price-gain">+49.77</td><td class="detail-percent price-gain">+21.34%</td></tr><tr data-symbol="MRK" data-entry="137.59" data-support-low="134.16" data-resistance-low="152.14"><td>MRK <span class="detail-current">($149.87)</span></td><td class="detail-entry">$137.59</td><td class="detail-support-low">$134.16</td><td class="detail-resistance-low">$152.14</td><td class="detail-difference price-gain">+12.28</td><td class="detail-percent price-gain">+8.93%</td></tr><tr data-symbol="ET" data-entry="20.7" data-support-low="20.94" data-resistance-low="21.46"><td>ET <span class="detail-current">($21.36)</span></td><td class="detail-entry">$20.70</td><td class="detail-support-low">$20.94</td><td class="detail-resistance-low">$21.46</td><td class="detail-difference price-gain">+0.66</td><td class="detail-percent price-gain">+3.19%</td></tr><tr data-symbol="BHP" data-entry="90.32" data-support-low="92.66" data-resistance-low="96.59"><td>BHP <span class="detail-current">($96.08)</span></td><td class="detail-entry">$90.32</td><td class="detail-support-low">$92.66</td><td class="detail-resistance-low">$96.59</td><td class="detail-difference price-gain">+5.76</td><td class="detail-percent price-gain">+6.38%</td></tr><tr data-symbol="MFG" data-entry="10.51" data-support-low="10.17" data-resistance-low="10.7"><td>MFG <span class="detail-current">($10.62)</span></td><td class="detail-entry">$10.51</td><td class="detail-support-low">$10.17</td><td class="detail-resistance-low">$10.70</td><td class="detail-difference price-gain">+0.11</td><td class="detail-percent price-gain">+1.05%</td></tr><tr data-symbol="NWG" data-entry="18.77" data-support-low="18.59" data-resistance-low="18.93"><td>NWG <span class="detail-current">($18.82)</span></td><td class="detail-entry">$18.77</td><td class="detail-support-low">$18.59</td><td class="detail-resistance-low">$18.93</td><td class="detail-difference price-gain">+0.05</td><td class="detail-percent price-gain">+0.27%</td></tr><tr data-symbol="SCHW" data-entry="102.47" data-support-low="105.4" data-resistance-low="108.29"><td>SCHW <span class="detail-current">($108.24)</span></td><td class="detail-entry">$102.47</td><td class="detail-support-low">$105.40</td><td class="detail-resistance-low">$108.29</td><td class="detail-difference price-gain">+5.77</td><td class="detail-percent price-gain">+5.63%</td></tr><tr data-symbol="RJF" data-entry="169.21" data-support-low="173.12" data-resistance-low="176.79"><td>RJF <span class="detail-current">($176.11)</span></td><td class="detail-entry">$169.21</td><td class="detail-support-low">$173.12</td><td class="detail-resistance-low">$176.79</td><td class="detail-difference price-gain">+6.90</td><td class="detail-percent price-gain">+4.08%</td></tr><tr data-symbol="WSM" data-entry="232.61" data-support-low="229.78" data-resistance-low="238.07"><td>WSM <span class="detail-current">($237.44)</span></td><td class="detail-entry">$232.61</td><td class="detail-support-low">$229.78</td><td class="detail-resistance-low">$238.07</td><td class="detail-difference price-gain">+4.83</td><td class="detail-percent price-gain">+2.08%</td></tr><tr data-symbol="V" data-entry="367.64" data-support-low="369.61" data-resistance-low="380.29"><td>V <span class="detail-current">($379.33)</span></td><td class="detail-entry">$367.64</td><td class="detail-support-low">$369.61</td><td class="detail-resistance-low">$380.29</td><td class="detail-difference price-gain">+11.69</td><td class="detail-percent price-gain">+3.18%</td></tr><tr data-symbol="DB" data-entry="38.07" data-support-low="38.77" data-resistance-low=""><td>DB <span class="detail-current">($40.07)</span></td><td class="detail-entry">$38.07</td><td class="detail-support-low">$38.77</td><td class="detail-resistance-low">Unavailable</td><td class="detail-difference price-gain">+2.00</td><td class="detail-percent price-gain">+5.25%</td></tr><tr data-symbol="MA" data-entry="574.25" data-support-low="578.46" data-resistance-low=""><td>MA <span class="detail-current">($590.16)</span></td><td class="detail-entry">$574.25</td><td class="detail-support-low">$578.46</td><td class="detail-resistance-low">Unavailable</td><td class="detail-difference price-gain">+15.91</td><td class="detail-percent price-gain">+2.77%</td></tr><tr data-symbol="VTR" data-entry="91.79" data-support-low="90.78" data-resistance-low="92.26"><td>VTR <span class="detail-current">($92.12)</span></td><td class="detail-entry">$91.79</td><td class="detail-support-low">$90.78</td><td class="detail-resistance-low">$92.26</td><td class="detail-difference price-gain">+0.33</td><td class="detail-percent price-gain">+0.36%</td></tr><tr data-symbol="NSC" data-entry="340.7" data-support-low="337.96" data-resistance-low="354.08"><td>NSC <span class="detail-current">($349.24)</span></td><td class="detail-entry">$340.70</td><td class="detail-support-low">$337.96</td><td class="detail-resistance-low">$354.08</td><td class="detail-difference price-gain">+8.54</td><td class="detail-percent price-gain">+2.51%</td></tr><tr data-symbol="TAK" data-entry="17.56" data-support-low="17.84" data-resistance-low="18.1"><td>TAK <span class="detail-current">($18.03)</span></td><td class="detail-entry">$17.56</td><td class="detail-support-low">$17.84</td><td class="detail-resistance-low">$18.10</td><td class="detail-difference price-gain">+0.47</td><td class="detail-percent price-gain">+2.68%</td></tr></tbody></table></div></details>
+        </div>
+    </div>
+
+    
+</div>
+
+<footer>
+    Generated by StockScanner
+    &nbsp;|&nbsp; <a href="https://github.com/aksamuel/StockScanner#readme" style="color: #4fc3f7;">Help &amp; FAQ</a>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<script>
+// Chart
+document.addEventListener('DOMContentLoaded', function() {
+    loadDashboardSnapshotTimes();
+    loadRefreshButtonSnapshotTime();
+    
+    const chartData = {"labels": ["2025-08-28", "2025-08-29", "2025-09-02", "2025-09-03", "2025-09-04", "2025-09-05", "2025-09-08", "2025-09-09", "2025-09-10", "2025-09-11", "2025-09-12", "2025-09-15", "2025-09-16", "2025-09-17", "2025-09-18", "2025-09-19", "2025-09-22", "2025-09-23", "2025-09-24", "2025-09-25", "2025-09-26", "2025-09-29", "2025-09-30", "2025-10-01", "2025-10-02", "2025-10-03", "2025-10-06", "2025-10-07", "2025-10-08", "2025-10-09", "2025-10-10", "2025-10-13", "2025-10-14", "2025-10-15", "2025-10-16", "2025-10-17", "2025-10-20", "2025-10-21", "2025-10-22", "2025-10-23", "2025-10-24", "2025-10-27", "2025-10-28", "2025-10-29", "2025-10-30", "2025-10-31", "2025-11-03", "2025-11-04", "2025-11-05", "2025-11-06", "2025-11-07", "2025-11-10", "2025-11-11", "2025-11-12", "2025-11-13", "2025-11-14", "2025-11-17", "2025-11-18", "2025-11-19", "2025-11-20", "2025-11-21", "2025-11-24", "2025-11-25", "2025-11-26", "2025-11-28", "2025-12-01", "2025-12-02", "2025-12-03", "2025-12-04", "2025-12-05", "2025-12-08", "2025-12-09", "2025-12-10", "2025-12-11", "2025-12-12", "2025-12-15", "2025-12-16", "2025-12-17", "2025-12-18", "2025-12-19", "2025-12-22", "2025-12-23", "2025-12-24", "2025-12-26", "2025-12-29", "2025-12-30", "2025-12-31", "2026-01-02", "2026-01-05", "2026-01-06", "2026-01-07", "2026-01-08", "2026-01-09", "2026-01-12", "2026-01-13", "2026-01-14", "2026-01-15", "2026-01-16", "2026-01-20", "2026-01-21", "2026-01-22", "2026-01-23", "2026-01-26", "2026-01-27", "2026-01-28", "2026-01-29", "2026-01-30", "2026-02-02", "2026-02-03", "2026-02-04", "2026-02-05", "2026-02-06", "2026-02-09", "2026-02-10", "2026-02-11", "2026-02-12", "2026-02-13", "2026-02-17", "2026-02-18", "2026-02-19", "2026-02-20", "2026-02-23", "2026-02-24", "2026-02-25", "2026-02-26", "2026-02-27", "2026-03-02", "2026-03-03", "2026-03-04", "2026-03-05", "2026-03-06", "2026-03-09", "2026-03-10", "2026-03-11", "2026-03-12", "2026-03-13", "2026-03-16", "2026-03-17", "2026-03-18", "2026-03-19", "2026-03-20", "2026-03-23", "2026-03-24", "2026-03-25", "2026-03-26", "2026-03-27", "2026-03-30", "2026-03-31", "2026-04-01", "2026-04-02", "2026-04-06", "2026-04-07", "2026-04-08", "2026-04-09", "2026-04-10", "2026-04-13", "2026-04-14", "2026-04-15", "2026-04-16", "2026-04-17", "2026-04-20", "2026-04-21", "2026-04-22", "2026-04-23", "2026-04-24", "2026-04-27", "2026-04-28", "2026-04-29", "2026-04-30", "2026-05-01", "2026-05-04", "2026-05-05", "2026-05-06", "2026-05-07", "2026-05-08", "2026-05-11", "2026-05-12", "2026-05-13", "2026-05-14", "2026-05-15", "2026-05-18", "2026-05-19", "2026-05-20", "2026-05-21", "2026-05-22", "2026-05-26", "2026-05-27", "2026-05-28", "2026-05-29", "2026-06-01", "2026-06-02", "2026-06-03", "2026-06-04", "2026-06-05", "2026-06-08", "2026-06-09", "2026-06-10", "2026-06-11", "2026-06-12", "2026-06-15", "2026-06-16", "2026-06-17", "2026-06-18", "2026-06-22", "2026-06-23", "2026-06-24", "2026-06-25", "2026-06-26", "2026-06-29", "2026-06-30", "2026-07-01", "2026-07-02", "2026-07-06", "2026-07-07", "2026-07-08", "2026-07-09", "2026-07-10", "2026-07-13", "2026-07-14", "2026-07-15", "2026-07-16", "2026-07-17", "2026-07-20", "2026-07-21", "2026-07-22", "2026-07-23", "2026-07-24", "2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21", "2026-08-24", "2026-08-25", "2026-08-26", "2026-08-27"], "sp500": [100.0, 99.3602, 98.6724, 99.1756, 100.0034, 99.6869, 99.8968, 100.1653, 100.4642, 101.3167, 101.2678, 101.7444, 101.6134, 101.5148, 102.001, 102.4993, 102.9513, 102.3849, 102.0934, 101.582, 102.1815, 102.4508, 102.8699, 103.2197, 103.2835, 103.2903, 103.6669, 103.2718, 103.8737, 103.5874, 100.779, 102.351, 102.1909, 102.6023, 101.9565, 102.4939, 103.5877, 103.5911, 103.0382, 103.6387, 104.4576, 105.7414, 105.9834, 105.9788, 104.9291, 105.2037, 105.3848, 104.1479, 104.5284, 103.36, 103.4904, 105.0842, 105.3023, 105.3686, 103.624, 103.5721, 102.6231, 101.7758, 102.1578, 100.5675, 101.5554, 103.1262, 104.0607, 104.7794, 105.3405, 104.7797, 105.0372, 105.3502, 105.464, 105.6682, 105.3008, 105.2085, 105.9186, 106.1389, 105.007, 104.8394, 104.5895, 103.377, 104.1973, 105.1161, 105.7927, 106.2741, 106.6164, 106.584, 106.2118, 106.0657, 105.2853, 105.4847, 106.155, 106.8128, 106.4454, 106.4535, 107.1429, 107.3119, 107.1038, 106.5326, 106.8074, 106.7388, 104.5372, 105.7485, 106.3288, 106.3636, 106.896, 107.3324, 107.3236, 107.1849, 106.7238, 107.2991, 106.3974, 105.8577, 104.5608, 106.6203, 107.1204, 106.7665, 106.7613, 105.0893, 105.1418, 105.2502, 105.836, 105.5373, 106.2697, 105.1661, 105.9708, 106.833, 106.2597, 105.7986, 105.8408, 104.8412, 105.6544, 105.0578, 103.663, 104.5238, 104.3006, 104.2133, 102.6263, 102.0045, 103.0379, 103.2949, 101.8893, 101.6092, 100.0711, 101.2172, 100.8384, 101.3848, 99.6201, 97.9543, 97.5678, 100.41, 101.1298, 101.2432, 101.6914, 101.7686, 104.3211, 104.9647, 104.8452, 105.9119, 107.1598, 108.0145, 108.2964, 109.6003, 109.3401, 108.646, 109.7824, 109.3287, 110.2005, 110.3363, 109.7963, 109.7524, 110.8761, 111.2008, 110.7491, 111.6484, 113.2771, 112.8463, 113.7971, 114.0111, 113.8284, 114.4942, 115.3707, 113.9443, 113.8605, 113.1001, 114.3207, 114.5168, 114.9436, 115.6457, 115.6647, 116.3303, 116.583, 116.889, 117.04, 116.1772, 116.6483, 113.5635, 113.9017, 113.6083, 111.7679, 113.7259, 114.2974, 116.1866, 115.5262, 114.1227, 115.3605, 114.9331, 113.2824, 113.171, 113.1598, 113.1064, 114.4354, 115.3418, 115.0937, 115.0938, 115.9273, 115.4108, 115.0857, 116.0228, 116.5111, 115.5875, 116.022, 116.4651, 115.871, 114.7009, 114.4792, 115.4931, 115.3356, 113.9412, 113.9978, 114.0163, 114.2562, 112.524, 114.3923, 115.1935, 116.8973, 118.9893, 118.7899, 118.5808, 119.3142, 118.8614, 119.1736, 119.9501, 119.7467, 119.1207, 118.3009, 118.5504, 117.5227, 118.0335, 117.7026, 118.0782, 118.0539, 118.9043], "top20": [100.0, 100.2894, 99.6669, 99.3708, 99.5153, 99.5832, 99.6305, 100.1455, 100.7902, 102.1642, 101.6256, 101.2243, 100.8856, 101.0284, 100.6717, 100.4225, 100.5442, 101.3983, 102.131, 101.5791, 102.628, 103.3825, 103.3597, 104.2804, 104.0815, 104.5994, 104.7477, 104.6295, 105.0937, 103.996, 101.4942, 102.5406, 102.9273, 103.1483, 102.6186, 102.6477, 103.9304, 103.5347, 103.3759, 103.9576, 104.0564, 104.9357, 104.604, 103.9466, 103.8315, 103.854, 103.765, 103.1636, 105.4097, 105.7371, 106.058, 106.8522, 108.5176, 108.7682, 107.8193, 107.6734, 106.5235, 106.2531, 106.3633, 105.5355, 107.0731, 107.4734, 108.7197, 109.5843, 110.3385, 109.8368, 109.1474, 110.4418, 111.0837, 110.7061, 109.9375, 109.801, 110.9388, 111.31, 110.9586, 111.1799, 110.0241, 110.8677, 110.7468, 110.8901, 111.9759, 112.4288, 112.6955, 112.776, 112.6316, 112.7805, 112.1932, 113.1175, 113.8829, 114.998, 114.2272, 115.4219, 115.7569, 116.5475, 116.9878, 118.7187, 118.4667, 117.9813, 117.1616, 119.089, 118.8321, 119.9328, 120.6876, 122.3632, 122.7841, 123.9578, 122.6255, 123.4444, 126.3388, 125.7464, 124.8539, 127.1007, 128.1406, 127.9841, 129.8777, 127.9865, 128.9019, 128.5855, 129.8095, 130.6138, 131.46, 131.3158, 132.1814, 132.1243, 132.9732, 134.2632, 134.7674, 132.0296, 132.1184, 129.5199, 128.2969, 128.982, 129.0146, 129.1726, 126.7068, 125.3441, 126.865, 127.5626, 125.6865, 125.857, 123.4779, 125.5288, 126.6593, 127.5779, 127.3177, 126.9418, 126.654, 129.0933, 129.0582, 129.3968, 129.5554, 128.9703, 131.7789, 132.2723, 132.3439, 132.627, 132.4245, 131.7062, 132.2382, 132.9752, 132.8365, 131.6364, 132.1575, 133.1402, 132.3933, 132.1952, 132.3787, 133.5925, 136.3252, 135.0732, 133.7908, 134.462, 134.746, 132.9693, 133.7193, 134.398, 135.4968, 135.1283, 135.2101, 133.2234, 133.5136, 133.4189, 134.1289, 134.1411, 134.4664, 134.8894, 134.6321, 134.7136, 134.0932, 134.2946, 135.2861, 134.3518, 135.4413, 133.0182, 132.3173, 133.5837, 133.0166, 135.2249, 136.7918, 135.504, 135.4507, 133.5191, 132.2932, 133.2486, 132.7123, 132.5123, 134.1814, 134.5573, 134.6676, 134.1494, 133.2129, 135.4469, 135.8596, 136.3283, 135.2262, 135.5569, 135.9888, 136.4712, 136.987, 136.2274, 137.1251, 136.4309, 135.3572, 136.8374, 138.0475, 137.7316, 138.7868, 137.8425, 138.3607, 138.689, 139.6239, 138.8487, 138.4236, 139.8897, 139.9065, 139.9248, 140.3341, 141.3089, 141.6961, 141.8419, 142.5715, 142.8499, 143.706, 145.2227, 146.1055, 148.3638, 148.6393, 149.4536, 149.0449, 148.3672], "constituents": ["DE", "WELL", "FDX", "MCO", "PCG", "TRGP", "ABBV", "BNS", "ECL", "QSR", "JNJ", "XYZ", "PBR-A", "DVN", "KO", "LNG", "SCCO", "SLB", "TECK", "TEVA"], "selected_count": 20};
+    const ctx = document.getElementById('performanceChart');
+    if (ctx && chartData && typeof Chart !== 'undefined') {
+        new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: chartData.labels,
+                datasets: [
+                    {
+                        label: 'S&P 500',
+                        data: chartData.sp500,
+                        borderColor: '#4fc3f7',
+                        backgroundColor: 'transparent',
+                        borderWidth: 2,
+                        pointRadius: 0,
+                        tension: 0.1
+                    },
+                    {
+                        label: 'Equal-weight Top 20',
+                        data: chartData.top20,
+                        borderColor: '#66bb6a',
+                        backgroundColor: 'transparent',
+                        borderWidth: 2,
+                        pointRadius: 0,
+                        tension: 0.1
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: { labels: { color: '#e0e0e0' } },
+                    tooltip: {
+                        callbacks: {
+                            label: context => `${context.dataset.label}: ${context.parsed.y.toFixed(2)}`
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        title: { display: true, text: 'Indexed to 100', color: '#b0bec5' },
+                        ticks: { color: '#90a4ae' },
+                        grid: { color: '#263d50' }
+                    },
+                    x: {
+                        ticks: { color: '#90a4ae', maxTicksLimit: 12 },
+                        grid: { display: false }
+                    }
+                }
+            }
+        });
+    }
+
+});
+
+// Tabs
+function switchTab(name, clickedTab) {
+    document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+    document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
+    document.getElementById('tab-' + name).classList.add('active');
+    clickedTab.classList.add('active');
+}
+
+// Filter
+function filterTable() {
+    const filter = document.getElementById('filterInput').value.toUpperCase();
+    const activeTab = document.querySelector('.tab-content.active');
+    const rows = activeTab.querySelectorAll('tbody tr');
+    rows.forEach(row => {
+        const text = row.textContent.toUpperCase();
+        row.style.display = text.includes(filter) ? '' : 'none';
+    });
+    renumberVisibleRanks(activeTab.querySelector('table'));
+}
+
+function columnIndex(table, label) {
+    return [...table.querySelectorAll('thead th')]
+        .findIndex(th => th.textContent.trim() === label);
+}
+
+function renumberVisibleRanks(table) {
+    if (!table) return;
+    const rankIndex = columnIndex(table, 'Rank');
+    if (rankIndex < 0) return;
+    let visibleRank = 0;
+    table.querySelectorAll('tbody tr').forEach(row => {
+        if (row.style.display !== 'none') {
+            visibleRank += 1;
+            row.children[rankIndex].textContent = visibleRank;
+        }
+    });
+}
+
+function restoreScannerOrder(table) {
+    const tbody = table.querySelector('tbody');
+    const rows = [...tbody.querySelectorAll('tr')];
+    rows.sort((left, right) => {
+        const leftRank = Number(left.dataset.scannerRank);
+        const rightRank = Number(right.dataset.scannerRank);
+        return (Number.isFinite(leftRank) ? leftRank : Number.MAX_SAFE_INTEGER)
+            - (Number.isFinite(rightRank) ? rightRank : Number.MAX_SAFE_INTEGER);
+    });
+    rows.forEach(row => tbody.appendChild(row));
+    table.querySelectorAll('th').forEach(header => delete header.dataset.sort);
+    renumberVisibleRanks(table);
+}
+
+function snapshotUrl() {
+    const marker = '/reports/';
+    const path = window.location.pathname;
+    const basePath = path.includes(marker)
+        ? path.slice(0, path.indexOf(marker) + 1)
+        : path.slice(0, path.lastIndexOf('/') + 1);
+    const url = new URL(`${basePath}prices.json`, window.location.origin);
+    url.searchParams.set('refresh', Date.now().toString());
+    return url;
+}
+
+async function loadDashboardSnapshotTimes() {
+    const yahooPriceTime = document.getElementById('yahooPriceTime');
+    const backendRefreshTime = document.getElementById('backendRefreshTime');
+    if (!yahooPriceTime || !backendRefreshTime) return;
+    try {
+        const response = await fetch(snapshotUrl(), { cache: 'no-store' });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const snapshot = await response.json();
+        if (typeof snapshot.generated_at_new_york !== 'string') {
+            throw new Error('snapshot schema is invalid');
+        }
+        yahooPriceTime.textContent = snapshot.price_timestamp_new_york
+            ? `Latest Yahoo price: ${snapshot.price_timestamp_new_york}`
+            : 'Latest Yahoo price: Time unavailable';
+        backendRefreshTime.textContent =
+            `Backend price refresh: ${snapshot.generated_at_new_york}`;
+        updateTop20Details(snapshot.prices);
+    } catch (error) {
+        yahooPriceTime.textContent = 'Latest Yahoo price: Unavailable';
+        backendRefreshTime.textContent =
+            `Backend price refresh: Unavailable (${error.message})`;
+    }
+}
+
+function updateTop20Details(prices) {
+    if (!prices || typeof prices !== 'object') return;
+    document.querySelectorAll('#top20DetailsTable tbody tr').forEach(row => {
+        const current = Number(prices[row.dataset.symbol]);
+        if (!Number.isFinite(current) || current <= 0) return;
+        const entry = Number(row.dataset.entry);
+        const supportLow = Number(row.dataset.supportLow);
+        const resistanceLow = Number(row.dataset.resistanceLow);
+        if (
+            row.dataset.resistanceLow !== ''
+            && Number.isFinite(resistanceLow)
+            && current >= resistanceLow
+        ) {
+            row.remove();
+            return;
+        }
+        const currentCell = row.querySelector('.detail-current');
+        const entryCell = row.querySelector('.detail-entry');
+        currentCell.textContent =
+            `($${current.toLocaleString('en-US', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+            })})`;
+        currentCell.classList.toggle(
+            'below-support',
+            row.dataset.supportLow !== ''
+                && Number.isFinite(supportLow)
+                && current < supportLow
+        );
+        entryCell.classList.toggle(
+            'entry-opportunity',
+            row.dataset.entry !== ''
+                && Number.isFinite(entry)
+                && entry > 0
+                && current < entry
+        );
+        if (!Number.isFinite(entry) || entry <= 0 || row.dataset.entry === '') return;
+        const difference = current - entry;
+        const changePercent = difference / entry * 100;
+        const changeClass = difference > 0
+            ? 'price-gain'
+            : difference < 0
+            ? 'price-loss'
+            : '';
+        const differenceCell = row.querySelector('.detail-difference');
+        const percentCell = row.querySelector('.detail-percent');
+        differenceCell.className = `detail-difference ${changeClass}`;
+        percentCell.className = `detail-percent ${changeClass}`;
+        const sign = difference > 0 ? '+' : '';
+        differenceCell.textContent =
+            `${sign}${difference.toLocaleString('en-US', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+            })}`;
+        percentCell.textContent =
+            `${sign}${changePercent.toLocaleString('en-US', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+            })}%`;
+    });
+}
+
+function setRefreshButtonTime(button, snapshot) {
+    button.textContent = snapshot.price_timestamp_new_york
+        ? `Refresh Latest Prices · ${snapshot.price_timestamp_new_york}`
+        : 'Refresh Latest Prices · Time unavailable';
+}
+
+async function loadRefreshButtonSnapshotTime() {
+    const button = document.getElementById('requestYahooRefresh');
+    if (!button) return;
+    try {
+        const response = await fetch(snapshotUrl(), { cache: 'no-store' });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const snapshot = await response.json();
+        setRefreshButtonTime(button, snapshot);
+    } catch (error) {
+        button.textContent = 'Refresh Latest Prices · Time unavailable';
+    }
+}
+
+function updatePriceRow(row, price) {
+    row.dataset.currentPrice = price.toString();
+    const symbolPrice = row.querySelector('.symbol-price');
+    if (symbolPrice) {
+        symbolPrice.textContent = `($${price.toLocaleString('en-US', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+        })})`;
+    }
+
+    const table = row.closest('table');
+    const currentPriceIndex = columnIndex(table, 'Current Price');
+    if (currentPriceIndex >= 0) {
+        row.children[currentPriceIndex].textContent = price.toLocaleString('en-US', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+        });
+    }
+
+    row.querySelectorAll('[data-price-level]').forEach(levelCell => {
+        const level = Number(levelCell.dataset.priceLevel);
+        if (!Number.isFinite(level) || levelCell.dataset.priceLevel === '') return;
+        levelCell.textContent = `$${level.toLocaleString('en-US', {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+        })}`;
+        if (level !== price) {
+            const arrow = document.createElement('span');
+            const above = level > price;
+            arrow.className = above ? 'target-arrow-up' : 'target-arrow-down';
+            arrow.title = above ? 'Above current price' : 'Below current price';
+            arrow.textContent = above ? '↑' : '↓';
+            levelCell.append(' ', arrow);
+        }
+    });
+}
+
+const yahooRefreshButton = document.getElementById('requestYahooRefresh');
+const yahooRefreshStatus = document.getElementById('targetSortStatus');
+if (yahooRefreshButton) yahooRefreshButton.addEventListener('click', async () => {
+    yahooRefreshButton.disabled = true;
+    yahooRefreshStatus.className = '';
+    yahooRefreshStatus.textContent = 'Loading the latest backend price snapshot…';
+    try {
+        const response = await fetch(snapshotUrl(), { cache: 'no-store' });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const snapshot = await response.json();
+        if (
+            snapshot?.schema_version !== 1
+            || typeof snapshot.generated_at_new_york !== 'string'
+            || !snapshot.prices
+            || typeof snapshot.prices !== 'object'
+            || Array.isArray(snapshot.prices)
+        ) {
+            throw new Error('snapshot schema is invalid');
+        }
+        setRefreshButtonTime(yahooRefreshButton, snapshot);
+
+        let updatedRows = 0;
+        document.querySelectorAll('table tbody tr').forEach(row => {
+            const symbol = row.querySelector('.symbol-name')?.textContent.trim();
+            const price = Number(snapshot.prices[symbol]);
+            if (symbol && Number.isFinite(price) && price > 0) {
+                updatePriceRow(row, price);
+                updatedRows += 1;
+            }
+        });
+        document.querySelectorAll('table').forEach(restoreScannerOrder);
+        const failureCount = snapshot.failures
+            && typeof snapshot.failures === 'object'
+            ? Object.keys(snapshot.failures).length
+            : 0;
+        yahooRefreshStatus.className = 'refresh-success';
+        yahooRefreshStatus.textContent =
+            `Loaded ${updatedRows} displayed prices. Snapshot generated `
+            + `${snapshot.generated_at_new_york}`
+            + (failureCount ? `; ${failureCount} backend refresh failure(s) retained prior prices.` : '.');
+    } catch (error) {
+        yahooRefreshStatus.className = 'refresh-error';
+        yahooRefreshStatus.textContent =
+            `Could not load the latest price snapshot: ${error.message}`;
+    } finally {
+        yahooRefreshButton.disabled = false;
+    }
+});
+
+// Add selected scan results to the 30-day exception list
+const exceptionSelections = [...document.querySelectorAll('.exception-select')];
+const addExceptions = document.getElementById('addExceptions');
+
+function selectedSymbols() {
+    return [...new Set(
+        exceptionSelections
+            .filter(checkbox => checkbox.checked)
+            .map(checkbox => checkbox.value)
+    )];
+}
+
+function updateExceptionSelection() {
+    const symbols = selectedSymbols();
+    addExceptions.disabled = symbols.length === 0;
+    addExceptions.textContent = `Add Selected to Exceptions (${symbols.length})`;
+    document.querySelectorAll('.tab-content').forEach(tab => {
+        const checkboxes = [...tab.querySelectorAll('.exception-select')];
+        const selected = checkboxes.filter(checkbox => checkbox.checked).length;
+        const selectAll = tab.querySelector('.select-all');
+        selectAll.checked = selected === checkboxes.length && selected > 0;
+        selectAll.indeterminate = selected > 0 && selected < checkboxes.length;
+    });
+}
+
+exceptionSelections.forEach(checkbox => checkbox.addEventListener('change', () => {
+    exceptionSelections
+        .filter(other => other.value === checkbox.value)
+        .forEach(other => other.checked = checkbox.checked);
+    updateExceptionSelection();
+}));
+
+document.querySelectorAll('.select-all').forEach(selectAll => {
+    selectAll.addEventListener('change', event => {
+        event.stopPropagation();
+        const tab = selectAll.closest('.tab-content');
+        tab.querySelectorAll('.exception-select').forEach(checkbox => {
+            checkbox.checked = selectAll.checked;
+            exceptionSelections
+                .filter(other => other.value === checkbox.value)
+                .forEach(other => other.checked = selectAll.checked);
+        });
+        updateExceptionSelection();
+    });
+});
+
+if (addExceptions) addExceptions.addEventListener('click', () => {
+    const symbols = selectedSymbols();
+    if (symbols.length > 50) {
+        alert('Select no more than 50 tickers per request.');
+        return;
+    }
+    if (!symbols.length || !confirm(`Add ${symbols.length} selected ticker(s) to the exception list for 30 days?`)) return;
+
+    const countLabel = symbols.length === 1 ? '1 ticker' : `${symbols.length} tickers`;
+    const body = [
+        'Please add these tickers to the StockScanner exception list for 30 days:',
+        '',
+        ...symbols.map(symbol => `- **${symbol}**`),
+        '',
+        `<!-- stockscanner-add-exceptions: ${symbols.join(',')} -->`,
+    ].join('\n');
+    const query = new URLSearchParams({
+        title: `[Add Exceptions] ${countLabel}`,
+        body,
+    });
+    window.open(
+        `https://github.com/aksamuel/StockScanner/issues/new?${query}`,
+        '_blank',
+        'noopener',
+    );
+});
+
+// Sortable columns
+document.querySelectorAll('th:not(.no-sort)').forEach(th => {
+    th.addEventListener('click', function() {
+        const table = this.closest('table');
+        const tbody = table.querySelector('tbody');
+        const rows = Array.from(tbody.querySelectorAll('tr'));
+        const idx = Array.from(this.parentNode.children).indexOf(this);
+        const asc = this.dataset.sort !== 'asc';
+        this.parentNode.querySelectorAll('th').forEach(h => delete h.dataset.sort);
+        this.dataset.sort = asc ? 'asc' : 'desc';
+        rows.sort((a, b) => {
+            let av = a.children[idx].textContent.replace(/[$,%]/g, '').trim();
+            let bv = b.children[idx].textContent.replace(/[$,%]/g, '').trim();
+            const an = parseFloat(av.replace(/,/g, ''));
+            const bn = parseFloat(bv.replace(/,/g, ''));
+            if (!isNaN(an) && !isNaN(bn)) return asc ? an - bn : bn - an;
+            return asc ? av.localeCompare(bv) : bv.localeCompare(av);
+        });
+        rows.forEach(row => tbody.appendChild(row));
+    });
+});
+</script>
+</body>
+</html>

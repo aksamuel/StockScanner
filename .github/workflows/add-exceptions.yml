@@ -1,0 +1,133 @@
+name: Add Exceptions
+
+on:
+  issues:
+    types: [opened, reopened]
+
+permissions:
+  contents: write
+  issues: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: exception-list-update
+  cancel-in-progress: false
+
+jobs:
+  reject-unauthorized:
+    if: >-
+      startsWith(github.event.issue.title, '[Add Exceptions] ') &&
+      !contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.issue.author_association)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Reject unauthorized request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_URL: ${{ github.event.issue.html_url }}
+        run: |
+          gh issue comment "$ISSUE_URL" --body "Only authorized repository collaborators can add exception-list entries."
+          gh issue close "$ISSUE_URL" --reason "not planned"
+
+  add:
+    if: >-
+      startsWith(github.event.issue.title, '[Add Exceptions] ') &&
+      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.issue.author_association)
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Validate request
+        id: request
+        shell: bash
+        env:
+          REQUEST_TITLE: ${{ github.event.issue.title }}
+          REQUEST_BODY: ${{ github.event.issue.body }}
+        run: |
+          if [[ "$REQUEST_TITLE" =~ ^\[Add\ Exceptions\]\ ([0-9]+)\ tickers?$ ]]; then
+            REQUEST_COUNT="${BASH_REMATCH[1]}"
+          else
+            echo "Invalid addition-request title." >&2
+            exit 1
+          fi
+
+          mapfile -t MARKERS < <(grep -oE '<!-- stockscanner-add-exceptions: [A-Z0-9.,-]+ -->' <<< "$REQUEST_BODY")
+          if [[ "${#MARKERS[@]}" -ne 1 ]]; then
+            echo "The request must contain exactly one valid addition marker." >&2
+            exit 1
+          fi
+          SYMBOLS="${MARKERS[0]#<!-- stockscanner-add-exceptions: }"
+          SYMBOLS="${SYMBOLS% -->}"
+          IFS=',' read -ra SYMBOL_LIST <<< "$SYMBOLS"
+          UNIQUE_COUNT="$(printf '%s\n' "${SYMBOL_LIST[@]}" | sort -u | wc -l)"
+          if [[ "${#SYMBOL_LIST[@]}" -ne "$REQUEST_COUNT" || "$UNIQUE_COUNT" -ne "$REQUEST_COUNT" ]]; then
+            echo "The ticker count does not match the request title." >&2
+            exit 1
+          fi
+          if [[ "$REQUEST_COUNT" -gt 50 ]]; then
+            echo "A request can add at most 50 tickers." >&2
+            exit 1
+          fi
+          mapfile -t REASON_MARKERS < <(grep -oE '<!-- stockscanner-exception-reason-base64: [A-Za-z0-9+/=]+ -->' <<< "$REQUEST_BODY")
+          if [[ "${#REASON_MARKERS[@]}" -gt 1 ]]; then
+            echo "The request can contain at most one reason marker." >&2
+            exit 1
+          fi
+          if [[ "${#REASON_MARKERS[@]}" -eq 1 ]]; then
+            REASON_BASE64="${REASON_MARKERS[0]#<!-- stockscanner-exception-reason-base64: }"
+            REASON_BASE64="${REASON_BASE64% -->}"
+            REASON="$(printf '%s' "$REASON_BASE64" | base64 --decode)"
+            if [[ -z "$REASON" || "${#REASON}" -gt 200 || "$REASON" == *$'\n'* || "$REASON" == *$'\r'* ]]; then
+              echo "The exception reason must be one line of 200 characters or fewer." >&2
+              exit 1
+            fi
+          else
+            REASON_BASE64="$(printf '%s' 'Added from scanner dashboard' | base64 -w 0)"
+          fi
+          echo "symbols=$SYMBOLS" >> "$GITHUB_OUTPUT"
+          echo "reason_base64=$REASON_BASE64" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          ref: main
+
+      - name: Add tickers and regenerate dashboard
+        env:
+          REASON_BASE64: ${{ steps.request.outputs.reason_base64 }}
+        run: |
+          REASON="$(printf '%s' "$REASON_BASE64" | base64 --decode)"
+          python -m stockscanner.add_exception \
+            "${{ steps.request.outputs.symbols }}" \
+            --reason "$REASON"
+          python -m stockscanner.exceptions_dashboard
+
+      - name: Commit exception-list update
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add watchlists/exceptions.csv exceptions.html
+          git commit -m "Add selected tickers to exception list"
+          git push
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v3
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: .
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+      - name: Close completed request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_URL: ${{ github.event.issue.html_url }}
+          SYMBOLS: ${{ steps.request.outputs.symbols }}
+        run: |
+          gh issue comment "$ISSUE_URL" --body "Added **$SYMBOLS** to the exception list for 30 days and republished the dashboard."
+          gh issue close "$ISSUE_URL" --reason "completed"
