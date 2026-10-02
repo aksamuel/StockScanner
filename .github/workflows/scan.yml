@@ -1,14 +1,14 @@
 # Stock Scanner CI Workflow
-# Runs the stock scanner at 09:17 New York time on NYSE trading days (Mon-Fri)
+# Runs the stock scanner at 07:30 New York time, with a 09:00 fallback.
 # or on-demand via the GitHub mobile app / Actions tab.
 # Generates an HTML dashboard and deploys it to GitHub Pages.
 
 name: Stock Scanner
 run-name: >-
   Stock Scanner (${{ github.event_name == 'workflow_dispatch'
-    && 'manual Yahoo refresh'
+    && (github.event.inputs.mode == 'universe' && 'manual universe scan' || 'manual watchlist scan')
     || github.event_name == 'schedule'
-    && 'scheduled scan'
+    && 'scheduled 07:30 New York scan'
     || 'site deployment' }})
 
 on:
@@ -26,12 +26,17 @@ on:
       - "README_SETUP.md"
       - "RELEASE_NOTES.md"
       - "pyproject.toml"
+      - "stockscanner/cli.py"
       - "stockscanner/__init__.py"
       - "stockscanner/html_report.py"
       - "stockscanner/report.py"
+      - "stockscanner/scan.py"
+      - "stockscanner/failed_symbol_store.py"
+      - "failed-symbols.html"
       - "tests/**"
       - "login.html"
       - "admin.html"
+      - "failed-symbols.html"
       - "users.html"
       - "my-exceptions.html"
       - "my-bought-selection.html"
@@ -88,11 +93,12 @@ on:
         type: boolean
         default: false
 
-  # Candidate 09:17 slots are the primary schedule. Candidate 10:47 slots are
-  # fallbacks for GitHub scheduler delays; the Supabase lease rejects duplicates.
+  # Candidate UTC slots map to 07:30 and 09:00 New York through both DST offsets.
+  # The local-time gate
+  # rejects the off-season UTC candidates; the Supabase lease prevents duplicates.
   schedule:
-    - cron: "17 13,14 * * 1-5"
-    - cron: "47 14,15 * * 1-5"
+    - cron: "30 11,12 * * 1-5"
+    - cron: "0 13,14 * * 1-5"
 
 permissions:
   contents: write
@@ -111,22 +117,23 @@ jobs:
       should_run: ${{ steps.gate.outputs.should_run }}
       new_york_time: ${{ steps.gate.outputs.new_york_time }}
     steps:
-      - name: Check primary or fallback New York schedule window
+      - name: Check 07:30 or fallback New York schedule window
         id: gate
         shell: bash
         run: |
           NEW_YORK_TIME=$(TZ=America/New_York date '+%d/%b/%Y %H:%M %Z')
           NEW_YORK_HOUR=$(TZ=America/New_York date '+%H')
+          NEW_YORK_MINUTE=$(TZ=America/New_York date '+%M')
           echo "new_york_time=$NEW_YORK_TIME" >> "$GITHUB_OUTPUT"
-          # GitHub cron events can be delayed by several hours. Once New York
-          # reaches 09:00, let every delayed candidate try the database lease;
-          # the lease, not a narrow clock window, is the duplicate guard.
-          if [ "$GITHUB_EVENT_NAME" != "schedule" ] || [ "$((10#$NEW_YORK_HOUR))" -ge 9 ]; then
+          NEW_YORK_MINUTES=$((10#$NEW_YORK_HOUR * 60 + 10#$NEW_YORK_MINUTE))
+          # Admit delayed primary/fallback events through 09:30; the database
+          # lease is the duplicate guard when GitHub delivers both candidates.
+          if [ "$GITHUB_EVENT_NAME" != "schedule" ] || { [ "$NEW_YORK_MINUTES" -ge 450 ] && [ "$NEW_YORK_MINUTES" -le 570 ]; }; then
             echo "should_run=true" >> "$GITHUB_OUTPUT"
-            echo "Scanner is due at $NEW_YORK_TIME."
+            echo "Scanner candidate is eligible at $NEW_YORK_TIME."
           else
             echo "should_run=false" >> "$GITHUB_OUTPUT"
-            echo "Skipping the off-season UTC slot at $NEW_YORK_TIME."
+            echo "Skipping the out-of-window UTC candidate at $NEW_YORK_TIME."
           fi
 
   build:
@@ -222,6 +229,17 @@ jobs:
             sleep 20
           done
 
+      - name: Load unresolved prior-market-day tickers for retry
+        if: steps.daily-lock.outputs.acquired == 'true'
+        env:
+          SUPABASE_URL: https://cszzbkssxxgwgafwuonc.supabase.co
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          python -m stockscanner.failed_symbol_store \
+            --scan-type daily \
+            --before-market-date "${{ steps.daily-lock.outputs.market_date }}" \
+            --output "$RUNNER_TEMP/daily-retry-symbols.json"
+
       - name: Batch-cache NYSE daily history
         if: steps.daily-lock.outputs.acquired == 'true'
         env:
@@ -231,6 +249,7 @@ jobs:
         run: |
           python - <<'PY'
           import os
+          import json
           from datetime import datetime
           from zoneinfo import ZoneInfo
           from stockscanner.market_data import download_data_bulk
@@ -243,9 +262,12 @@ jobs:
               minimum_symbols=2000,
           )
           symbols = tickers["Symbol"].tolist()
+          with open(os.path.join(os.environ["RUNNER_TEMP"], "daily-retry-symbols.json"), encoding="utf-8") as source:
+              retry_payload = json.load(source)
           limit = int(os.environ.get("SCAN_LIMIT", "0") or 0)
           if limit > 0:
               symbols = symbols[:limit]
+          symbols = list(dict.fromkeys(symbols + [row["symbol"] for row in retry_payload["symbols"]]))
           cached = download_data_bulk(
               symbols,
               force=True,
@@ -277,7 +299,23 @@ jobs:
             --risk ${{ inputs.risk || 1 }} \
             --html \
             --quiet \
+            --failed-symbols-output "$RUNNER_TEMP/daily-failed-symbols.json" \
+            --retry-symbols-file "$RUNNER_TEMP/daily-retry-symbols.json" \
             $LIMIT_FLAG
+
+      - name: Store daily failed-symbol scan record
+        if: steps.daily-lock.outputs.acquired == 'true'
+        env:
+          SUPABASE_URL: https://cszzbkssxxgwgafwuonc.supabase.co
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          if [ ! -f "$RUNNER_TEMP/daily-failed-symbols.json" ]; then
+            echo "Daily scan did not produce failure metadata; refusing to record an empty scan." >&2
+            exit 1
+          fi
+          python -m stockscanner.failed_symbol_store "$RUNNER_TEMP/daily-failed-symbols.json" \
+            --scan-type daily \
+            --workflow-run-id "${{ github.run_id }}"
 
       - name: Run scanner (watchlist mode)
         if: github.event.inputs.mode == 'watchlist' && github.event_name != 'schedule'

@@ -67,6 +67,7 @@
     .broker-empty td { padding: 22px 12px; color: #90a4ae; text-align: center; }
     .broker-name { display: block; margin-top: 3px; color: #90a4ae; font-size: .8rem; }
     .price-stale { color: #ffb74d; font-weight: 700; }
+    .stale-price-row td { opacity: .62; }
     .portfolio-table { min-width: 1560px; }
     .portfolio-table td { vertical-align: top; }
     .sort-button {
@@ -264,6 +265,8 @@
     let imports = [];
     let latestPrices = {};
     let snapshotTime = null;
+    let stalePriceSymbols = new Set();
+    let priceTimestamps = {};
     let scannerSignals = {};
     let sortKey = "symbol";
     let sortDirection = "ascending";
@@ -354,7 +357,7 @@
           .order("downloaded_at", { ascending: false }),
         supabase
           .from("price_snapshots")
-          .select("prices,price_timestamp,generated_at")
+          .select("prices,price_timestamp,generated_at,stale_symbols,price_timestamps")
           .eq("source", "hourly_yahoo")
           .maybeSingle(),
         loadDailyScannerSignals(),
@@ -369,6 +372,8 @@
       updateBrokerOptions();
       latestPrices = priceResult.data?.prices || {};
       snapshotTime = priceResult.data?.price_timestamp || priceResult.data?.generated_at || null;
+      stalePriceSymbols = new Set(priceResult.data?.stale_symbols || []);
+      priceTimestamps = priceResult.data?.price_timestamps || {};
       scannerSignals = scannerResult.signals;
       const warnings = [];
       if (priceResult.error) warnings.push(`Hourly prices are unavailable: ${priceResult.error.message}`);
@@ -497,7 +502,14 @@
     function currentQuote(holding) {
       const snapshotPrice = Number(latestPrices[holding.symbol]);
       if (Number.isFinite(snapshotPrice) && snapshotPrice >= 0) {
-        return { price: snapshotPrice, at: snapshotTime, source: "Hourly/daily market snapshot" };
+        return {
+          price: snapshotPrice,
+          at: priceTimestamps[holding.symbol] || snapshotTime,
+          source: stalePriceSymbols.has(holding.symbol)
+            ? "Stale market snapshot; using last available price"
+            : "Hourly/daily market snapshot",
+          stale: stalePriceSymbols.has(holding.symbol),
+        };
       }
       return { price: null, at: null, source: "Unavailable" };
     }
@@ -691,6 +703,7 @@
 
     function holdingRow(holding) {
       const row = document.createElement("tr");
+      row.classList.toggle("stale-price-row", holding.quote.stale);
       const symbolCell = tableCell("", "symbol");
       const symbol = document.createElement("strong");
       symbol.textContent = holding.symbol;
@@ -701,6 +714,11 @@
       symbolCell.title = holding.description || holding.symbol;
       const priceCell = tableCell(holding.quote.price === null ? "Unavailable" : `${holding.currency} ${numberFormat.format(holding.quote.price)}`);
       priceCell.title = holding.quote.source;
+      if (holding.quote.stale) {
+        priceCell.title += holding.quote.at
+          ? `; last available at ${formatTime(holding.quote.at)}`
+          : "; quote timestamp unavailable";
+      }
       const quoteAge = holding.quote.at ? Date.now() - Date.parse(holding.quote.at) : Number.POSITIVE_INFINITY;
       if (quoteAge > 75 * 60 * 1000) priceCell.classList.add("price-stale");
       const returnCell = tableCell(

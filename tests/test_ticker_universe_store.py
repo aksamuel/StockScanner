@@ -248,9 +248,12 @@ def test_workflows_use_supabase_and_dst_safe_new_york_schedule():
 
     assert "--universe-source supabase" in scan_workflow
     assert "--force-download" not in scan_workflow
-    assert 'cron: "17 13,14 * * 1-5"' in scan_workflow
-    assert 'cron: "47 14,15 * * 1-5"' in scan_workflow
-    assert "Check primary or fallback New York schedule window" in scan_workflow
+    assert 'cron: "30 11,12 * * 1-5"' in scan_workflow
+    assert 'cron: "0 13,14 * * 1-5"' in scan_workflow
+    assert "Check 07:30 or fallback New York schedule window" in scan_workflow
+    assert "NEW_YORK_MINUTES" in scan_workflow
+    assert '"$NEW_YORK_MINUTES" -ge 450' in scan_workflow
+    assert '"$NEW_YORK_MINUTES" -le 570' in scan_workflow
     assert "stockscanner.scanner_run_state acquire" in scan_workflow
     assert "stockscanner.scanner_run_state finish" in scan_workflow
     assert "needs.build.outputs.publish_ready == 'true'" in scan_workflow
@@ -263,9 +266,8 @@ def test_workflows_use_supabase_and_dst_safe_new_york_schedule():
     assert "--not-before-hour 3" in ticker_workflow
     assert "SUPABASE_SECRET_KEY" in ticker_workflow
     assert "--github-output \"$GITHUB_OUTPUT\"" in ticker_workflow
-    assert "steps.refresh.outputs.stored == 'true'" in ticker_workflow
-    assert "Trigger full scanner after successful ticker refresh" in ticker_workflow
-    assert "Unable to dispatch the scanner after 3 attempts" in ticker_workflow
+    assert "gh workflow run scan.yml" not in ticker_workflow
+    assert "actions: write" not in ticker_workflow
     assert 'cron: "45 12-20 * * 1-5"' in price_workflow
     assert 'cron: "5 20,21 * * 1-5"' in price_workflow
     assert 'time(8, 45) <= now.time() < time(16, 0)' in price_workflow

@@ -150,10 +150,13 @@ Apply the migrations in timestamp order:
 8. `20260831193000_add_scanner_daily_run_state.sql`
 9. `20260831213000_market_price_reliability.sql`
 10. `20260831214500_document_backend_only_rls.sql`
+11. `20261002110000_add_failed_symbol_scan_history.sql`
 
 The final two migrations add backend-only daily-scan and price-collection
 leases, scanner/price telemetry, previous-close and market-close fields, and
 purchased-position coverage. Apply them before deploying v2.15.0 workflows.
+The final migration adds the failed-symbol queue/history and per-symbol price
+timestamps; apply it before deploying v2.18.0.
 
 ## Activate invite-only Supabase authentication
 
@@ -212,12 +215,21 @@ For `aaksamuel@zohomail.com`, it also shows recent application activity and a
 link to the protected Supabase Logs Explorer. Never put a Supabase management
 token or secret key in this static page.
 
-The combined list is split evenly between Alpaca and Yahoo. Missing or timed-out
-prices cross over to the other provider once, then up to eight remaining gaps
-use Twelve Data. Retries are intentionally bounded: an endless loop could
-exceed a free quota and still cannot guarantee a current quote for an inactive
-or unsupported security. A failed live symbol retains its prior stored price
-and is listed in the snapshot's `failures` object.
+Yahoo Finance is tried first for every symbol. Only Yahoo misses or errors are
+sent to Alpaca Basic/IEX; up to eight remaining gaps use Twelve Data. Retries
+are intentionally bounded: an endless loop could exceed a free quota and still
+cannot guarantee a current quote for an inactive or unsupported security. A
+failed live symbol retains its prior stored price and timestamp in the snapshot
+and appears in its `failures` object. Reports and Portfolio Analysis dim stale
+quotes while continuing to use the last available price in calculations.
+
+Daily history failures and hourly quote failures have separate retry queues.
+Each market day retries only symbols that failed in an earlier market date;
+success resolves that queue entry and another failure keeps it pending.
+Administrators can inspect dated per-run history at `failed-symbols.html`.
+Apply `supabase/migrations/20261002110000_add_failed_symbol_scan_history.sql`
+before enabling the updated workflows. The migration grants history reads only
+to the named administrator through row-level security.
 
 Free-provider terms can restrict redistribution or public display. Confirm that
 the selected account plan permits the way the protected StockScanner site is
@@ -274,7 +286,7 @@ daily ticker histories are not retained.
 
 ### Portfolio page deployment and checks
 
-Stable release v2.17.0 retains Symbol, Action review, Recovery scenario / days
+Stable release v2.18.0 retains Symbol, Action review, Recovery scenario / days
 held, and Profit / Loss % first, in that order. Technical strength appears once
 inside Action review. The recovery timeline keeps Today undated and displays
 blue stock-history and orange Top 20 estimates in chronological order. Both the
@@ -360,8 +372,9 @@ version. A test or deployment failure prevents a new stable release.
 
 The Pages build applies the current date/time formatter, Help links and shared
 searchable filters to archived HTML reports. This preserves original report URLs
-and ISO source data. No new database migration or history-function deployment is
-required for v2.17.0.
+and ISO source data. The v2.18.0 failed-symbol history and per-symbol quote
+timestamps require the new Supabase migration. Apply it before deploying the
+updated pages and workflows.
 For rollback, revert the release commit on `main` and deploy through the same
 workflow; do not rewrite existing release tags or modify user holdings.
 
@@ -384,14 +397,14 @@ still applies. The dashboard links to GitHub Actions for progress and logs.
 | Workflow | Purpose | Schedule |
 |---|---|---|
 | `ticker-universe.yml` | Atomically replaces `public.nyse_tickers` | Once per weekday at or after 03:07 New York time |
-| `scan.yml` | Runs the universe scan and publishes GitHub Pages | After a successful ticker refresh, with 09:17 primary and 10:47 fallback schedules |
+| `scan.yml` | Runs the universe scan and publishes GitHub Pages | Weekdays at 07:30 New York time, with a 09:00 fallback |
 | `price-snapshot.yml` | Updates hourly/current, previous-close, and market-close prices directly in Supabase | Weekdays at 08:45 New York time, then every 60 minutes through 15:45, plus a post-close run and manual dispatch |
 | `invite-admin.yml` | Invites or promotes an administrator without handling a password | Manual only |
 
-GitHub cron is UTC-only and may deliver runs several hours late. The ticker and
-scan workflows schedule redundant candidate UTC hours and use New York date
-and database lease guards to remain daylight-saving safe. A delayed scanner
-candidate is accepted any time after 09:00 New York when that market date has
+GitHub cron is UTC-only and may deliver runs late. The ticker and scan
+workflows schedule redundant candidate UTC hours and use New York date and
+database lease guards to remain daylight-saving safe. A delayed scanner
+candidate is accepted between 07:30 and 09:30 New York when that market date has
 not already completed. The
 scanner uses `public.scanner_run_state` as a backend-only atomic daily lease,
 requires today's refreshed universe with at least 2,000 rows, and batch-caches

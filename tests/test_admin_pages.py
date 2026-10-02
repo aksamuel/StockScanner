@@ -10,7 +10,7 @@ def read(relative_path: str) -> str:
 
 
 def test_admin_pages_are_marked_for_admin_only_guard():
-    for page in ("admin.html", "users.html"):
+    for page in ("admin.html", "users.html", "failed-symbols.html"):
         source = read(page)
         assert '<html lang="en" data-admin-only>' in source
         assert ADMIN_EMAIL in source
@@ -44,6 +44,45 @@ def test_admin_dashboard_can_request_manual_scanner_runs():
     assert 'supabase.functions.invoke("trigger-scanner"' in source
     assert 'triggerWorkflow("daily"' in source
     assert 'triggerWorkflow("hourly"' in source
+
+
+def test_failed_symbol_history_page_lists_separate_daily_scan_records():
+    source = read("failed-symbols.html")
+    assert "failed_symbol_scans" in source
+    assert "market_date,scan_type,scan_at,failed_symbols" in source
+    assert "Scan time (New York)" in source
+    assert "All dates" in source
+    assert "No failed symbols" in source
+    assert "data-admin-only" in source
+    assert "Failed-symbol history" in read("auth.js")
+
+
+def test_failed_symbol_history_is_admin_read_only_in_database():
+    migration = read(
+        "supabase/migrations/20261002110000_add_failed_symbol_scan_history.sql"
+    )
+    assert "alter table public.failed_symbol_scans enable row level security" in migration
+    assert "StockScanner admin can read failed-symbol scan history" in migration
+    assert "auth.jwt()" in migration
+    assert "grant select on table public.failed_symbol_scans to authenticated" in migration
+    assert "grant insert on table public.failed_symbol_scans to authenticated" not in migration
+
+
+def test_daily_and_hourly_workflows_persist_separate_failed_symbol_lists():
+    daily = read(".github/workflows/scan.yml")
+    hourly = read(".github/workflows/price-snapshot.yml")
+    assert "--failed-symbols-output \"$RUNNER_TEMP/daily-failed-symbols.json\"" in daily
+    assert "--scan-type daily" in daily
+    assert "stockscanner.failed_symbol_store" in daily
+    assert "--failed-symbols-output \"$RUNNER_TEMP/hourly-failed-symbols.json\"" in hourly
+    assert "--scan-type hourly" in hourly
+    assert "if: always() && steps.lease.outputs.acquired == 'true'" in hourly
+
+
+def test_price_snapshot_schema_accepts_current_version_three():
+    source = read("stockscanner/html_report.py")
+    assert "snapshot.schema_version < 1" in source
+    assert "snapshot?.schema_version !== 1" not in source
 
 
 def test_scanner_trigger_function_verifies_admin_and_keeps_github_token_server_side():

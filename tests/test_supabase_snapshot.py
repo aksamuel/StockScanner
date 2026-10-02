@@ -18,6 +18,10 @@ def sample_payload():
         "timezone": "America/New_York",
         "source": "hourly_yahoo",
         "prices": {"AAA": 10.25, "BBB": 20.5},
+        "price_timestamps": {
+            "AAA": "2026-08-21T15:52:00-04:00",
+            "BBB": "2026-08-21T15:51:00-04:00",
+        },
         "daily_prices": {"AAA": 10.0, "BBB": 21.0},
         "intraday_series": {
             "AAA": [{"timestamp": "2026-08-21T15:00:00-04:00", "price": 10.25}]
@@ -49,6 +53,7 @@ def test_snapshot_record_derives_counts():
     assert record["updated_count"] == 1
     assert record["failed_count"] == 1
     assert record["prices"] == {"AAA": 10.25, "BBB": 20.5}
+    assert record["price_timestamps"]["BBB"] == "2026-08-21T15:51:00-04:00"
     assert record["daily_prices"] == {"AAA": 10.0, "BBB": 21.0}
     assert record["intraday_series"]["AAA"][0]["price"] == 10.25
 

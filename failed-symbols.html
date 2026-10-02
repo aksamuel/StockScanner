@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en" data-admin-only>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Failed symbols | StockScanner</title>
+  <style data-stockscanner-auth>html:not(.auth-ready) { visibility: hidden; }</style>
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    body { margin: 0; padding: 62px 24px 40px; overflow-x: clip; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #e0e0e0; background: #0f1923; }
+    main { width: min(100%, 1100px); margin: auto; }
+    .page-header { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+    h1 { margin: 0; color: #4fc3f7; font-size: 1.45rem; line-height: 1.2; }
+    .page-header a { padding: 7px 10px; border: 1px solid #4fc3f7; border-radius: 6px; color: #4fc3f7; text-decoration: none; font-weight: 700; }
+    .subtitle { margin: 6px 0 14px; color: #90a4ae; }
+    .toolbar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin: 16px 0 12px; }
+    select, button { padding: 9px 12px; border: 1px solid #3b5368; border-radius: 6px; color: #fff; background: #10212d; font: inherit; }
+    button { color: #10242d; border: 0; background: #81c784; font-weight: 700; cursor: pointer; }
+    button:disabled { opacity: .6; cursor: wait; }
+    .table-wrap { width: calc(100vw - 48px); margin-left: calc(50% - 50vw + 24px); overflow-x: auto; border: 1px solid #334b5f; border-radius: 9px; }
+    table { width: 100%; border-collapse: collapse; background: #1a2a3a; }
+    th, td { padding: 12px; border-bottom: 1px solid #334b5f; text-align: left; vertical-align: top; }
+    th { color: #b3e5fc; background: #142433; }
+    tr:last-child td { border-bottom: 0; }
+    #message { min-height: 24px; color: #ffcc80; }
+    .symbols { display: flex; flex-wrap: wrap; gap: 6px; max-width: 650px; }
+    .symbol { display: inline-flex; gap: 6px; padding: 4px 8px; border: 1px solid #594b37; border-radius: 5px; color: #ffe0b2; background: #3e3325; }
+    .symbol small { color: #c5b8a5; }
+    @media (max-width: 720px) {
+      body { padding: 58px 14px 32px; }
+      .table-wrap { width: calc(100vw - 28px); margin-left: calc(50% - 50vw + 14px); }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="page-header">
+      <div>
+        <h1>Failed-symbol scan history</h1>
+        <p class="subtitle">A separate persistent list is recorded for each New York scan date and run.</p>
+      </div>
+      <a href="/StockScanner/admin.html">Admin dashboard</a>
+    </div>
+    <div class="toolbar">
+      <label for="dateFilter">Scan date</label>
+      <select id="dateFilter"><option value="">All dates</option></select>
+      <button id="refresh" type="button">Refresh</button>
+    </div>
+    <p id="message" role="status" aria-live="polite">Loading scan history…</p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Market date</th><th>Scan time (New York)</th><th>Scan type</th><th>Failed symbols</th></tr></thead>
+        <tbody id="scans"></tbody>
+      </table>
+    </div>
+  </main>
+  <script type="module" src="/StockScanner/auth.js" data-stockscanner-auth></script>
+  <script type="module">
+    import { formatDate, formatTime } from "/StockScanner/date-format.js";
+    import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.112.3/+esm";
+
+    const ADMIN_EMAIL = "aaksamuel@zohomail.com";
+    const supabase = createClient(
+      "https://cszzbkssxxgwgafwuonc.supabase.co",
+      "sb_publishable_VnhkG4H4acjm2Hp1k5tzyw_I9xtUrGI",
+      { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true } },
+    );
+    const body = document.querySelector("#scans");
+    const message = document.querySelector("#message");
+    const dateFilter = document.querySelector("#dateFilter");
+    const refresh = document.querySelector("#refresh");
+    let scans = [];
+
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user || (user.email || "").toLowerCase() !== ADMIN_EMAIL) {
+      window.location.replace("/StockScanner/index.html");
+    } else {
+      await loadScans();
+    }
+
+    refresh.addEventListener("click", loadScans);
+    dateFilter.addEventListener("change", renderScans);
+
+    async function loadScans() {
+      refresh.disabled = true;
+      message.textContent = "Loading scan history…";
+      const rows = [];
+      for (let offset = 0; ; offset += 1000) {
+        const { data, error } = await supabase
+          .from("failed_symbol_scans")
+          .select("market_date,scan_type,scan_at,failed_symbols")
+          .order("scan_at", { ascending: false })
+          .range(offset, offset + 999);
+        if (error) {
+          message.textContent = `Unable to load failed-symbol history: ${error.message}`;
+          refresh.disabled = false;
+          return;
+        }
+        rows.push(...(data || []));
+        if (!data || data.length < 1000) break;
+      }
+      scans = rows;
+      const dates = [...new Set(scans.map(scan => scan.market_date))].sort().reverse();
+      const selected = dateFilter.value;
+      dateFilter.replaceChildren(new Option("All dates", ""));
+      dates.forEach(date => dateFilter.add(new Option(formatMarketDate(date), date)));
+      if (dates.includes(selected)) dateFilter.value = selected;
+      message.textContent = `${scans.length} scan record${scans.length === 1 ? "" : "s"} loaded.`;
+      renderScans();
+      refresh.disabled = false;
+    }
+
+    function renderScans() {
+      const visible = scans.filter(scan => !dateFilter.value || scan.market_date === dateFilter.value);
+      body.replaceChildren(...visible.map(scanRow));
+      if (!visible.length) {
+        const row = document.createElement("tr");
+        const cell = document.createElement("td");
+        cell.colSpan = 4;
+        cell.textContent = "No failed-symbol scan records for this date.";
+        row.append(cell);
+        body.append(row);
+      }
+    }
+
+    function scanRow(scan) {
+      const row = document.createElement("tr");
+      const date = document.createElement("td");
+      date.textContent = formatMarketDate(scan.market_date);
+      const time = document.createElement("td");
+      time.textContent = formatTime(scan.scan_at);
+      const type = document.createElement("td");
+      type.textContent = scan.scan_type === "daily" ? "Daily universe" : "Hourly prices";
+      const symbols = document.createElement("td");
+      const list = document.createElement("div");
+      list.className = "symbols";
+      const failures = Array.isArray(scan.failed_symbols) ? scan.failed_symbols : [];
+      failures.forEach(failure => {
+        const badge = document.createElement("span");
+        badge.className = "symbol";
+        const ticker = document.createElement("strong");
+        ticker.textContent = String(failure.symbol || "Unknown");
+        const reason = document.createElement("small");
+        reason.textContent = String(failure.reason || "");
+        badge.append(ticker, reason);
+        list.append(badge);
+      });
+      if (!failures.length) list.textContent = "No failed symbols";
+      symbols.append(list);
+      row.append(date, time, type, symbols);
+      return row;
+    }
+
+    function formatMarketDate(value) {
+      return formatDate(value);
+    }
+  </script>
+</body>
+</html>

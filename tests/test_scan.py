@@ -5,6 +5,8 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 import pytest
+
+from stockscanner import scan
 from openpyxl import load_workbook
 
 from stockscanner import html_report, report
@@ -57,6 +59,48 @@ def test_minimum_share_price_is_one_dollar():
 
 def test_daily_cache_is_limited_to_one_day():
     assert CACHE_DAYS == 1
+
+
+def test_scan_universe_writes_failed_daily_symbols(tmp_path, monkeypatch):
+    output = tmp_path / "daily-failures.json"
+    stock_df = pd.DataFrame([
+        {"Symbol": "AAA"},
+        {"Symbol": "BBB"},
+        {"Symbol": "CCC"},
+    ])
+    reasons = {
+        "AAA": "download_failure",
+        "BBB": "insufficient_history",
+        "CCC": "price_below_minimum",
+    }
+    monkeypatch.setattr(
+        scan,
+        "process_stock",
+        lambda row, **kwargs: (None, reasons[row["Symbol"]]),
+    )
+
+    scan.scan_universe(
+        stock_df,
+        export_to_excel=False,
+        quiet=True,
+        failed_symbols_output=output,
+    )
+
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert payload["scanned_at"].startswith("202")
+    assert payload["failed_symbols"] == [
+        {"symbol": "AAA", "reason": "download_failure"},
+        {"symbol": "BBB", "reason": "insufficient_history"},
+    ]
+
+
+def test_append_retry_symbols_includes_missing_tickers_without_duplicates():
+    tickers = pd.DataFrame([{"Symbol": "AAA", "Market": "NYSE"}])
+
+    result = scan._append_retry_symbols(tickers, ["aaa", "bbb", "ccc", "BBB"])
+
+    assert result["Symbol"].tolist() == ["AAA", "BBB", "CCC"]
+    assert result.iloc[1]["Market"] == "Retry"
 
 
 def test_generate_signal_neutral():

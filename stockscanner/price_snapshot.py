@@ -136,6 +136,7 @@ def _snapshot_payload(
     *,
     source,
     failures=None,
+    price_timestamps=None,
     price_timestamp=None,
     previous_close_prices=None,
     market_close_prices=None,
@@ -163,6 +164,7 @@ def _snapshot_payload(
         "source": source,
         "symbol_count": len(normalized),
         "prices": dict(sorted(normalized.items())),
+        "price_timestamps": dict(sorted((price_timestamps or {}).items())),
         "previous_close_prices": dict(sorted((previous_close_prices or {}).items())),
         "market_close_prices": dict(sorted((market_close_prices or {}).items())),
         # Retained temporarily for older deployed clients. It is explicitly the
@@ -216,6 +218,22 @@ def _write_snapshot(payload, path):
         encoding="utf-8",
     )
     os.replace(temporary, path)
+
+
+def _write_failed_symbols(path, failures, scanned_at, attempted_symbols):
+    if path is None:
+        return
+    _write_snapshot(
+        {
+            "scanned_at": scanned_at.isoformat(),
+            "attempted_symbols": sorted(set(attempted_symbols)),
+            "failed_symbols": [
+                {"symbol": symbol, "reason": reason}
+                for symbol, reason in sorted(failures.items())
+            ]
+        },
+        path,
+    )
 
 
 def load_snapshot(path=DEFAULT_SNAPSHOT_PATH):
@@ -279,6 +297,8 @@ def write_snapshot_from_results(results, path=DEFAULT_SNAPSHOT_PATH, generated_a
     """Write scanner result prices so hourly refreshes have a stable symbol set."""
     prices = {}
     price_timestamps = []
+    timestamps_by_symbol = {}
+    scan_time = _new_york_time(generated_at or datetime.now(NEW_YORK))
     records = results.to_dict("records") if hasattr(results, "to_dict") else results
     for row in records:
         symbol = str(row.get("Symbol", "")).strip().upper()
@@ -288,13 +308,17 @@ def write_snapshot_from_results(results, path=DEFAULT_SNAPSHOT_PATH, generated_a
             timestamp = _parse_price_timestamp(row.get("Price As Of"))
             if timestamp is not None:
                 price_timestamps.append(timestamp)
+            else:
+                timestamp = scan_time
+            timestamps_by_symbol[symbol] = timestamp.isoformat()
     if not prices:
         raise SnapshotError("Scanner results did not contain any valid symbol prices")
     payload = _snapshot_payload(
         prices,
-        generated_at or datetime.now(NEW_YORK),
+        scan_time,
         source="full_scan",
         price_timestamp=max(price_timestamps) if price_timestamps else None,
+        price_timestamps=timestamps_by_symbol,
     )
     _write_snapshot(payload, path)
     return payload
@@ -310,6 +334,8 @@ def refresh_snapshot(
     report_paths=None,
     additional_symbols=None,
     close_run=False,
+    failed_symbols_path=None,
+    retry_symbols=None,
 ):
     """Refresh scanner and held-symbol prices through bounded free providers."""
     local = _new_york_time(now)
@@ -348,10 +374,18 @@ def refresh_snapshot(
         else {}
     )
     portfolio_symbols = normalize_portfolio_symbols(additional_symbols or [])
-    symbols = sorted(set(prior_prices).union(portfolio_symbols))
+    retry_symbols = normalize_portfolio_symbols(retry_symbols or [])
+    symbols = sorted(set(prior_prices).union(portfolio_symbols).union(retry_symbols))
+    same_day_failures = (
+        set(previous.get("failures", {}))
+        if previous and same_market_day
+        else set()
+    )
+    skipped_symbols = same_day_failures.difference(retry_symbols)
+    requested_symbols = [symbol for symbol in symbols if symbol not in skipped_symbols]
     updated_results = {}
     provider_for_symbol = {}
-    attempt_errors = {symbol: [] for symbol in symbols}
+    attempt_errors = {symbol: [] for symbol in requested_symbols}
     price_timestamps = []
 
     def yahoo_batch(requested, *, now):
@@ -371,13 +405,7 @@ def refresh_snapshot(
                 symbol = futures[future]
                 try:
                     results[symbol] = future.result()
-                except (
-                    LookupError,
-                    OSError,
-                    RuntimeError,
-                    TypeError,
-                    ValueError,
-                ) as exc:
+                except Exception as exc:
                     errors[symbol] = f"{type(exc).__name__}: {exc}"
         return results, errors
 
@@ -391,7 +419,7 @@ def refresh_snapshot(
                 response, errors = response
             else:
                 errors = {}
-        except (LookupError, OSError, RuntimeError, TypeError, ValueError) as exc:
+        except Exception as exc:
             response = {}
             errors = {
                 symbol: f"{type(exc).__name__}: {exc}" for symbol in requested
@@ -411,19 +439,16 @@ def refresh_snapshot(
             updated_results[symbol] = result
             provider_for_symbol[symbol] = provider
 
-    # Alternate sorted symbols so each primary provider receives half of the
-    # list while retaining a stable split between workflow runs.
-    alpaca_primary = symbols[::2]
-    yahoo_primary = symbols[1::2]
-    attempt("Alpaca", alpaca_primary, alpaca_downloader)
-    attempt("Yahoo", yahoo_primary, yahoo_batch)
+    attempt("Yahoo", requested_symbols, yahoo_batch)
+    attempt(
+        "Alpaca",
+        [symbol for symbol in requested_symbols if symbol not in updated_results],
+        alpaca_downloader,
+    )
 
-    # Cross-provider fallback: every missing symbol is tried by the other
-    # primary provider exactly once. This is bounded to protect free quotas.
-    attempt("Alpaca", yahoo_primary, alpaca_downloader)
-    attempt("Yahoo", alpaca_primary, yahoo_batch)
-
-    unresolved = [symbol for symbol in symbols if symbol not in updated_results]
+    unresolved = [
+        symbol for symbol in requested_symbols if symbol not in updated_results
+    ]
     attempt(
         "Twelve Data",
         unresolved[:TWELVE_DATA_FREE_SYMBOLS_PER_RUN],
@@ -432,9 +457,22 @@ def refresh_snapshot(
 
     failures = {
         symbol: "; ".join(attempt_errors[symbol]) or "No provider returned a price"
-        for symbol in symbols
+        for symbol in requested_symbols
         if symbol not in updated_results
     }
+    if previous and same_market_day:
+        for symbol in skipped_symbols:
+            if symbol in previous.get("failures", {}):
+                failures[symbol] = previous["failures"][symbol]
+    _write_failed_symbols(
+        failed_symbols_path,
+        failures,
+        local,
+        requested_symbols,
+    )
+    stored_price_timestamps = dict(
+        previous.get("price_timestamps", {}) if previous else {}
+    )
     for symbol, result in updated_results.items():
         prices[symbol] = _valid_price(result.get("price"))
         previous_close = _valid_price(result.get("daily_close"))
@@ -443,12 +481,15 @@ def refresh_snapshot(
         timestamp = _parse_price_timestamp(result.get("timestamp"))
         if timestamp is not None:
             price_timestamps.append(timestamp)
+            stored_price_timestamps[symbol] = timestamp.isoformat()
+        else:
+            stored_price_timestamps[symbol] = local.isoformat()
         if close_run and (timestamp is None or timestamp.date() == local.date()):
             market_close_prices[symbol] = prices[symbol]
 
     for symbol, message in failures.items():
         print(f"Price refresh failed for {symbol}: {message}", file=sys.stderr)
-    if not updated_results:
+    if not updated_results and not skipped_symbols:
         raise SnapshotError(
             "All free price providers failed; the prior snapshot was preserved"
         )
@@ -463,6 +504,7 @@ def refresh_snapshot(
         generated_at,
         source="hourly_yahoo",
         failures=failures,
+        price_timestamps=stored_price_timestamps,
         price_timestamp=max(price_timestamps) if price_timestamps else None,
         previous_close_prices=previous_close_prices,
         market_close_prices=market_close_prices,
@@ -472,7 +514,7 @@ def refresh_snapshot(
         provider: sum(1 for value in provider_for_symbol.values() if value == provider)
         for provider in ("Alpaca", "Yahoo", "Twelve Data")
     }
-    payload["collection_strategy"] = "free_split_with_bounded_failover"
+    payload["collection_strategy"] = "yahoo_primary_with_bounded_failover"
     payload["requested_symbol_count"] = len(symbols)
     payload["portfolio_symbol_count"] = len(portfolio_symbols)
     portfolio_updated = sorted(set(portfolio_symbols).intersection(updated_results))
@@ -518,6 +560,16 @@ def main(argv=None):
         default="auto",
         help="Collection window; auto uses close mode from 4 PM New York.",
     )
+    parser.add_argument(
+        "--failed-symbols-output",
+        type=Path,
+        help="Write unresolved symbols to a JSON file for admin history.",
+    )
+    parser.add_argument(
+        "--retry-symbols-file",
+        type=Path,
+        help="Include symbols loaded from the previous-market-day retry queue.",
+    )
     args = parser.parse_args(argv)
     try:
         supabase_url = os.environ.get("SUPABASE_URL", "")
@@ -529,6 +581,24 @@ def main(argv=None):
                 secret_key=secret_key,
             )
         local_now = datetime.now(NEW_YORK)
+        retry_symbols = []
+        if args.retry_symbols_file:
+            try:
+                retry_payload = json.loads(
+                    args.retry_symbols_file.read_text(encoding="utf-8")
+                )
+            except (OSError, json.JSONDecodeError) as exc:
+                raise SnapshotError(
+                    f"Unable to read retry-symbol file: {exc}"
+                ) from exc
+            retry_rows = retry_payload.get("symbols", [])
+            if not isinstance(retry_rows, list):
+                raise SnapshotError("Retry-symbol input must contain a symbols array")
+            retry_symbols = [
+                row.get("symbol")
+                for row in retry_rows
+                if isinstance(row, dict) and row.get("symbol")
+            ]
         close_run = args.mode == "close" or (
             args.mode == "auto" and local_now.time().replace(tzinfo=None) >= MARKET_CLOSE
         )
@@ -536,6 +606,8 @@ def main(argv=None):
             args.output,
             additional_symbols=portfolio_symbols,
             close_run=close_run,
+            failed_symbols_path=args.failed_symbols_output,
+            retry_symbols=retry_symbols,
         )
     except (PortfolioSymbolError, SnapshotError) as exc:
         parser.error(str(exc))

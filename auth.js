@@ -546,6 +546,7 @@ function addNavigationDrawer(user) {
   if (isAdmin) {
     menuItems.push(
       ["Administration", "Admin dashboard", "admin.html"],
+      ["Administration", "Failed-symbol history", "failed-symbols.html"],
       ["Administration", "Manage users", "users.html"],
     );
   }

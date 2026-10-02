@@ -1309,6 +1309,7 @@ tr:hover {{ background: #1e3348; }}
 .symbol-support-below-zero {{ background: #d8edcc !important; color: #172217; }}
 .symbol-support-below-five {{ background: #4fb52a !important; color: #102000; font-weight: 600; }}
 .symbol-name {{ display: block; font-weight: 600; }}
+.stale-price-row {{ opacity: 0.62; }}
 .symbol-price {{ display: block; font-size: 0.78em; font-weight: 400; margin-top: -2px; }}
 .target-arrow-up {{ color: #66bb6a; font-size: 1.1em; font-weight: 700; }}
 .target-arrow-down {{ color: #ef5350; font-size: 1.1em; font-weight: 700; }}
@@ -1557,6 +1558,7 @@ async function loadDashboardSnapshotTimes() {{
         backendRefreshTime.textContent =
             `Backend price refresh: ${{snapshot.generated_at_new_york}}`;
         updateTop20Details(snapshot.prices);
+        updateStalePriceRows(snapshot);
     }} catch (error) {{
         yahooPriceTime.textContent = 'Latest Yahoo price: Unavailable';
         backendRefreshTime.textContent =
@@ -1685,6 +1687,27 @@ function updatePriceRow(row, price) {{
     }});
 }}
 
+function updateStalePriceRows(snapshot) {{
+    const stale = new Set(Array.isArray(snapshot.stale_symbols) ? snapshot.stale_symbols : []);
+    document.querySelectorAll('table tbody tr').forEach(row => {{
+        const symbol = (
+            row.dataset.symbol
+            || row.querySelector('.symbol-name')?.textContent
+            || ''
+        ).trim().toUpperCase();
+        const isStale = stale.has(symbol);
+        row.classList.toggle('stale-price-row', isStale);
+        if (!isStale) {{
+            row.removeAttribute('title');
+            return;
+        }}
+        const timestamp = snapshot.price_timestamps?.[symbol];
+        row.title = timestamp
+            ? `${{symbol}} price is stale; last available at ${{timestamp}}.`
+            : `${{symbol}} price is stale; timestamp unavailable.`;
+    }});
+}}
+
 const yahooRefreshButton = document.getElementById('requestYahooRefresh');
 const yahooRefreshStatus = document.getElementById('targetSortStatus');
 if (yahooRefreshButton) yahooRefreshButton.addEventListener('click', async () => {{
@@ -1699,7 +1722,8 @@ if (yahooRefreshButton) yahooRefreshButton.addEventListener('click', async () =>
         snapshot.generated_at_new_york = snapshot.generated_at ? formatDateTime(snapshot.generated_at) : null;
         snapshot.price_timestamp_new_york = snapshot.price_timestamp ? formatDateTime(snapshot.price_timestamp) : null;
         if (
-            snapshot?.schema_version !== 1
+            !Number.isInteger(snapshot?.schema_version)
+            || snapshot.schema_version < 1
             || typeof snapshot.generated_at_new_york !== 'string'
             || !snapshot.prices
             || typeof snapshot.prices !== 'object'
@@ -1718,6 +1742,7 @@ if (yahooRefreshButton) yahooRefreshButton.addEventListener('click', async () =>
                 updatedRows += 1;
             }}
         }});
+        updateStalePriceRows(snapshot);
         document.querySelectorAll('table').forEach(restoreScannerOrder);
         const failureCount = snapshot.failures
             && typeof snapshot.failures === 'object'

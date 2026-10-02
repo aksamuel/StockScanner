@@ -19,7 +19,6 @@ on:
     - cron: "37 9,10 * * 1-5"
 
 permissions:
-  actions: write
   contents: read
 
 concurrency:
@@ -63,20 +62,3 @@ jobs:
             $FORCE_FLAG \
             --not-before-hour 3 \
             --github-output "$GITHUB_OUTPUT"
-
-      - name: Trigger full scanner after successful ticker refresh
-        if: steps.refresh.outputs.stored == 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          for attempt in 1 2 3; do
-            if gh workflow run scan.yml --ref main -f mode=universe; then
-              exit 0
-            fi
-            if [ "$attempt" -eq 3 ]; then
-              echo "Unable to dispatch the scanner after 3 attempts." >&2
-              exit 1
-            fi
-            sleep $((attempt * 10))
-          done
