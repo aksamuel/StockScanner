@@ -1,11 +1,11 @@
-# StockScanner v2.18.0
+# StockScanner v2.19.0
 
 [![Stock Scanner](https://github.com/aksamuel/StockScanner/actions/workflows/scan.yml/badge.svg)](https://github.com/aksamuel/StockScanner/actions/workflows/scan.yml)
 
 StockScanner scans a watchlist or the NYSE universe, calculates technical and
 analyst signals, sizes positions, and produces Excel and GitHub Pages reports.
 
-**Stable release: v2.18.0** — private owner-scoped portfolio Technical
+**Stable release: v2.19.0** — private owner-scoped portfolio Technical
 strength, retained stale evidence, Yahoo-first price collection with Alpaca and
 Twelve Data fallbacks, and next-market-day retries for failed symbols.
 Daily scans run at 07:30 New York time with a 09:00 fallback. Portfolio recovery

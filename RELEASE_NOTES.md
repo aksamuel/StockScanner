@@ -1,4 +1,4 @@
-# StockScanner v2.18.0
+# StockScanner v2.19.0
 
 Stable release · 02/Oct/2026
 

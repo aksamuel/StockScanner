@@ -1,4 +1,4 @@
-# StockScanner v2.18.0 setup and operations
+# StockScanner v2.19.0 setup and operations
 
 Windows PowerShell commands to create and activate a virtual environment, install dependencies from `requirements.txt`, and verify installation.
 
@@ -156,7 +156,7 @@ Apply the migrations in timestamp order:
 The 20260831 migrations add backend-only leases and price telemetry. The two
 20261002 migrations add owner-gated portfolio Technical-strength storage,
 failed-symbol queue/history, and per-symbol price timestamps. Apply both and
-deploy `portfolio-signals` before publishing v2.18.0.
+deploy `portfolio-signals` before publishing v2.19.0.
 
 ## Activate invite-only Supabase authentication
 
@@ -286,7 +286,7 @@ daily ticker histories are not retained.
 
 ### Portfolio page deployment and checks
 
-Stable release v2.18.0 retains Symbol, Action review, Recovery scenario / days
+Stable release v2.19.0 retains Symbol, Action review, Recovery scenario / days
 held, and Profit / Loss % first, in that order. Technical strength appears once
 inside Action review. The recovery timeline keeps Today undated and displays
 blue stock-history and orange Top 20 estimates in chronological order. Both the
@@ -327,7 +327,7 @@ Deploy `supabase/functions/portfolio-signals/index.ts` with its `handler.mjs`
 after applying the technical-signal migration. It validates the caller and
 approved access, then invokes an owner-scoped database function. Direct browser
 access to the signal table remains revoked. Apply the migration and deploy the
-function before deploying the v2.18.0 page so existing portfolio analysis is
+function before deploying the v2.19.0 page so existing portfolio analysis is
 never replaced by a client that expects an unavailable backend.
 
 The response contains `points: [["YYYY-MM-DD", adjustedClose], ...]`, source, and
@@ -387,7 +387,7 @@ version. A test or deployment failure prevents a new stable release.
 
 The Pages build applies the current date/time formatter, Help links and shared
 searchable filters to archived HTML reports. This preserves original report URLs
-and ISO source data. The v2.18.0 deployment requires both 20261002
+and ISO source data. The v2.19.0 deployment requires both 20261002
 migrations and the `portfolio-signals` Edge Function. Apply them before
 deploying the updated pages and workflows.
 For rollback, revert the release commit on `main` and deploy through the same
