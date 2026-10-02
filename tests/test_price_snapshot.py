@@ -81,6 +81,10 @@ def test_refresh_writes_json_and_preserves_failed_symbol_price(tmp_path, capsys)
         initial_payload["price_timestamp_new_york"]
         == "13/Aug/2026, 09:55 EDT"
     )
+    assert initial_payload["price_timestamps"] == {
+        "AAA": "2026-08-13T09:55:00-04:00",
+        "BBB": "2026-08-13T09:00:00-04:00",
+    }
 
     def downloader(symbol, now):
         if symbol == "AAA":
@@ -114,6 +118,9 @@ def test_refresh_writes_json_and_preserves_failed_symbol_price(tmp_path, capsys)
         {"timestamp": "2026-08-13T09:59:00-04:00", "price": 11.25}
     ]
     assert payload["updated_symbols"] == ["AAA"]
+    assert payload["stale_symbols"] == ["BBB"]
+    assert payload["price_timestamps"]["AAA"] == "2026-08-13T09:59:00-04:00"
+    assert payload["price_timestamps"]["BBB"] == "2026-08-13T09:00:00-04:00"
     assert "Yahoo: RuntimeError: rate limited" in payload["failures"]["BBB"]
     assert payload["provider_counts"] == {
         "Alpaca": 0,
@@ -127,6 +134,7 @@ def test_refresh_writes_json_and_preserves_failed_symbol_price(tmp_path, capsys)
 
 def test_refresh_preserves_snapshot_when_all_yahoo_requests_fail(tmp_path):
     snapshot_path = tmp_path / "prices.json"
+    failures_path = tmp_path / "failed-symbols.json"
     write_snapshot_from_results(
         [{"Symbol": "AAA", "Current Price": 10}],
         snapshot_path,
@@ -139,9 +147,13 @@ def test_refresh_preserves_snapshot_when_all_yahoo_requests_fail(tmp_path):
             snapshot_path,
             now=ny_time(10),
             downloader=lambda symbol, now: None,
+            failed_symbols_path=failures_path,
         )
 
     assert snapshot_path.read_text(encoding="utf-8") == original
+    assert json.loads(failures_path.read_text(encoding="utf-8"))["failed_symbols"] == [
+        {"symbol": "AAA", "reason": "Yahoo: no valid current price; Alpaca: PriceProviderError: Alpaca credentials are not configured; Twelve Data: PriceProviderError: Twelve Data credentials are not configured"}
+    ]
 
 
 def test_refresh_bootstraps_symbols_from_generated_report(tmp_path):
@@ -166,7 +178,7 @@ def test_refresh_bootstraps_symbols_from_generated_report(tmp_path):
     assert payload["price_timestamp_new_york"] is None
 
 
-def test_refresh_splits_primary_work_and_cross_fails_over(tmp_path):
+def test_refresh_uses_yahoo_first_then_fails_over_missing_symbols(tmp_path):
     snapshot_path = tmp_path / "prices.json"
     write_snapshot_from_results(
         [
@@ -202,8 +214,9 @@ def test_refresh_splits_primary_work_and_cross_fails_over(tmp_path):
     )
     payload = json.loads(snapshot_path.read_text(encoding="utf-8"))
 
-    assert alpaca_calls == [["AAA", "CCC"], ["DDD"]]
-    assert yahoo_calls == ["BBB", "DDD", "CCC"]
+    assert len(alpaca_calls) == 1
+    assert set(alpaca_calls[0]) == {"AAA", "DDD"}
+    assert set(yahoo_calls) == {"AAA", "BBB", "CCC", "DDD"}
     assert result["updated"] == 4
     assert result["failed"] == 0
     assert result["provider_counts"] == {
@@ -211,7 +224,36 @@ def test_refresh_splits_primary_work_and_cross_fails_over(tmp_path):
         "Yahoo": 2,
         "Twelve Data": 0,
     }
-    assert payload["collection_strategy"] == "free_split_with_bounded_failover"
+    assert payload["collection_strategy"] == "yahoo_primary_with_bounded_failover"
+
+
+def test_yahoo_exception_triggers_alpaca_fallback(tmp_path):
+    snapshot_path = tmp_path / "prices.json"
+    write_snapshot_from_results(
+        [{"Symbol": "AAA", "Current Price": 10}],
+        snapshot_path,
+        ny_time(9),
+    )
+
+    def yahoo(symbol, now):
+        raise RuntimeError("Yahoo returned no usable price")
+
+    result = refresh_snapshot(
+        snapshot_path,
+        now=ny_time(10),
+        downloader=yahoo,
+        alpaca_downloader=lambda symbols, now: {
+            "AAA": {"price": 11, "timestamp": now.isoformat()}
+        },
+        twelve_data_downloader=lambda symbols, now: {},
+    )
+
+    assert result["provider_counts"] == {
+        "Alpaca": 1,
+        "Yahoo": 0,
+        "Twelve Data": 0,
+    }
+    assert json.loads(snapshot_path.read_text(encoding="utf-8"))["prices"]["AAA"] == 11
 
 
 def test_refresh_caps_twelve_data_fallback_at_eight_free_credits(tmp_path):
@@ -275,9 +317,9 @@ def test_refresh_adds_user_held_symbols_outside_the_scanner_universe(tmp_path):
 
     assert result["symbols"] == 3
     assert payload["prices"] == {
-        "AMEX1": 25.0,
+        "AMEX1": 30.0,
         "NASDAQ1": 30.0,
-        "NYSE1": 25.0,
+        "NYSE1": 30.0,
     }
     assert payload["requested_symbol_count"] == 3
     assert payload["portfolio_symbol_count"] == 3

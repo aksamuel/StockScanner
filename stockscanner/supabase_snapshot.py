@@ -28,6 +28,7 @@ def snapshot_record(payload):
     previous_close_prices = payload.get("previous_close_prices", daily_prices)
     market_close_prices = payload.get("market_close_prices", {})
     intraday_series = payload.get("intraday_series", {})
+    price_timestamps = payload.get("price_timestamps", {})
     if not isinstance(prices, dict) or not prices:
         raise SupabaseSnapshotError("Snapshot must contain a non-empty prices object")
     if not isinstance(failures, dict):
@@ -39,6 +40,7 @@ def snapshot_record(payload):
             previous_close_prices,
             market_close_prices,
             intraday_series,
+            price_timestamps,
         )
     ):
         raise SupabaseSnapshotError("Price comparisons and intraday series must be JSON objects")
@@ -61,6 +63,7 @@ def snapshot_record(payload):
         "updated_count": len(updated_symbols) if isinstance(updated_symbols, list) else 0,
         "failed_count": len(failures),
         "prices": prices,
+        "price_timestamps": payload.get("price_timestamps", {}),
         "daily_prices": daily_prices,
         "previous_close_prices": previous_close_prices,
         "market_close_prices": market_close_prices,

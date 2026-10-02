@@ -1,5 +1,7 @@
 import argparse
+import json
 import os
+from pathlib import Path
 
 from .scan import scan_nyse, scan_watchlist
 
@@ -67,6 +69,14 @@ def parse_args():
         help="Generate an interactive HTML dashboard alongside the Excel report.",
     )
     parser.add_argument(
+        "--failed-symbols-output",
+        help="Write symbols without usable daily history to a JSON file.",
+    )
+    parser.add_argument(
+        "--retry-symbols-file",
+        help="Add prior failed symbols from a pending-retry JSON file to a universe scan.",
+    )
+    parser.add_argument(
         "--portfolio",
         type=float,
         default=50000,
@@ -90,6 +100,16 @@ def parse_args():
 def main():
     args = parse_args()
     available_cash = args.portfolio * (args.position_size / 100)
+    retry_symbols = []
+    if args.retry_symbols_file:
+        payload = json.loads(Path(args.retry_symbols_file).read_text(encoding="utf-8"))
+        if not isinstance(payload, dict) or not isinstance(payload.get("symbols"), list):
+            raise ValueError("Retry-symbol input must contain a symbols array")
+        retry_symbols = [
+            str(item.get("symbol", "")).strip().upper()
+            for item in payload["symbols"]
+            if isinstance(item, dict) and str(item.get("symbol", "")).strip()
+        ]
     if args.universe:
         scan_nyse(
             export_to_excel=not args.no_report,
@@ -106,6 +126,8 @@ def main():
             html_report=args.html,
             available_cash=available_cash,
             risk_percent=args.risk,
+            failed_symbols_output=args.failed_symbols_output,
+            retry_symbols=retry_symbols,
         )
     else:
         scan_watchlist(

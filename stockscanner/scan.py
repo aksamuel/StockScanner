@@ -1,7 +1,11 @@
+import json
 import sys
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
+from pathlib import Path
 from zoneinfo import ZoneInfo
+
+import pandas as pd
 
 from stockscanner.config import (
     MIN_PRICE,
@@ -232,7 +236,24 @@ def _scan_summary(universe_count, reasons):
     }
 
 
-def scan_universe(stock_df, export_to_excel=True, parallel=False, max_workers=10, batch_reports=False, quiet=False, progress=False, html_report=False, available_cash=1000, risk_percent=1):
+def _write_failed_symbols(path, failures, scanned_at, attempted_symbols):
+    if path is None:
+        return
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    temporary = target.with_suffix(target.suffix + ".tmp")
+    temporary.write_text(
+        json.dumps({
+            "scanned_at": scanned_at.isoformat(),
+            "attempted_symbols": sorted(set(attempted_symbols)),
+            "failed_symbols": failures,
+        }, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    temporary.replace(target)
+
+
+def scan_universe(stock_df, export_to_excel=True, parallel=False, max_workers=10, batch_reports=False, quiet=False, progress=False, html_report=False, available_cash=1000, risk_percent=1, failed_symbols_output=None):
     if parallel:
         return scan_universe_parallel(
             stock_df,
@@ -244,6 +265,7 @@ def scan_universe(stock_df, export_to_excel=True, parallel=False, max_workers=10
             html_report=html_report,
             available_cash=available_cash,
             risk_percent=risk_percent,
+            failed_symbols_output=failed_symbols_output,
         )
 
     if not quiet:
@@ -259,6 +281,8 @@ def scan_universe(stock_df, export_to_excel=True, parallel=False, max_workers=10
         print(f"Progress: 0/{len(stock_df)} (0%)")
 
     results = []
+    scanned_at = datetime.now(ZoneInfo("America/New_York"))
+    failed_symbols = []
     reason_counts = {}
 
     total_stocks = len(stock_df)
@@ -272,6 +296,11 @@ def scan_universe(stock_df, export_to_excel=True, parallel=False, max_workers=10
             include_reason=True,
         )
         reason_counts[reason] = reason_counts.get(reason, 0) + 1
+        if reason in {"download_failure", "insufficient_history"}:
+            failed_symbols.append({
+                "symbol": str(row.get("Symbol", "")).strip().upper(),
+                "reason": reason,
+            })
         processed += 1
         if progress:
             if total_stocks <= 20 or processed % max(1, total_stocks // 20) == 0 or processed == total_stocks:
@@ -280,6 +309,12 @@ def scan_universe(stock_df, export_to_excel=True, parallel=False, max_workers=10
             continue
         results.append(result)
 
+    _write_failed_symbols(
+        failed_symbols_output,
+        failed_symbols,
+        scanned_at,
+        stock_df["Symbol"].astype(str).str.strip().str.upper().tolist(),
+    )
     print("=" * 80)
 
     if results:
@@ -351,7 +386,7 @@ def scan_universe(stock_df, export_to_excel=True, parallel=False, max_workers=10
     return results
 
 
-def scan_universe_parallel(stock_df, export_to_excel=True, max_workers=10, batch_reports=False, quiet=False, progress=False, html_report=False, available_cash=1000, risk_percent=1):
+def scan_universe_parallel(stock_df, export_to_excel=True, max_workers=10, batch_reports=False, quiet=False, progress=False, html_report=False, available_cash=1000, risk_percent=1, failed_symbols_output=None):
     if not quiet:
         print("=" * 80)
         print("              AI STOCK SCANNER V3.2 - LIQUIDITY FILTERS")
@@ -366,15 +401,16 @@ def scan_universe_parallel(stock_df, export_to_excel=True, max_workers=10, batch
         print(f"Progress: 0/{len(stock_df)} (0%)")
 
     results = []
-    futures = []
+    scanned_at = datetime.now(ZoneInfo("America/New_York"))
+    futures = {}
+    failed_symbols = []
     completed = 0
     total_stocks = len(stock_df)
     reason_counts = {}
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         for _, row in stock_df.iterrows():
-            futures.append(
-                executor.submit(
+            future = executor.submit(
                     process_stock,
                     row,
                     quiet,
@@ -382,7 +418,7 @@ def scan_universe_parallel(stock_df, export_to_excel=True, max_workers=10, batch
                     risk_percent,
                     True,
                 )
-            )
+            futures[future] = str(row.get("Symbol", "")).strip().upper()
 
         for future in as_completed(futures):
             completed += 1
@@ -392,6 +428,11 @@ def scan_universe_parallel(stock_df, export_to_excel=True, max_workers=10, batch
             try:
                 result, reason = future.result()
                 reason_counts[reason] = reason_counts.get(reason, 0) + 1
+                if reason in {"download_failure", "insufficient_history"}:
+                    failed_symbols.append({
+                        "symbol": futures[future],
+                        "reason": reason,
+                    })
                 if result is not None:
                     results.append(result)
             except Exception as error:
@@ -399,6 +440,12 @@ def scan_universe_parallel(stock_df, export_to_excel=True, max_workers=10, batch
                 if not quiet:
                     print(f"Parallel scan error: {error}")
 
+    _write_failed_symbols(
+        failed_symbols_output,
+        failed_symbols,
+        scanned_at,
+        stock_df["Symbol"].astype(str).str.strip().str.upper().tolist(),
+    )
     if not quiet:
         print("=" * 80)
 
@@ -470,6 +517,27 @@ def scan_universe_parallel(stock_df, export_to_excel=True, max_workers=10, batch
     return results
 
 
+def _append_retry_symbols(tickers, retry_symbols):
+    existing = set(tickers["Symbol"].astype(str).str.strip().str.upper())
+    additions = sorted({
+        str(symbol).strip().upper()
+        for symbol in (retry_symbols or [])
+        if str(symbol).strip()
+    } - existing)
+    if not additions:
+        return tickers
+    retry_rows = pd.DataFrame([
+        {
+            "Symbol": symbol,
+            "Market": "Retry",
+            "Sector": "Prior failed scan",
+            "Priority": "Retry",
+        }
+        for symbol in additions
+    ])
+    return pd.concat([tickers, retry_rows], ignore_index=True)
+
+
 def scan_watchlist(export_to_excel=True, parallel=False, max_workers=10, batch_reports=False, quiet=False, progress=False, html_report=False, available_cash=1000, risk_percent=1):
     try:
         watchlist = load_watchlist()
@@ -491,7 +559,7 @@ def scan_watchlist(export_to_excel=True, parallel=False, max_workers=10, batch_r
     )
 
 
-def scan_nyse(export_to_excel=True, limit=None, force_download=False, universe_source="download", supabase_url="", supabase_secret_key="", parallel=False, max_workers=10, batch_reports=False, quiet=False, progress=False, html_report=False, available_cash=1000, risk_percent=1):
+def scan_nyse(export_to_excel=True, limit=None, force_download=False, universe_source="download", supabase_url="", supabase_secret_key="", parallel=False, max_workers=10, batch_reports=False, quiet=False, progress=False, html_report=False, available_cash=1000, risk_percent=1, failed_symbols_output=None, retry_symbols=None):
     try:
         if universe_source == "supabase":
             tickers = load_latest_ticker_universe(
@@ -517,6 +585,7 @@ def scan_nyse(export_to_excel=True, limit=None, force_download=False, universe_s
         tickers = tickers.head(limit)
 
     tickers = tickers.rename(columns={"Exchange": "Market", "Security Name": "Sector"})
+    tickers = _append_retry_symbols(tickers, retry_symbols)
 
     if not quiet:
         print(f"Loaded NYSE universe: {len(tickers)} tickers (sorted by market cap)")
@@ -532,6 +601,7 @@ def scan_nyse(export_to_excel=True, limit=None, force_download=False, universe_s
         html_report=html_report,
         available_cash=available_cash,
         risk_percent=risk_percent,
+        failed_symbols_output=failed_symbols_output,
     )
 
 

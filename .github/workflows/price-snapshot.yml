@@ -19,6 +19,7 @@ on:
       - "stockscanner/portfolio_symbols.py"
       - "stockscanner/supabase_snapshot.py"
       - "stockscanner/price_run_state.py"
+      - "stockscanner/failed_symbol_store.py"
       - "supabase/migrations/**"
   # The hourly UTC range maps to 08:45-15:45 New York through both EDT and
   # EST; the New York gate rejects the single off-season endpoint. A separate
@@ -112,7 +113,19 @@ jobs:
             cp prices.json "$RUNNER_TEMP/prices.json"
           fi
 
+      - name: Load unresolved prior-market-day tickers for retry
+        if: steps.lease.outputs.acquired == 'true'
+        env:
+          SUPABASE_URL: https://cszzbkssxxgwgafwuonc.supabase.co
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          python -m stockscanner.failed_symbol_store \
+            --scan-type hourly \
+            --before-market-date "${{ steps.window.outputs.market_date }}" \
+            --output "$RUNNER_TEMP/retry-symbols.json"
+
       - name: Refresh prices through free provider failover
+        id: collect
         if: steps.lease.outputs.acquired == 'true'
         env:
           SUPABASE_URL: https://cszzbkssxxgwgafwuonc.supabase.co
@@ -123,7 +136,23 @@ jobs:
         run: |
           python -m stockscanner.price_snapshot \
             --output "$RUNNER_TEMP/prices.json" \
+            --failed-symbols-output "$RUNNER_TEMP/hourly-failed-symbols.json" \
+            --retry-symbols-file "$RUNNER_TEMP/retry-symbols.json" \
             --mode "${{ steps.window.outputs.mode }}"
+
+      - name: Store hourly failed-symbol scan record
+        if: always() && steps.lease.outputs.acquired == 'true'
+        env:
+          SUPABASE_URL: https://cszzbkssxxgwgafwuonc.supabase.co
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          if [ ! -f "$RUNNER_TEMP/hourly-failed-symbols.json" ]; then
+            echo "Price refresh did not produce failure metadata; refusing to record an empty scan." >&2
+            exit 1
+          fi
+          python -m stockscanner.failed_symbol_store "$RUNNER_TEMP/hourly-failed-symbols.json" \
+            --scan-type hourly \
+            --workflow-run-id "${{ github.run_id }}"
 
       - name: Store singleton in Supabase
         if: steps.lease.outputs.acquired == 'true'

@@ -1,16 +1,16 @@
-# StockScanner v2.17.0
+# StockScanner v2.18.0
 
 [![Stock Scanner](https://github.com/aksamuel/StockScanner/actions/workflows/scan.yml/badge.svg)](https://github.com/aksamuel/StockScanner/actions/workflows/scan.yml)
 
 StockScanner scans a watchlist or the NYSE universe, calculates technical and
 analyst signals, sizes positions, and produces Excel and GitHub Pages reports.
 
-**Stable release: v2.17.0** — searchable stock dropdowns, purchase-price labels,
-and profit/loss percentages beneath technical targets and support/resistance.
-Portfolio recovery timelines, the unified strength score and New York clocks
-remain available.
-Daily scanning, market-price collection, and owner-scoped portfolio storage
-continue through the existing services.
+**Stable release: v2.18.0** — Yahoo-first price collection with Alpaca and
+Twelve Data fallbacks, next-market-day retries for failed symbols, retained and
+dimmed stale prices, and an administrator-only failed-symbol history.
+Daily scans run at 07:30 New York time with a 09:00 fallback. Earlier portfolio
+recovery timelines, searchable dropdowns and purchase-price comparisons remain
+available.
 
 [Help & FAQ](https://aksamuel.github.io/StockScanner/help.html) explains the
 screens and recovery estimates. [Release notes](RELEASE_NOTES.md) describe this
@@ -21,7 +21,11 @@ AI-powered features with ChatGPT integration were introduced in v2.11.0. 🤖
 ## Features
 
 - Full NYSE universe and custom watchlist scanning
-- Split Alpaca Basic/IEX and Yahoo hourly price collection with bounded failover
+- Yahoo-first hourly price collection, then Alpaca Basic/IEX and bounded
+  Twelve Data failover
+- Persistent daily/hourly failed-symbol history with next-market-day retries
+- Retained last-available prices visibly dimmed when current refreshes fail
+- Admin-only failed-symbol scan history with scan dates, times and reasons
 - Technical scoring, signals, trends, RSI, MACD, and moving averages
 - Support and resistance zones based on completed daily candles
 - Intraday price overlays without changing daily indicators
@@ -358,9 +362,9 @@ combines the latest scanner symbols with the distinct symbols in every user's
 present price without becoming daily scan candidates. The backend query reads
 only the `symbol` column and does not expose portfolio details to the browser.
 
-The hourly job assigns alternating symbols to Alpaca Basic/IEX and Yahoo. Any
-missing or timed-out symbol is retried once through the other primary provider.
-Up to eight remaining symbols can use Twelve Data, matching its free
+The hourly job tries Yahoo Finance first for every symbol, then sends only
+missing or timed-out symbols to Alpaca Basic/IEX, followed by up to eight
+remaining symbols through Twelve Data. This matches Twelve Data's free
 eight-credit-per-minute allowance. Add `ALPACA_API_KEY_ID`,
 `ALPACA_API_SECRET_KEY`, and optionally `TWELVE_DATA_API_KEY` as protected
 `github-pages` environment secrets; none belongs in browser code. If a key is
@@ -376,14 +380,18 @@ at 60-minute intervals through 15:45. Per-slot database leases make delayed
 or duplicate GitHub cron events safe. A separate post-close candidate records
 the market close.
 
-The production universe scan normally starts immediately after the confirmed
-03:07 ticker refresh. A 09:17 schedule remains as the primary safety net,
-with a 10:47 fallback if GitHub delays or misses an earlier cron event. An
-atomic Supabase daily-run lease prevents these triggers from producing duplicate
-reports. The scanner refuses a stale universe or fewer than 2,000 NYSE rows,
-batch-caches one year of daily history, and reports why symbols were excluded.
-Failed runs release the date for the next fallback; partial reports are kept
-only as workflow artifacts and never replace the last successful site.
+The production universe scan runs at 07:30 New York time, with a 09:00 fallback
+if GitHub delays or misses the first cron event. An atomic Supabase daily-run
+lease prevents duplicate reports. The scanner refuses a stale universe or
+fewer than 2,000 NYSE rows, batch-caches one year of daily history, and reports
+why symbols were excluded. Failed symbols are saved with their run date and
+retried on the following market date. The protected `failed-symbols.html` page
+shows admins prior runs; daily and hourly retry queues remain separate.
+
+If a price provider fails, the last available price remains usable but is
+visibly dimmed and labeled with its last known time. Apply the failed-symbol
+history migration before deploying this release so the database has the queue,
+admin-only history, and per-symbol timestamp columns.
 
 Live site: <https://aksamuel.github.io/StockScanner/>
 
