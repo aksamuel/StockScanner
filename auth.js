@@ -534,6 +534,7 @@ function addNavigationDrawer(user) {
   const menuItems = [
     ["Scanner", "KPI dashboard", "index.html"],
     ["Scanner", "Technical analysis", "technical.html"],
+    ["Scanner", "Catalyst Lab (Beta)", "catalysts-beta.html"],
     ["Scanner", "Analysts rating", "analysts.html"],
     ["Scanner", "Bought candidates", "bought-selection.html"],
     ["Market data", "Hourly & daily prices", "market-prices.html"],

@@ -18,6 +18,10 @@ on:
       - main
     paths:
       - "auth.js"
+      - "catalysts-beta.html"
+      - "catalysts-beta.css"
+      - "catalysts-beta.js"
+      - "catalyst-model.mjs"
       - "bought-price.js"
       - "table-filters.js"
       - "searchable-filter.js"

@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex"><title>Catalyst Lab — StockScanner Beta</title>
+  <style data-stockscanner-auth>html:not(.auth-ready){visibility:hidden}</style>
+  <link rel="stylesheet" href="catalysts-beta.css">
+  <script type="module" src="auth.js" data-stockscanner-auth></script>
+</head>
+<body>
+<main>
+  <header class="hero"><div><p class="eyebrow">STOCKSCANNER / RESEARCH</p><h1>Catalyst Lab <span class="pill">BETA 1</span></h1>
+    <p class="subtitle">Official evidence. Technical context. Your investment thesis.</p></div><a class="button secondary" href="technical.html">Technical analysis ↗</a></header>
+  <section class="notice"><strong>Research only · No orders</strong><p>Scores are experimental, not validated return predictions. A filing is not automatically good news. Open its source and assess the evidence before assigning a catalyst. Always verify earnings dates and executable prices in IBKR.</p></section>
+  <form id="lookup" class="toolbar"><label for="symbol">NYSE ticker</label><input id="symbol" maxlength="15" placeholder="e.g. CRH" autocomplete="off" required pattern="[A-Za-z0-9][A-Za-z0-9.\-]{0,14}"><button id="analyse">Check SEC filings</button>
+    <button type="button" id="reload" class="secondary">Reload saved results</button><label for="filter">View</label><select id="filter"><option value="all">All researched stocks</option><option value="Candidate">Candidates</option><option value="Risk">Risk review</option><option value="Stale">Stale / incomplete</option></select>
+  </form>
+  <p id="message" role="status" aria-live="polite">Loading your research workspace…</p>
+  <p id="suggestions" class="hint"></p>
+  <section class="summary"><div><span>RESEARCHED</span><strong id="count">0</strong></div><div><span>YOUR REVIEWED EVENTS</span><strong id="reviewed">0</strong></div><div><span>TECHNICAL REPORT</span><strong id="report-date">Checking…</strong></div></section>
+  <div class="table-wrap"><table><thead><tr><th><button data-sort="symbol">Symbol</button></th><th><button data-sort="combined">Beta score /100</button></th><th>Technical /100</th><th>Catalyst ±25</th><th>Status</th><th>Entry</th><th>Stop</th><th>Targets 1 / 2 / 3</th><th>R:R at entry</th><th>Evidence checked</th><th>Inspect</th></tr></thead><tbody id="results"></tbody></table></div>
+  <p class="hint">Scope: on-demand NYSE research, not a completed whole-market catalyst scan. Technical values come from the existing daily report, not a live quote. Targets are the scanner’s percentage-based objectives—not analyst forecasts.</p>
+  <section id="detail" hidden>
+    <div class="section-heading"><div><p class="eyebrow">EVIDENCE WORKSPACE</p><h2 id="detail-title"></h2></div><div id="research-links" class="links"></div></div>
+    <p id="detail-context" class="hint"></p><div id="events"></div>
+  </section>
+  <details class="method"><summary>How the beta works and what is not automated</summary><p>The beta retrieves up to 60 recent SEC filings from the past 90 days. Metadata categories are tentative; they do not verify a positive or negative investment thesis. Form 4 does not necessarily mean an insider bought shares.</p>
+    <p>Your confirmed assessments contribute once per category for 30 days from the filing acceptance time. Combined score = 75% of the existing technical score + your catalyst adjustment (−25 to +25), bounded 0–100. Missing/stale data suppresses the combined score.</p>
+    <p>A candidate needs: beta score ≥75, positive assessed evidence, price above both 50/200-day averages, valid stop &lt; entry &lt; target, target-2 risk/reward ≥2 and report price within 3% of entry. These are unvalidated screening rules, not trade instructions. Upcoming earnings are not automatically known.</p>
+    <p>SEC cache: one hour. Stale evidence: 24 hours. Technical report freshness: maximum four calendar days, including weekends; this conservative age check is not an exchange-calendar guarantee. Refreshing filings does not refresh prices.</p>
+    <p>Reuters, Bloomberg, FactSet and IBKR are external research links only. No paid reports are copied. Your notes are private, source filings are shared with approved users. Production rankings and trading remain unchanged.</p>
+  </details>
+</main>
+<script>window.stockscannerNativeTableSorting = true;</script><script type="module" src="catalysts-beta.js"></script>
+</body></html>
