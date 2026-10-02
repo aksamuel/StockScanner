@@ -1,4 +1,4 @@
-# StockScanner v2.15.0 setup and operations
+# StockScanner v2.18.0 setup and operations
 
 Windows PowerShell commands to create and activate a virtual environment, install dependencies from `requirements.txt`, and verify installation.
 
@@ -150,13 +150,13 @@ Apply the migrations in timestamp order:
 8. `20260831193000_add_scanner_daily_run_state.sql`
 9. `20260831213000_market_price_reliability.sql`
 10. `20260831214500_document_backend_only_rls.sql`
-11. `20261002110000_add_failed_symbol_scan_history.sql`
+11. `20261002000000_add_portfolio_technical_signals.sql`
+12. `20261002110000_add_failed_symbol_scan_history.sql`
 
-The final two migrations add backend-only daily-scan and price-collection
-leases, scanner/price telemetry, previous-close and market-close fields, and
-purchased-position coverage. Apply them before deploying v2.15.0 workflows.
-The final migration adds the failed-symbol queue/history and per-symbol price
-timestamps; apply it before deploying v2.18.0.
+The 20260831 migrations add backend-only leases and price telemetry. The two
+20261002 migrations add owner-gated portfolio Technical-strength storage,
+failed-symbol queue/history, and per-symbol price timestamps. Apply both and
+deploy `portfolio-signals` before publishing v2.18.0.
 
 ## Activate invite-only Supabase authentication
 
@@ -203,6 +203,11 @@ feed. Optionally add a Twelve Data Basic key as `TWELVE_DATA_API_KEY`; the code
 uses no more than eight Twelve Data symbols per run so the scheduled workflow
 stays below its free minute and daily quotas.
 
+If a run reports `missing_credentials`, confirm that both Alpaca secrets are in
+the protected GitHub environment named `github-pages`. The workflow diagnostics
+separate missing credentials, rejected credentials, permission/subscription
+errors, rate limits, and network failures without recording either secret.
+
 The hourly symbol list is the union of the latest scanner snapshot and all
 distinct symbols in `public.user_portfolio_holdings`. This keeps the daily scan
 NYSE-only while still pricing existing NASDAQ and AMEX holdings. The workflow
@@ -215,21 +220,16 @@ For `aaksamuel@zohomail.com`, it also shows recent application activity and a
 link to the protected Supabase Logs Explorer. Never put a Supabase management
 token or secret key in this static page.
 
-Yahoo Finance is tried first for every symbol. Only Yahoo misses or errors are
-sent to Alpaca Basic/IEX; up to eight remaining gaps use Twelve Data. Retries
-are intentionally bounded: an endless loop could exceed a free quota and still
-cannot guarantee a current quote for an inactive or unsupported security. A
-failed live symbol retains its prior stored price and timestamp in the snapshot
-and appears in its `failures` object. Reports and Portfolio Analysis dim stale
-quotes while continuing to use the last available price in calculations.
+Yahoo Finance is tried first for every symbol. Provider calls use bounded
+retries; only Yahoo misses or errors are sent to Alpaca Basic/IEX, followed by
+up to eight remaining gaps through Twelve Data. A failed live symbol retains
+its prior stored price and timestamp. Reports and Portfolio Analysis show stale
+quotes in amber while continuing to use the last available price in calculations.
 
 Daily history failures and hourly quote failures have separate retry queues.
 Each market day retries only symbols that failed in an earlier market date;
 success resolves that queue entry and another failure keeps it pending.
 Administrators can inspect dated per-run history at `failed-symbols.html`.
-Apply `supabase/migrations/20261002110000_add_failed_symbol_scan_history.sql`
-before enabling the updated workflows. The migration grants history reads only
-to the named administrator through row-level security.
 
 Free-provider terms can restrict redistribution or public display. Confirm that
 the selected account plan permits the way the protected StockScanner site is
@@ -291,6 +291,13 @@ held, and Profit / Loss % first, in that order. Technical strength appears once
 inside Action review. The recovery timeline keeps Today undated and displays
 blue stock-history and orange Top 20 estimates in chronological order. Both the
 table and graph disclose that recovery dates are estimates without guarantees.
+The scheduled daily universe run also analyses distinct portfolio symbols that
+are outside NYSE. Their Technical strength and target evidence is stored in the
+backend-only `portfolio_technical_signals` table and returned through the
+authenticated `portfolio-signals` Edge Function. Portfolio-only symbols are
+excluded from public report files, discovery rankings, Top 20, Technical
+Analysis, and Analysts Rating. Failed attempts retain the previous successful
+signal and mark it stale.
 
 Publish `bought-price.js`, `table-filters.js`, and `searchable-filter.js` alongside
 `auth.js`. The shared guard reads the approved user's purchase prices and
@@ -316,6 +323,13 @@ every history request, including cache hits. Gateway JWT verification is disable
 because authentication is performed explicitly in the handler, supporting the
 project's current signing keys. No service-role key or new secret is required.
 
+Deploy `supabase/functions/portfolio-signals/index.ts` with its `handler.mjs`
+after applying the technical-signal migration. It validates the caller and
+approved access, then invokes an owner-scoped database function. Direct browser
+access to the signal table remains revoked. Apply the migration and deploy the
+function before deploying the v2.18.0 page so existing portfolio analysis is
+never replaced by a client that expects an unavailable backend.
+
 The response contains `points: [["YYYY-MM-DD", adjustedClose], ...]`, source, and
 generation time. Only ticker symbols are sent to Yahoo Finance; user IDs, broker
 names, quantities, and purchase prices are never forwarded. History uses one year
@@ -339,8 +353,9 @@ historical drawdown statistics. No recovery calculation changes action decisions
 Run `node tests/portfolio-history.test.mjs` to verify authentication, ownership,
 cache isolation, provider failure handling, and completed-candle parsing.
 
-Run `python -m pytest -q`, `node tests/date-format.test.mjs`, and
-`node tests/portfolio-recovery.test.mjs` before publishing. Verify broker selection,
+Run `python -m pytest -q` and `node --test tests/*.test.mjs` before publishing.
+The JavaScript suite includes private portfolio-signal access, date formatting,
+history ownership, recovery calculations, and bought-price labels. Verify broker selection,
 12-column table alignment, a single strength badge inside Action review, score
 boundaries (39, 40, 70, 71), positive and
 non-positive stock/benchmark returns, both projection start points and recovery
@@ -372,9 +387,9 @@ version. A test or deployment failure prevents a new stable release.
 
 The Pages build applies the current date/time formatter, Help links and shared
 searchable filters to archived HTML reports. This preserves original report URLs
-and ISO source data. The v2.18.0 failed-symbol history and per-symbol quote
-timestamps require the new Supabase migration. Apply it before deploying the
-updated pages and workflows.
+and ISO source data. The v2.18.0 deployment requires both 20261002
+migrations and the `portfolio-signals` Edge Function. Apply them before
+deploying the updated pages and workflows.
 For rollback, revert the release commit on `main` and deploy through the same
 workflow; do not rewrite existing release tags or modify user holdings.
 
@@ -398,19 +413,22 @@ still applies. The dashboard links to GitHub Actions for progress and logs.
 |---|---|---|
 | `ticker-universe.yml` | Atomically replaces `public.nyse_tickers` | Once per weekday at or after 03:07 New York time |
 | `scan.yml` | Runs the universe scan and publishes GitHub Pages | Weekdays at 07:30 New York time, with a 09:00 fallback |
-| `price-snapshot.yml` | Updates hourly/current, previous-close, and market-close prices directly in Supabase | Weekdays at 08:45 New York time, then every 60 minutes through 15:45, plus a post-close run and manual dispatch |
+| `price-snapshot.yml` | Attempts recovery every 15 minutes while retaining one logical price result per slot | Weekdays from 08:45 through 15:45 New York time, plus one close slot with retries through 20:00 |
 | `invite-admin.yml` | Invites or promotes an administrator without handling a password | Manual only |
 
-GitHub cron is UTC-only and may deliver runs late. The ticker and scan
-workflows schedule redundant candidate UTC hours and use New York date and
-database lease guards to remain daylight-saving safe. A delayed scanner
-candidate is accepted between 07:30 and 09:30 New York when that market date has
+GitHub cron may deliver runs late or omit an event. The price workflow uses
+frequent timezone-aware New York attempts; the ticker and scan workflows use
+redundant UTC candidates. New York date and database lease guards keep each
+workflow daylight-saving safe. A delayed scanner candidate is accepted between
+07:30 and 09:30 New York when that market date has
 not already completed. The
 scanner uses `public.scanner_run_state` as a backend-only atomic daily lease,
 requires today's refreshed universe with at least 2,000 rows, and batch-caches
 daily histories before analysis. `public.price_collection_runs` similarly
-deduplicates each hourly/close slot. Failed scans can be retried by the next
-fallback and never publish partial reports. Non-zero minutes avoid GitHub
+deduplicates each hourly/close slot. Failed price attempts release their slot
+for the next 15-minute recovery run; snapshot freshness is checked against a
+75-minute limit. Failed scans can be retried by the next fallback and never
+publish partial reports. Non-zero minutes avoid GitHub
 Actions' busiest top-of-hour window.
 
 ### Verify a production release

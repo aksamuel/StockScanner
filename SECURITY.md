@@ -4,11 +4,11 @@
 
 | Version | Security support |
 |---|---|
-| `2.15.x` | Supported |
-| `< 2.15` | Unsupported; upgrade to the current stable release |
+| `2.18.x` | Supported |
+| `< 2.18` | Unsupported; upgrade to the current stable release |
 
 The production baseline is maintained on `main` and pinned on the
-`stable/v2.15.0` branch.
+`stable/v2.18.0` branch.
 
 ## Reporting a vulnerability
 
@@ -48,6 +48,10 @@ JWT, password, session token, or recovery link.
   and an explicit service-role-only `EXECUTE` grant.
 - `public.price_snapshots` exposes read-only current prices to authenticated
   users and accepts writes only from backend automation.
+- `public.portfolio_technical_signals` is backend-only. Approved users receive
+  signals only for symbols in their own portfolio through the owner-scoped
+  `get_my_portfolio_technical_signals()` function and `portfolio-signals` Edge
+  Function. Static reports must never embed private portfolio-only signals.
 - `database.html` relies on those grants and RLS policies: approved users see
   shared market status and only their own portfolio/list counts. The activity
   log is queried only for the named administrator.

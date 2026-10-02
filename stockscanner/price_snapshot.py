@@ -7,6 +7,7 @@ import json
 import math
 import os
 import sys
+import time as time_module
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, time
 from html.parser import HTMLParser
@@ -32,13 +33,29 @@ NEW_YORK = ZoneInfo("America/New_York")
 MARKET_OPEN = time(9, 30)
 MARKET_CLOSE = time(16, 0)
 HOURLY_COLLECTION_START = time(8, 45)
-CLOSE_COLLECTION_END = time(18, 0)
+CLOSE_COLLECTION_END = time(20, 0)
 REPOSITORY_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_SNAPSHOT_PATH = REPOSITORY_ROOT / "prices.json"
 
 
 class SnapshotError(ValueError):
     """Raised when a price snapshot cannot be read or validated."""
+
+
+def provider_issue_code(error):
+    """Reduce provider failures to a safe operational diagnosis."""
+    detail = str(error or "").lower()
+    if "credentials are not configured" in detail:
+        return "missing_credentials"
+    if "http 401" in detail or "invalid authentication" in detail:
+        return "authentication_error"
+    if "http 403" in detail or "subscription does not permit" in detail:
+        return "permission_or_subscription_error"
+    if "http 429" in detail or "rate limit" in detail:
+        return "rate_limited"
+    if any(token in detail for token in ("timed out", "timeout", "urlerror", "network", "dns")):
+        return "network_error"
+    return "provider_error"
 
 
 class _TechnicalReportParser(HTMLParser):
@@ -334,6 +351,8 @@ def refresh_snapshot(
     report_paths=None,
     additional_symbols=None,
     close_run=False,
+    retry_delays=(),
+    sleeper=time_module.sleep,
     failed_symbols_path=None,
     retry_symbols=None,
 ):
@@ -386,6 +405,8 @@ def refresh_snapshot(
     updated_results = {}
     provider_for_symbol = {}
     attempt_errors = {symbol: [] for symbol in requested_symbols}
+    provider_attempts = {provider: 0 for provider in ("Alpaca", "Yahoo", "Twelve Data")}
+    provider_issues = {provider: set() for provider in provider_attempts}
     price_timestamps = []
 
     def yahoo_batch(requested, *, now):
@@ -395,12 +416,29 @@ def refresh_snapshot(
             return results, errors
 
         def fetch(symbol):
-            return downloader(symbol, now=now)
+            last_error = None
+            for retry_index in range(len(retry_delays) + 1):
+                try:
+                    return downloader(symbol, now=now)
+                except Exception as exc:
+                    last_error = exc
+                    if retry_index < len(retry_delays):
+                        sleeper(retry_delays[retry_index])
+            raise last_error
 
-        # Four workers keep Yahoo pressure modest while preventing one slow
-        # symbol from serially delaying the entire half-list.
-        with ThreadPoolExecutor(max_workers=min(4, len(requested))) as executor:
-            futures = {executor.submit(fetch, symbol): symbol for symbol in requested}
+        # Warm yfinance's shared SQLite cache synchronously. Without this,
+        # multiple first-use threads can race while setting cache pragmas and
+        # fail with "database is locked".
+        first, *remaining = requested
+        try:
+            results[first] = fetch(first)
+        except Exception as exc:
+            errors[first] = f"{type(exc).__name__}: {exc}"
+
+        # Four workers keep Yahoo pressure modest after the shared cache is
+        # initialized, while preventing one slow symbol from delaying all.
+        with ThreadPoolExecutor(max_workers=min(4, len(remaining) or 1)) as executor:
+            futures = {executor.submit(fetch, symbol): symbol for symbol in remaining}
             for future in as_completed(futures):
                 symbol = futures[future]
                 try:
@@ -413,13 +451,23 @@ def refresh_snapshot(
         requested = [symbol for symbol in requested if symbol not in updated_results]
         if not requested:
             return
+        provider_attempts[provider] += 1
         try:
-            response = fetcher(requested, now=local)
+            response = None
+            for retry_index in range(len(retry_delays) + 1):
+                try:
+                    response = fetcher(requested, now=local)
+                    break
+                except Exception:
+                    if retry_index >= len(retry_delays):
+                        raise
+                    sleeper(retry_delays[retry_index])
             if provider == "Yahoo":
                 response, errors = response
             else:
                 errors = {}
         except Exception as exc:
+            provider_issues[provider].add(provider_issue_code(exc))
             response = {}
             errors = {
                 symbol: f"{type(exc).__name__}: {exc}" for symbol in requested
@@ -434,6 +482,10 @@ def refresh_snapshot(
             )
             if price is None:
                 detail = errors.get(symbol, "no valid current price")
+                if symbol in errors:
+                    provider_issues[provider].add(provider_issue_code(detail))
+                else:
+                    provider_issues[provider].add("no_data")
                 attempt_errors[symbol].append(f"{provider}: {detail}")
                 continue
             updated_results[symbol] = result
@@ -514,6 +566,27 @@ def refresh_snapshot(
         provider: sum(1 for value in provider_for_symbol.values() if value == provider)
         for provider in ("Alpaca", "Yahoo", "Twelve Data")
     }
+    issue_priority = (
+        "missing_credentials",
+        "authentication_error",
+        "permission_or_subscription_error",
+        "rate_limited",
+        "network_error",
+        "provider_error",
+        "no_data",
+    )
+    provider_status = {}
+    for provider, count in provider_counts.items():
+        issues = provider_issues[provider]
+        if count:
+            status = "ok"
+        else:
+            status = next((code for code in issue_priority if code in issues), "no_data")
+        provider_status[provider] = {
+            "status": status,
+            "updated": count,
+            "attempts": provider_attempts[provider],
+        }
     payload["collection_strategy"] = "yahoo_primary_with_bounded_failover"
     payload["requested_symbol_count"] = len(symbols)
     payload["portfolio_symbol_count"] = len(portfolio_symbols)
@@ -525,6 +598,7 @@ def refresh_snapshot(
         100 * len(portfolio_updated) / len(portfolio_symbols), 2
     ) if portfolio_symbols else 100.0
     payload["provider_counts"] = provider_counts
+    payload["provider_status"] = provider_status
     payload["provider_by_symbol"] = dict(sorted(provider_for_symbol.items()))
     payload["stale_symbols"] = sorted(
         symbol for symbol in failures if symbol in prices
@@ -539,6 +613,7 @@ def refresh_snapshot(
         "failed": len(failures),
         "symbols": len(prices),
         "provider_counts": provider_counts,
+        "provider_status": provider_status,
         "portfolio_updated": len(portfolio_updated),
         "portfolio_missing": len(portfolio_missing),
         "collection_kind": payload["collection_kind"],
@@ -606,6 +681,7 @@ def main(argv=None):
             args.output,
             additional_symbols=portfolio_symbols,
             close_run=close_run,
+            retry_delays=(1, 3),
             failed_symbols_path=args.failed_symbols_output,
             retry_symbols=retry_symbols,
         )

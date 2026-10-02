@@ -9,7 +9,7 @@ import pytest
 from stockscanner import scan
 from openpyxl import load_workbook
 
-from stockscanner import html_report, report
+from stockscanner import html_report, report, scan as scan_module
 from stockscanner.add_exception import add_exceptions
 from stockscanner.analyst_data import (
     analyst_rating_priority,
@@ -29,7 +29,8 @@ from stockscanner.market_data import (
 )
 from stockscanner.ranking import rank_stocks, setup_priority
 from stockscanner.remove_exception import remove_exception, remove_exceptions
-from stockscanner.scan import process_stock
+from stockscanner.scan import extend_universe_with_portfolio, process_stock
+from stockscanner.portfolio_symbols import PortfolioSymbolError
 from stockscanner.scoring import score_stock
 from stockscanner.signals import generate_signal
 
@@ -1076,6 +1077,88 @@ def test_html_export_creates_three_stable_linked_pages(tmp_path, monkeypatch):
     assert snapshot["prices"] == {"ABC": 10.0}
 
 
+def test_html_report_never_embeds_private_portfolio_signals(tmp_path, monkeypatch):
+    monkeypatch.setattr(html_report, "REPORT_FOLDER", str(tmp_path))
+    snapshot_path = tmp_path / "prices.json"
+    monkeypatch.setattr(html_report, "PRICE_SNAPSHOT_PATH", snapshot_path)
+    monkeypatch.setattr(html_report, "_build_kpi_chart_data", lambda *args, **kwargs: None)
+
+    archived_page = html_report.export_html_report(
+        [{"Symbol": "ABC", "Score": 90, "Current Price": 10}],
+        quiet=True,
+    )
+
+    date_folder = Path(archived_page).parent
+    landing = (date_folder / "landing.html").read_text(encoding="utf-8")
+    technical = (date_folder / "technical.html").read_text(encoding="utf-8")
+    assert 'id="portfolioTechnicalSignals"' not in landing
+    assert "ADBE" not in landing
+    assert "ADBE" not in technical
+    snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
+    assert snapshot["prices"] == {"ABC": 10.0}
+
+
+def test_portfolio_symbols_extend_universe_without_changing_existing_candidates():
+    universe = pd.DataFrame(
+        [
+            {
+                "Symbol": "IBM",
+                "Market": "NYSE",
+                "Sector": "Technology",
+                "Market Cap": 1,
+            }
+        ]
+    )
+
+    extended = extend_universe_with_portfolio(universe, ["ibm", "ADBE", "ACMR"])
+
+    assert extended["Symbol"].tolist() == ["IBM", "ACMR", "ADBE"]
+    assert extended["Portfolio Only"].tolist() == [False, True, True]
+    assert extended["Portfolio Held"].tolist() == [True, True, True]
+    assert extended.loc[1, "Market"] == "Portfolio"
+
+
+def test_portfolio_signal_publish_failure_does_not_stop_public_scan(capsys):
+    def failed_publisher(_attempts):
+        raise RuntimeError("temporary private storage failure")
+
+    scan_module._publish_portfolio_attempts(
+        [{"symbol": "IBM", "success": True}],
+        failed_publisher,
+        quiet=True,
+    )
+
+    assert "previous run" in capsys.readouterr().err
+
+
+def test_portfolio_symbol_lookup_failure_keeps_core_nyse_scan_running(monkeypatch):
+    universe = pd.DataFrame(
+        [{"Symbol": "IBM", "Exchange": "NYSE", "Security Name": "IBM"}]
+    )
+    observed = {}
+    monkeypatch.setattr(scan_module, "load_nyse_tickers", lambda **_kwargs: universe)
+    monkeypatch.setattr(
+        scan_module,
+        "load_portfolio_symbols",
+        lambda **_kwargs: (_ for _ in ()).throw(PortfolioSymbolError("temporary")),
+    )
+    monkeypatch.setattr(
+        scan_module,
+        "scan_universe",
+        lambda frame, **kwargs: observed.update(frame=frame, kwargs=kwargs) or ["ok"],
+    )
+
+    result = scan_module.scan_nyse(
+        include_portfolio_symbols=True,
+        quiet=True,
+    )
+
+    assert result == ["ok"]
+    assert observed["frame"]["Symbol"].tolist() == ["IBM"]
+    assert observed["frame"]["Portfolio Held"].tolist() == [False]
+    assert observed["kwargs"]["portfolio_signal_publisher"] is None
+
+
 def test_html_export_survives_results_without_snapshot_prices(
     tmp_path, monkeypatch, capsys
 ):
@@ -1285,6 +1368,60 @@ def test_scan_result_places_analyst_and_risk_columns_after_sector(monkeypatch):
         "Risk/Reward",
         "Priority",
     ]
+
+
+def test_portfolio_only_stock_bypasses_discovery_price_and_liquidity_filters(
+    monkeypatch
+):
+    history = pd.DataFrame(
+        {
+            "Close": [0.50] * 200,
+            "High": [0.55] * 200,
+            "Volume": [100] * 200,
+            "MA20": [0.48] * 200,
+            "MA50": [0.46] * 200,
+            "MA200": [0.40] * 200,
+            "RSI": [60.0] * 200,
+            "MACD": [0.01] * 200,
+            "MACD_SIGNAL": [0.005] * 200,
+            "AVG_VOLUME": [100] * 200,
+        }
+    )
+    monkeypatch.setattr("stockscanner.scan.download_data", lambda symbol: history)
+    monkeypatch.setattr("stockscanner.scan.calculate_indicators", lambda data: data)
+    monkeypatch.setattr("stockscanner.scan.download_intraday_snapshot", lambda symbol: None)
+    monkeypatch.setattr("stockscanner.scan.calculate_relative_strength", lambda symbol: 10)
+    monkeypatch.setattr("stockscanner.scan.score_stock", lambda data, strength: 35)
+    monkeypatch.setattr("stockscanner.scan.generate_signal", lambda data: "Neutral")
+    monkeypatch.setattr(
+        "stockscanner.scan.generate_trade_plan",
+        lambda data, available_cash, risk_percent: {
+            "Trend": "Neutral", "Entry": 0.5, "Stop": 0.4,
+            "Target1": 0.6, "Target2": 0.7, "Target3": 0.8,
+            "RR": 1, "Shares": 10, "Investment": 5,
+        },
+    )
+    monkeypatch.setattr(
+        "stockscanner.scan.get_analyst_data",
+        lambda symbol, current_price: {
+            "Analyst Rating": "Unavailable", "Target Upside": None,
+        },
+    )
+
+    result = process_stock(
+        {
+            "Symbol": "PENNY",
+            "Market": "Portfolio",
+            "Sector": "Portfolio holding",
+            "Portfolio Only": True,
+        },
+        quiet=True,
+    )
+
+    assert result["Score"] == 35
+    assert result["Portfolio Only"] is True
+    assert result["Portfolio Held"] is True
+    assert result["Liquidity Status"] == "PORTFOLIO ANALYSIS"
 
 
 def test_completed_daily_data_drops_current_session_candle():

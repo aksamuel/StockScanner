@@ -247,6 +247,8 @@ def test_workflows_use_supabase_and_dst_safe_new_york_schedule():
     ).read()
 
     assert "--universe-source supabase" in scan_workflow
+    assert "--include-portfolio-symbols" in scan_workflow
+    assert "load_portfolio_symbols" in scan_workflow
     assert "--force-download" not in scan_workflow
     assert 'cron: "30 11,12 * * 1-5"' in scan_workflow
     assert 'cron: "0 13,14 * * 1-5"' in scan_workflow
@@ -268,9 +270,14 @@ def test_workflows_use_supabase_and_dst_safe_new_york_schedule():
     assert "--github-output \"$GITHUB_OUTPUT\"" in ticker_workflow
     assert "gh workflow run scan.yml" not in ticker_workflow
     assert "actions: write" not in ticker_workflow
-    assert 'cron: "45 12-20 * * 1-5"' in price_workflow
-    assert 'cron: "5 20,21 * * 1-5"' in price_workflow
-    assert 'time(8, 45) <= now.time() < time(16, 0)' in price_workflow
+    assert 'cron: "7,22,37,52 8-19 * * 1-5"' in price_workflow
+    assert 'timezone: "America/New_York"' in price_workflow
+    assert "stockscanner.price_schedule" in price_workflow
+    assert "stockscanner.snapshot_health" in price_workflow
+    assert "--max-age-minutes 75" in price_workflow
+    assert "ALPACA_STATUS" in price_workflow
+    assert "missing_credentials" in price_workflow
+    assert "permission_or_subscription_error" in price_workflow
     assert 'branches: [main]' in price_workflow
     assert '"stockscanner/price_snapshot.py"' in price_workflow
 

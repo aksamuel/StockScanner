@@ -3,6 +3,13 @@ import { parseDateInput } from "./date-format.js";
 export const DEFAULT_PROFIT_REVIEW_PERCENT = 7;
 export const DEFAULT_LOSS_REVIEW_PERCENT = -10;
 
+export function isPriceStale(value, now = Date.now(), maxAgeMinutes = 75) {
+  const timestamp = Date.parse(value || "");
+  const current = now instanceof Date ? now.getTime() : Number(now);
+  return Number.isFinite(timestamp) && Number.isFinite(current)
+    && current - timestamp > maxAgeMinutes * 60 * 1000;
+}
+
 export function technicalStrength(score) {
   if (score === null || score === undefined || score === '' || !Number.isFinite(Number(score))) {
     return { label: 'Unavailable', tone: 'unavailable', score: null };

@@ -7,6 +7,7 @@ import pytest
 from stockscanner.price_snapshot import (
     SnapshotError,
     is_regular_market_session,
+    provider_issue_code,
     refresh_snapshot,
     write_snapshot_from_results,
 )
@@ -25,6 +26,20 @@ def test_regular_market_session_gate_includes_open_and_close():
     assert is_regular_market_session(ny_time(16))
     assert not is_regular_market_session(ny_time(16, 1))
     assert not is_regular_market_session(ny_time(12, day=15))
+
+
+@pytest.mark.parametrize(
+    ("detail", "expected"),
+    [
+        ("Alpaca credentials are not configured", "missing_credentials"),
+        ("HTTP 401: invalid authentication", "authentication_error"),
+        ("HTTP 403: forbidden", "permission_or_subscription_error"),
+        ("HTTP 429: rate limit exceeded", "rate_limited"),
+        ("network timed out", "network_error"),
+    ],
+)
+def test_provider_issue_code_distinguishes_operational_causes(detail, expected):
+    assert provider_issue_code(detail) == expected
 
 
 def test_refresh_outside_market_hours_does_not_write(tmp_path):
@@ -127,6 +142,8 @@ def test_refresh_writes_json_and_preserves_failed_symbol_price(tmp_path, capsys)
         "Yahoo": 1,
         "Twelve Data": 0,
     }
+    assert payload["provider_status"]["Alpaca"]["status"] == "missing_credentials"
+    assert payload["provider_status"]["Yahoo"]["status"] == "ok"
     assert payload["generated_at_new_york"].endswith("EDT")
     assert payload["price_timestamp_new_york"] == "13/Aug/2026, 09:59 EDT"
     assert "Price refresh failed for BBB" in capsys.readouterr().err
@@ -254,6 +271,38 @@ def test_yahoo_exception_triggers_alpaca_fallback(tmp_path):
         "Twelve Data": 0,
     }
     assert json.loads(snapshot_path.read_text(encoding="utf-8"))["prices"]["AAA"] == 11
+
+
+def test_refresh_retries_transient_provider_failure(tmp_path):
+    snapshot_path = tmp_path / "prices.json"
+    write_snapshot_from_results(
+        [{"Symbol": "AAA", "Current Price": 10}],
+        snapshot_path,
+        ny_time(9),
+    )
+    calls = []
+    waits = []
+
+    def alpaca(symbols, now):
+        calls.append(list(symbols))
+        if len(calls) < 3:
+            raise OSError("temporary provider failure")
+        return {"AAA": {"price": 11, "timestamp": now.isoformat()}}
+
+    result = refresh_snapshot(
+        snapshot_path,
+        now=ny_time(10),
+        alpaca_downloader=alpaca,
+        downloader=lambda symbol, now: None,
+        twelve_data_downloader=lambda symbols, now: {},
+        retry_delays=(1, 3),
+        sleeper=waits.append,
+    )
+
+    assert len(calls) == 3
+    assert waits == [1, 3]
+    assert result["provider_counts"]["Alpaca"] == 1
+    assert result["provider_status"]["Alpaca"]["status"] == "ok"
 
 
 def test_refresh_caps_twelve_data_fallback_at_eight_free_credits(tmp_path):

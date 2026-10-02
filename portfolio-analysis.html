@@ -56,8 +56,11 @@
     .decision-reasons { margin-top: 6px; max-width: 270px; color: #b0bec5; font-size: .78rem; line-height: 1.35; }
     .decision-strength { display: grid; justify-items: start; gap: 4px; margin-top: 8px; }
     .decision-strength-label { color: #b0bec5; font-size: .78rem; }
+    .decision-strength-age { color: #90a4ae; font-size: .72rem; margin-top: 3px; }
+    .decision-strength-age.stale { color: #ffb74d; font-weight: 700; }
     .subtle { color: #90a4ae; font-size: .88rem; }
     .warning { color: #ffcc80; }
+    .price-stale { color: #ffb74d; font-weight: 750; }
     .table-wrap { margin-top: 12px; }
     .broker-tables { display: grid; gap: 24px; }
     .broker-group { min-width: 0; }
@@ -66,7 +69,6 @@
     .broker-result-count { color: #90a4ae; font-size: .86rem; }
     .broker-empty td { padding: 22px 12px; color: #90a4ae; text-align: center; }
     .broker-name { display: block; margin-top: 3px; color: #90a4ae; font-size: .8rem; }
-    .price-stale { color: #ffb74d; font-weight: 700; }
     .stale-price-row td { opacity: .62; }
     .portfolio-table { min-width: 1560px; }
     .portfolio-table td { vertical-align: top; }
@@ -144,6 +146,7 @@
       <p id="recoveryReference" class="subtle">Loading breakeven benchmark…</p>
       <p class="subtle">View recovery graph compares the stock's own historical growth rate with the Equal-weight Top 20 rate, starting at the latest available price today and aiming at your buy price. Both estimated breakeven dates remain visible. They are scenarios, not guaranteed dates, and exclude fees, taxes, dividends received, and currency conversion. Historical recovery statistics inside the graph show comparable past declines, including unrecovered episodes. Recovery scenarios do not change the action-review signal.</p>
       <p class="subtle">The timeline starts at the grey Today dot. Blue marks the stock-history estimate and orange marks Top 20, ordered by date. Dates use dd/mmm/yyyy; all displayed clocks use New York time, 24-hour HH:mm, with EST/EDT shown.</p>
+      <p class="subtle"><span class="price-stale">Amber current prices</span> are more than 75 minutes old. The latest available stale price remains in the analysis until a provider supplies a newer price.</p>
     </section>
 
     <div class="list-toolbar">
@@ -247,7 +250,7 @@
     import { setFilterOptions } from "/StockScanner/table-filters.js";
     import { formatDateTime, parseDateInput, validateDateInputs } from "/StockScanner/date-format.js";
     import { formatDate, requireApprovedUser, setFormBusy, setMessage, supabase, tableCell } from "/StockScanner/personal-lists.js";
-    import { daysHeld, detectedPortfolioBroker, equalWeightTopTwentyMetrics, holdingReturnPercent, portfolioActionDecision, portfolioConcentrationPercent, portfolioRowsFromCsv, profitTimingLabel, recommendedTargetPrice } from "/StockScanner/portfolio-analysis.js";
+    import { daysHeld, detectedPortfolioBroker, equalWeightTopTwentyMetrics, holdingReturnPercent, isPriceStale, portfolioActionDecision, portfolioConcentrationPercent, portfolioRowsFromCsv, profitTimingLabel, recommendedTargetPrice } from "/StockScanner/portfolio-analysis.js";
 
     const user = await requireApprovedUser();
     const brokerTables = document.querySelector("#brokerTables");
@@ -264,8 +267,8 @@
     let holdings = [];
     let imports = [];
     let latestPrices = {};
-    let snapshotTime = null;
     let stalePriceSymbols = new Set();
+    let snapshotTime = null;
     let priceTimestamps = {};
     let scannerSignals = {};
     let sortKey = "symbol";
@@ -371,8 +374,8 @@
       imports = importResult.data || [];
       updateBrokerOptions();
       latestPrices = priceResult.data?.prices || {};
-      snapshotTime = priceResult.data?.price_timestamp || priceResult.data?.generated_at || null;
       stalePriceSymbols = new Set(priceResult.data?.stale_symbols || []);
+      snapshotTime = priceResult.data?.price_timestamp || priceResult.data?.generated_at || null;
       priceTimestamps = priceResult.data?.price_timestamps || {};
       scannerSignals = scannerResult.signals;
       const warnings = [];
@@ -439,11 +442,16 @@
             analystTargetUpside: null,
           };
         });
-        if (!Object.keys(signals).length) throw new Error("No daily scanner rows were found.");
+        const optionalNumber = (value) => {
+          if (value === null || value === undefined || value === "") return null;
+          const number = Number(value);
+          return Number.isFinite(number) ? number : null;
+        };
         const targetWarnings = [];
-        const [technicalResult, analystResult] = await Promise.allSettled([
+        const [technicalResult, analystResult, privateSignalResult] = await Promise.allSettled([
           fetchDocument("/StockScanner/technical.html"),
           fetchDocument("/StockScanner/analysts.html"),
+          supabase.functions.invoke("portfolio-signals", { body: {} }),
         ]);
         if (technicalResult.status === "fulfilled") {
           try {
@@ -469,6 +477,39 @@
         } else {
           targetWarnings.push(analystResult.reason?.message || "Analyst targets unavailable.");
         }
+        if (privateSignalResult.status === "fulfilled" && !privateSignalResult.value.error) {
+          (privateSignalResult.value.data?.signals || []).forEach((signal) => {
+            const symbol = String(signal.symbol || "").trim().toUpperCase();
+            if (!symbol) return;
+            const recommendationText = String(signal.recommendation || "")
+              .replace(/[^A-Za-z ]/g, " ").replace(/\s+/g, " ").trim();
+            signals[symbol] = {
+              recommendation: recommendationText
+                ? recommendationText.toLowerCase().replace(/\s+/g, "-")
+                : "unavailable",
+              label: recommendationText
+                ? recommendationText.toLowerCase().replace(/\b\w/g, (letter) => letter.toUpperCase())
+                : "Unavailable",
+              score: optionalNumber(signal.score),
+              scannerPrice: optionalNumber(signal.scanner_price),
+              technicalTarget: optionalNumber(signal.technical_target),
+              resistanceTarget: optionalNumber(signal.resistance_target),
+              analystTargetUpside: optionalNumber(signal.analyst_target_upside),
+              marketDate: signal.market_date || null,
+              lastSuccessAt: signal.last_success_at || null,
+              status: signal.status || "unavailable",
+              stale: signal.status === "stale"
+                || (signal.scanner_status === "failed" && signal.market_date !== signal.scanner_market_date),
+              failureReason: signal.failure_reason || null,
+            };
+          });
+        } else {
+          const privateError = privateSignalResult.status === "fulfilled"
+            ? privateSignalResult.value.error
+            : privateSignalResult.reason;
+          targetWarnings.push(privateError?.message || "Private portfolio signals unavailable.");
+        }
+        if (!Object.keys(signals).length) throw new Error("No daily scanner rows were found.");
         return { signals, error: null, targetWarnings };
       } catch (error) {
         if (!benchmarkMetrics) document.querySelector("#recoveryReference").textContent = "Breakeven benchmark unavailable; estimated dates cannot be calculated.";
@@ -511,7 +552,7 @@
           stale: stalePriceSymbols.has(holding.symbol),
         };
       }
-      return { price: null, at: null, source: "Unavailable" };
+      return { price: null, at: null, source: "Unavailable", stale: false };
     }
 
     function analyzedHolding(holding) {
@@ -549,6 +590,7 @@
         const scanner = scannerSignals[holding.symbol] || {
           recommendation: "unavailable", label: "Unavailable", score: null,
           scannerPrice: null, technicalTarget: null, resistanceTarget: null, analystTargetUpside: null,
+          marketDate: null, lastSuccessAt: null, status: "unavailable", stale: false,
         };
         const concentrationPercent = concentrations[holding.symbol] ?? null;
         const analystTarget = Number.isFinite(scanner.analystTargetUpside) && Number.isFinite(scanner.scannerPrice)
@@ -756,6 +798,15 @@
       strengthLabel.className = "decision-strength-label";
       strengthLabel.textContent = "Technical strength";
       strengthReview.append(strengthLabel, strengthBadge);
+      if (holding.scanner.marketDate || holding.scanner.stale) {
+        const strengthAge = document.createElement("div");
+        strengthAge.className = `decision-strength-age${holding.scanner.stale ? " stale" : ""}`;
+        strengthAge.textContent = holding.scanner.stale
+          ? `Previous daily signal retained${holding.scanner.marketDate ? ` · ${formatDate(holding.scanner.marketDate)}` : ""}`
+          : `Daily signal · ${formatDate(holding.scanner.marketDate)}`;
+        if (holding.scanner.failureReason) strengthAge.title = holding.scanner.failureReason;
+        strengthReview.append(strengthAge);
+      }
       decisionCell.append(decision, decisionReasons, strengthReview);
       const actions = document.createElement("td");
       actions.className = "row-actions";

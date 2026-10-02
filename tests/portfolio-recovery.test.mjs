@@ -1,5 +1,11 @@
 import assert from 'node:assert/strict';
 import { technicalStrength, recoveryScenario, historicalRecovery, stockGrowthMetrics, recoveryGraphModel } from '../portfolio-recovery.js';
+import { isPriceStale } from '../portfolio-analysis.js';
+
+const priceNow = new Date('2026-09-24T15:00:00-04:00');
+assert.equal(isPriceStale('2026-09-24T13:44:59-04:00', priceNow), true);
+assert.equal(isPriceStale('2026-09-24T13:45:00-04:00', priceNow), false);
+assert.equal(isPriceStale(null, priceNow), false);
 
 for (const [score, label] of [[0,'Weak'],[39,'Weak'],[40,'Moderate'],[70,'Moderate'],[71,'Strong'],[100,'Strong'],[null,'Unavailable'],['','Unavailable'],[101,'Unavailable']]) {
   assert.equal(technicalStrength(score).label, label);

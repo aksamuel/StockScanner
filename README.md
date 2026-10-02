@@ -5,12 +5,11 @@
 StockScanner scans a watchlist or the NYSE universe, calculates technical and
 analyst signals, sizes positions, and produces Excel and GitHub Pages reports.
 
-**Stable release: v2.18.0** — Yahoo-first price collection with Alpaca and
-Twelve Data fallbacks, next-market-day retries for failed symbols, retained and
-dimmed stale prices, and an administrator-only failed-symbol history.
-Daily scans run at 07:30 New York time with a 09:00 fallback. Earlier portfolio
-recovery timelines, searchable dropdowns and purchase-price comparisons remain
-available.
+**Stable release: v2.18.0** — private owner-scoped portfolio Technical
+strength, retained stale evidence, Yahoo-first price collection with Alpaca and
+Twelve Data fallbacks, and next-market-day retries for failed symbols.
+Daily scans run at 07:30 New York time with a 09:00 fallback. Portfolio recovery
+timelines, searchable dropdowns and purchase-price comparisons remain available.
 
 [Help & FAQ](https://aksamuel.github.io/StockScanner/help.html) explains the
 screens and recovery estimates. [Release notes](RELEASE_NOTES.md) describe this
@@ -43,7 +42,8 @@ AI-powered features with ChatGPT integration were introduced in v2.11.0. 🤖
 - Daily Supabase NYSE universe refresh at 03:07 New York time
 - One-market-day intraday price storage, including the latest hourly quote,
   previous close, and current market close
-- Hourly price collection from 08:45 through 15:45 New York time
+- Retryable hourly price collection from 08:45 through 15:45 New York time,
+  with repeated closing-price recovery attempts
 - Authenticated database overview with RLS-safe personal counts and an
   administrator-only application activity log
 - Daily scanner health counts for downloads, history, price/liquidity filters,
@@ -280,6 +280,7 @@ longer create GitHub issues.
 | Purchased positions | `public.user_bought_selections` | Per user | User managed |
 | Imported broker holdings | `public.user_portfolio_holdings` | Latest per user and broker | On demand |
 | Portfolio import status | `public.user_portfolio_imports` | Latest per user and broker | On demand |
+| Portfolio technical signals | `public.portfolio_technical_signals` | Latest success per held symbol | Daily universe run |
 
 Each CSV import is an atomic replacement for the signed-in user and the
 selected broker. It deletes that user's older rows for the same broker, inserts
@@ -305,6 +306,13 @@ are never truncated or changed.
   **Action review**, replacing labels such as `Avoid (35)` with `Weak · 35/100`.
   The separate Technical strength column is removed. Strength remains visible
   for every action review, including when price data is missing.
+  The daily run also calculates this score for holdings outside the normal NYSE
+  discovery universe. Successful evidence is stored privately in Supabase and
+  returned only for the signed-in user's current holdings. Portfolio-only results
+  never enter GitHub report files, scanner rankings, Top 20, Technical Analysis,
+  or Analysts Rating.
+  A score can remain unavailable when the provider returns less than 200 trading
+  days or when its history or indicators cannot be calculated.
 - **Recovery scenario / days held** keeps the estimated breakeven date visible
   alongside calendar days and the percentage gain required to recover cost.
   Recovered positions say "Buy price recovered". Each estimated date assumes
@@ -356,11 +364,19 @@ Backend workflows use `SUPABASE_SECRET_KEY` from the protected GitHub
 `github-pages` environment. That secret must never be placed in HTML,
 JavaScript, documentation examples, or source control.
 
-The daily scanner remains NYSE-only. The hourly price universe is broader: it
+The public discovery scanner remains NYSE-only. Its daily backend run also
+calculates private portfolio enrichment without turning held symbols into
+discovery candidates. The hourly price universe is broader: it
 combines the latest scanner symbols with the distinct symbols in every user's
 `user_portfolio_holdings`, so existing NASDAQ and AMEX positions can receive a
-present price without becoming daily scan candidates. The backend query reads
+present price without becoming discovery candidates. The backend query reads
 only the `symbol` column and does not expose portfolio details to the browser.
+
+Daily portfolio signals are stored separately from hourly prices. Successful
+rows replace earlier evidence; a failed symbol retains its last successful score
+and is marked stale. Portfolio Analysis reads these rows through an authenticated
+owner-scoped function. A portfolio lookup or signal-storage failure is reported
+without preventing the public NYSE report from completing.
 
 The hourly job tries Yahoo Finance first for every symbol, then sends only
 missing or timed-out symbols to Alpaca Basic/IEX, followed by up to eight
@@ -369,16 +385,23 @@ eight-credit-per-minute allowance. Add `ALPACA_API_KEY_ID`,
 `ALPACA_API_SECRET_KEY`, and optionally `TWELVE_DATA_API_KEY` as protected
 `github-pages` environment secrets; none belongs in browser code. If a key is
 absent, that provider is skipped and the remaining configured providers run.
+The workflow opens an operational issue when Alpaca supplies no prices, so a
+silent return to Yahoo-only collection is visible. Its safe diagnostic identifies
+missing credentials, rejected credentials, permission/subscription errors, rate
+limits, and network failures without storing the key or secret.
 
 Hourly collection writes directly to Supabase and does not commit generated
 price JSON or redeploy GitHub Pages. Each run first reads the singleton row,
 updates it, and writes it back. When the New York market date changes, prior
 intraday samples are discarded while the prior close is retained as the new
 day's comparison baseline. A separate close run records today's market close.
-The first hourly run is scheduled for 08:45 New York time, followed by runs
-at 60-minute intervals through 15:45. Per-slot database leases make delayed
-or duplicate GitHub cron events safe. A separate post-close candidate records
-the market close.
+The workflow attempts recovery every 15 minutes from 08:00 through 19:59 New
+York time. Each attempt resolves the latest due 08:45–15:45 hourly slot, while
+post-close attempts share one closing slot. Per-slot database leases make the
+extra attempts inexpensive and prevent duplicate snapshots. A failed attempt
+releases its slot immediately so the next scheduled attempt can retry. Yahoo's
+shared cache is initialized before parallel requests to prevent first-use
+SQLite locking.
 
 The production universe scan runs at 07:30 New York time, with a 09:00 fallback
 if GitHub delays or misses the first cron event. An atomic Supabase daily-run

@@ -117,6 +117,18 @@ def test_bought_page_calculates_latest_profit_and_loss_percentage():
     assert "td.pl-loss" in styles
 
 
+def test_portfolio_uses_and_marks_prices_older_than_75_minutes():
+    page = read("portfolio-analysis.html")
+    logic = read("portfolio-analysis.js")
+
+    assert '.select("prices,price_timestamp,generated_at,stale_symbols,price_timestamps")' in page
+    assert "at: priceTimestamps[holding.symbol] || snapshotTime" in page
+    assert 'priceCell.classList.add("price-stale")' in page
+    assert "quoteAge > 75 * 60 * 1000" in page
+    assert "latest available stale price remains in the analysis" in page
+    assert "current - timestamp > maxAgeMinutes * 60 * 1000" in logic
+
+
 def test_bought_page_estimates_breakeven_from_equal_weight_top_twenty():
     page = read("my-bought-selection.html")
     logic = read("portfolio-analysis.js")
@@ -252,6 +264,8 @@ def test_portfolio_page_supports_ibkr_csv_and_rule_based_analysis():
     assert 'return decision("partial-sell", "Partial sell review"' in logic
     assert "Hold / monitor" in logic
     assert "loadDailyScannerSignals" in page
+    assert 'supabase.functions.invoke("portfolio-signals"' in page
+    assert "portfolioTechnicalSignals" not in page
     assert "const recommendationText = cells[4]?.textContent" in page
     assert "portfolioConcentrationPercent" in page
     assert "portfolioActionDecision" in page

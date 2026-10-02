@@ -29,14 +29,14 @@ on:
       - "stockscanner/cli.py"
       - "stockscanner/__init__.py"
       - "stockscanner/html_report.py"
-      - "stockscanner/report.py"
       - "stockscanner/scan.py"
+      - "stockscanner/technical_signal_store.py"
+      - "stockscanner/report.py"
       - "stockscanner/failed_symbol_store.py"
       - "failed-symbols.html"
       - "tests/**"
       - "login.html"
       - "admin.html"
-      - "failed-symbols.html"
       - "users.html"
       - "my-exceptions.html"
       - "my-bought-selection.html"
@@ -52,6 +52,7 @@ on:
       - "portfolio-recovery.js"
       - "recovery-chart.js"
       - "supabase/functions/portfolio-history/**"
+      - "supabase/functions/portfolio-signals/**"
       - "supabase/migrations/**"
       - "tools/inject_auth.py"
       - "tools/format_report_dates.py"
@@ -253,6 +254,7 @@ jobs:
           from datetime import datetime
           from zoneinfo import ZoneInfo
           from stockscanner.market_data import download_data_bulk
+          from stockscanner.portfolio_symbols import PortfolioSymbolError, load_portfolio_symbols
           from stockscanner.ticker_universe_store import load_latest_ticker_universe
 
           tickers = load_latest_ticker_universe(
@@ -267,7 +269,19 @@ jobs:
           limit = int(os.environ.get("SCAN_LIMIT", "0") or 0)
           if limit > 0:
               symbols = symbols[:limit]
-          symbols = list(dict.fromkeys(symbols + [row["symbol"] for row in retry_payload["symbols"]]))
+          try:
+              portfolio_symbols = load_portfolio_symbols(
+                  supabase_url=os.environ["SUPABASE_URL"],
+                  secret_key=os.environ["SUPABASE_SECRET_KEY"],
+              )
+          except PortfolioSymbolError as error:
+              portfolio_symbols = []
+              print(f"Portfolio history cache skipped; NYSE caching continues: {error}")
+          symbols = list(dict.fromkeys([
+              *symbols,
+              *[row["symbol"] for row in retry_payload["symbols"]],
+              *portfolio_symbols,
+          ]))
           cached = download_data_bulk(
               symbols,
               force=True,
@@ -276,7 +290,7 @@ jobs:
               pause_between_chunks=1,
               progress=True,
           )
-          print(f"Batch history cached for {len(cached)} of {len(symbols)} NYSE symbols.")
+          print(f"Batch history cached for {len(cached)} of {len(symbols)} NYSE and portfolio symbols.")
           PY
 
       - name: Run scanner (universe mode)
@@ -292,6 +306,7 @@ jobs:
           python -m stockscanner.cli \
             --universe \
             --universe-source supabase \
+            --include-portfolio-symbols \
             --parallel \
             --workers ${{ inputs.workers || 8 }} \
             --portfolio ${{ inputs.portfolio || 50000 }} \

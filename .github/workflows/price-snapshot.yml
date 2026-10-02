@@ -13,6 +13,8 @@ on:
     paths:
       - ".github/workflows/price-snapshot.yml"
       - "stockscanner/price_snapshot.py"
+      - "stockscanner/price_schedule.py"
+      - "stockscanner/snapshot_health.py"
       - "stockscanner/display_time.py"
       - "stockscanner/price_providers.py"
       - "stockscanner/market_data.py"
@@ -21,12 +23,11 @@ on:
       - "stockscanner/price_run_state.py"
       - "stockscanner/failed_symbol_store.py"
       - "supabase/migrations/**"
-  # The hourly UTC range maps to 08:45-15:45 New York through both EDT and
-  # EST; the New York gate rejects the single off-season endpoint. A separate
-  # candidate pair captures the close through both daylight-saving offsets.
+  # Frequent New York attempts recover from delayed or dropped scheduled
+  # events. Supabase leases permit only one completed collection per due slot.
   schedule:
-    - cron: "45 12-20 * * 1-5"
-    - cron: "5 20,21 * * 1-5"
+    - cron: "7,22,37,52 8-19 * * 1-5"
+      timezone: "America/New_York"
 
 permissions:
   contents: read
@@ -45,49 +46,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v5
 
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.11"
-          cache: pip
-
-      - name: Install dependencies
-        run: |
-          pip install -r requirements.txt
-          pip install -e ".[dev]"
-
-      - name: Test snapshot code
-        run: pytest -q tests/test_price_snapshot.py tests/test_price_run_state.py tests/test_portfolio_symbols.py tests/test_supabase_snapshot.py
-
       - name: Resolve New York collection window
         id: window
         env:
           REQUESTED_MODE: ${{ github.event.inputs.mode || 'auto' }}
-          TRIGGER_SCHEDULE: ${{ github.event.schedule || '' }}
-        run: |
-          python - <<'PY'
-          import os
-          from datetime import datetime, time
-          from zoneinfo import ZoneInfo
-
-          now = datetime.now(ZoneInfo("America/New_York"))
-          mode = os.environ["REQUESTED_MODE"]
-          if mode == "auto":
-              scheduled_close = os.environ["TRIGGER_SCHEDULE"].startswith("5 ")
-              manual_close = not os.environ["TRIGGER_SCHEDULE"] and now.time() >= time(16, 0)
-              mode = "close" if scheduled_close or manual_close else "hourly"
-          valid = now.weekday() < 5 and (
-              time(8, 45) <= now.time() < time(16, 0)
-              if mode == "hourly"
-              else time(16, 0) <= now.time() <= time(18, 0)
-          )
-          slot = f"{now.date().isoformat()}:{'close' if mode == 'close' else now.strftime('%H')}"
-          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
-              output.write(f"valid={str(valid).lower()}\n")
-              output.write(f"mode={mode}\n")
-              output.write(f"market_date={now.date().isoformat()}\n")
-              output.write(f"slot={slot}\n")
-          PY
+        run: python -m stockscanner.price_schedule --mode "$REQUESTED_MODE" --github-output "$GITHUB_OUTPUT"
 
       - name: Acquire collection slot
         id: lease
@@ -101,6 +64,23 @@ jobs:
             --market-date "${{ steps.window.outputs.market_date }}" \
             --workflow-run-id "${{ github.run_id }}" \
             --github-output "$GITHUB_OUTPUT"
+
+      - name: Set up Python 3.11
+        if: steps.lease.outputs.acquired == 'true'
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        if: steps.lease.outputs.acquired == 'true'
+        run: |
+          pip install -r requirements.txt
+          pip install -e ".[dev]"
+
+      - name: Test snapshot code
+        if: steps.lease.outputs.acquired == 'true'
+        run: pytest -q tests/test_price_snapshot.py tests/test_price_schedule.py tests/test_price_run_state.py tests/test_portfolio_symbols.py tests/test_supabase_snapshot.py
 
       - name: Download current singleton from Supabase
         if: steps.lease.outputs.acquired == 'true'
@@ -176,16 +156,72 @@ jobs:
               output.write(f"missing_symbols={','.join(missing)}\n")
           PY
 
-      - name: Finish collection slot
+      - name: Check snapshot freshness and provider fallback
+        id: health
         if: steps.lease.outputs.acquired == 'true'
+        run: python -m stockscanner.snapshot_health --input "$RUNNER_TEMP/prices.json" --max-age-minutes 75 --github-output "$GITHUB_OUTPUT"
+
+      - name: Report stale stored snapshot
+        if: steps.health.outputs.fresh == 'false'
         env:
-          SUPABASE_URL: https://cszzbkssxxgwgafwuonc.supabase.co
-          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          GH_TOKEN: ${{ github.token }}
+          AGE_MINUTES: ${{ steps.health.outputs.age_minutes }}
         run: |
-          python -m stockscanner.price_run_state finish \
-            --slot "${{ steps.window.outputs.slot }}" \
-            --workflow-run-id "${{ github.run_id }}" \
-            --status completed
+          TITLE="Hourly market snapshot is stale"
+          EXISTING=$(gh issue list --state open --search "$TITLE in:title" --json number,title --jq ".[] | select(.title == \"$TITLE\") | .number" | head -1)
+          BODY="The stored snapshot is ${AGE_MINUTES} minutes old after a recovery attempt. Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          if [ -n "$EXISTING" ]; then
+            gh issue comment "$EXISTING" --body "$BODY"
+          else
+            gh issue create --title "$TITLE" --body "$BODY"
+          fi
+          exit 1
+
+      - name: Close recovered snapshot freshness issue
+        if: steps.health.outputs.fresh == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TITLE="Hourly market snapshot is stale"
+          gh issue list --state open --search "$TITLE in:title" --json number,title \
+            --jq ".[] | select(.title == \"$TITLE\") | .number" | \
+          while read -r ISSUE_NUMBER; do
+            [ -z "$ISSUE_NUMBER" ] || gh issue close "$ISSUE_NUMBER" --comment "The hourly snapshot is fresh again."
+          done
+
+      - name: Report unavailable Alpaca fallback
+        if: steps.health.outputs.alpaca_ready == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ALPACA_STATUS: ${{ steps.health.outputs.alpaca_status }}
+        run: |
+          TITLE="Hourly price fallback is unavailable"
+          EXISTING=$(gh issue list --state open --search "$TITLE in:title" --json number,title --jq ".[] | select(.title == \"$TITLE\") | .number" | head -1)
+          case "$ALPACA_STATUS" in
+            missing_credentials) DIAGNOSIS="The Alpaca credentials are absent from the protected github-pages environment. Add ALPACA_API_KEY_ID and ALPACA_API_SECRET_KEY there." ;;
+            authentication_error) DIAGNOSIS="Alpaca rejected the configured key pair. Replace or regenerate the two Alpaca secrets." ;;
+            permission_or_subscription_error) DIAGNOSIS="Alpaca accepted the request but denied the selected market-data permission or subscription. The workflow requests the free IEX feed." ;;
+            rate_limited) DIAGNOSIS="Alpaca rate-limited the request. Automatic retries and Yahoo/Twelve Data failover remain active." ;;
+            network_error) DIAGNOSIS="The runner could not reliably reach Alpaca. Automatic retries and provider failover remain active." ;;
+            *) DIAGNOSIS="Alpaca returned no usable prices. Review the provider response in this run." ;;
+          esac
+          if [ -n "$EXISTING" ]; then
+            gh issue comment "$EXISTING" --body "Alpaca supplied zero prices. Diagnosis: ${DIAGNOSIS} Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          else
+            gh issue create --title "$TITLE" --body "Alpaca supplied zero prices. Diagnosis: ${DIAGNOSIS} Yahoo remains the full-universe fallback, followed by the bounded Twelve Data fallback. Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          fi
+
+      - name: Close recovered Alpaca fallback issue
+        if: steps.health.outputs.alpaca_ready == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TITLE="Hourly price fallback is unavailable"
+          gh issue list --state open --search "$TITLE in:title" --json number,title \
+            --jq ".[] | select(.title == \"$TITLE\") | .number" | \
+          while read -r ISSUE_NUMBER; do
+            [ -z "$ISSUE_NUMBER" ] || gh issue close "$ISSUE_NUMBER" --comment "Alpaca is supplying prices again."
+          done
 
       - name: Report incomplete purchased-stock coverage
         if: steps.coverage.outputs.complete == 'false'
@@ -216,8 +252,19 @@ jobs:
             [ -z "$ISSUE_NUMBER" ] || gh issue close "$ISSUE_NUMBER" --comment "All purchased symbols refreshed successfully."
           done
 
+      - name: Finish collection slot
+        if: success() && steps.lease.outputs.acquired == 'true'
+        env:
+          SUPABASE_URL: https://cszzbkssxxgwgafwuonc.supabase.co
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: |
+          python -m stockscanner.price_run_state finish \
+            --slot "${{ steps.window.outputs.slot }}" \
+            --workflow-run-id "${{ github.run_id }}" \
+            --status completed
+
       - name: Release failed collection slot
-        if: failure() && steps.lease.outputs.acquired == 'true' && steps.coverage.outputs.complete != 'false'
+        if: failure() && steps.lease.outputs.acquired == 'true'
         env:
           SUPABASE_URL: https://cszzbkssxxgwgafwuonc.supabase.co
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}

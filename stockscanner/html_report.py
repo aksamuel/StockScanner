@@ -940,7 +940,7 @@ def _generate_html(
         if chart_available
         else ""
     )
-    chart_json = json.dumps(chart_data if chart_available else None)
+    chart_json = json.dumps(chart_data if chart_available else None).replace("</", "<\\/")
     chart_library = (
         '<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js">'
         "</script>"

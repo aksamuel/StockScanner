@@ -38,6 +38,11 @@ def parse_args():
         help="Load the NYSE universe from a live download or Supabase.",
     )
     parser.add_argument(
+        "--include-portfolio-symbols",
+        action="store_true",
+        help="Also analyse held symbols without adding them to scanner rankings.",
+    )
+    parser.add_argument(
         "--parallel",
         action="store_true",
         help="Run stock scans in parallel across multiple threads."
@@ -118,6 +123,7 @@ def main():
             universe_source=args.universe_source,
             supabase_url=os.environ.get("SUPABASE_URL", ""),
             supabase_secret_key=os.environ.get("SUPABASE_SECRET_KEY", ""),
+            include_portfolio_symbols=args.include_portfolio_symbols,
             parallel=args.parallel,
             max_workers=args.workers,
             batch_reports=args.batch_reports,

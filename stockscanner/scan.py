@@ -15,6 +15,15 @@ from stockscanner.config import (
 )
 from stockscanner.universe import load_nyse_tickers
 from stockscanner.ticker_universe_store import load_latest_ticker_universe
+from stockscanner.portfolio_symbols import (
+    PortfolioSymbolError,
+    load_portfolio_symbols,
+    normalize_portfolio_symbols,
+)
+from stockscanner.technical_signal_store import (
+    publish_portfolio_technical_signals,
+    technical_signal_attempt,
+)
 from stockscanner.watchlist import load_watchlist
 from stockscanner.market_data import (
     completed_daily_data,
@@ -67,6 +76,8 @@ def process_stock(
     market = row.get("Market", "Unknown")
     sector = row.get("Sector", "Unknown")
     priority = row.get("Priority", "Normal")
+    portfolio_only = bool(row.get("Portfolio Only", False))
+    portfolio_held = bool(row.get("Portfolio Held", portfolio_only))
 
     def excluded(reason):
         return (None, reason) if include_reason else None
@@ -117,6 +128,13 @@ def process_stock(
     latest = analysis_df.iloc[-1]
     current_price = float(latest["Close"])
     average_dollar_volume = current_price * average_volume
+    discovery_exclusion_reason = (
+        "price_below_minimum"
+        if current_price < MIN_PRICE
+        else "liquidity_below_minimum"
+        if average_dollar_volume < MIN_AVERAGE_DOLLAR_VOLUME
+        else None
+    )
     try:
         zone_analysis = analyze_support_resistance(df, current_price=current_price)
     except Exception as error:
@@ -124,12 +142,13 @@ def process_stock(
             print(f"Support/Resistance Error: {error}")
         zone_analysis = analyze_support_resistance(None)
 
-    if current_price < MIN_PRICE:
+    discovery_excluded = portfolio_only
+    if current_price < MIN_PRICE and not portfolio_held:
         if not quiet:
             print("Skipped: price below minimum price.")
         return excluded("price_below_minimum")
 
-    if average_dollar_volume < MIN_AVERAGE_DOLLAR_VOLUME:
+    if average_dollar_volume < MIN_AVERAGE_DOLLAR_VOLUME and not portfolio_held:
         if not quiet:
             print("Skipped: dollar volume below threshold.")
         return excluded("liquidity_below_minimum")
@@ -195,7 +214,15 @@ def process_stock(
         "Price As Of": price_timestamp,
         "Average Volume": round(average_volume, 0),
         "Average Dollar Volume": round(average_dollar_volume, 0),
-        "Liquidity Status": "PASS",
+        "Liquidity Status": (
+            "PORTFOLIO ANALYSIS"
+            if portfolio_held
+            and (
+                current_price < MIN_PRICE
+                or average_dollar_volume < MIN_AVERAGE_DOLLAR_VOLUME
+            )
+            else "PASS"
+        ),
         "20 MA": round(float(latest["MA20"]), 2),
         "50 MA": round(float(latest["MA50"]), 2),
         "200 MA": round(float(latest["MA200"]), 2),
@@ -213,6 +240,18 @@ def process_stock(
         "Target 2": round(float(plan["Target2"]), 2),
         "Target 3": round(float(plan["Target3"]), 2),
         "Investment": round(float(plan["Investment"]), 2),
+        "Portfolio Held": portfolio_held,
+        "Portfolio Only": discovery_excluded
+        or (
+            portfolio_held
+            and (
+                current_price < MIN_PRICE
+                or average_dollar_volume < MIN_AVERAGE_DOLLAR_VOLUME
+            )
+        ),
+        "Discovery Exclusion Reason": discovery_exclusion_reason
+        if portfolio_held
+        else None,
     }
 
     if not quiet:
@@ -236,6 +275,73 @@ def _scan_summary(universe_count, reasons):
     }
 
 
+def extend_universe_with_portfolio(tickers, portfolio_symbols):
+    """Append held symbols without turning them into scanner candidates."""
+    extended = tickers.copy()
+    extended["Portfolio Only"] = False
+    held = normalize_portfolio_symbols(portfolio_symbols or [])
+    held_set = set(held)
+    extended["Portfolio Held"] = extended.get(
+        "Symbol", pd.Series(dtype=str)
+    ).map(lambda symbol: str(symbol).strip().upper() in held_set)
+    existing = {
+        str(symbol).strip().upper()
+        for symbol in extended.get("Symbol", pd.Series(dtype=str)).tolist()
+    }
+    additional = [symbol for symbol in held if symbol not in existing]
+    if not additional:
+        return extended
+    portfolio_rows = pd.DataFrame(
+        {
+            "Symbol": additional,
+            "Market": ["Portfolio"] * len(additional),
+            "Sector": ["Portfolio holding"] * len(additional),
+            "Market Cap": [0] * len(additional),
+            "Portfolio Only": [True] * len(additional),
+            "Portfolio Held": [True] * len(additional),
+        }
+    )
+    return pd.concat([extended, portfolio_rows], ignore_index=True, sort=False)
+
+
+def _partition_scan_results(results):
+    internal_columns = {
+        "Portfolio Held",
+        "Portfolio Only",
+        "Discovery Exclusion Reason",
+    }
+    regular = [
+        {key: value for key, value in result.items() if key not in internal_columns}
+        for result in results
+        if not result.get("Portfolio Only")
+    ]
+    portfolio_only = [result for result in results if result.get("Portfolio Only")]
+    return regular, portfolio_only
+
+
+def _portfolio_row_count(stock_df):
+    """Count portfolio-only rows while supporting ordinary watchlist frames."""
+    column = stock_df.get("Portfolio Only")
+    if column is None:
+        return 0
+    return int(column.fillna(False).astype(bool).sum())
+
+
+def _publish_portfolio_attempts(attempts, publisher, quiet=False):
+    if not attempts or publisher is None:
+        return
+    try:
+        publisher(attempts)
+    except Exception as error:
+        print(
+            f"Portfolio technical signals retained from the previous run: {error}",
+            file=sys.stderr,
+        )
+    else:
+        if not quiet:
+            print(f"Stored {len(attempts)} private portfolio technical-signal attempts.")
+
+
 def _write_failed_symbols(path, failures, scanned_at, attempted_symbols):
     if path is None:
         return
@@ -253,7 +359,7 @@ def _write_failed_symbols(path, failures, scanned_at, attempted_symbols):
     temporary.replace(target)
 
 
-def scan_universe(stock_df, export_to_excel=True, parallel=False, max_workers=10, batch_reports=False, quiet=False, progress=False, html_report=False, available_cash=1000, risk_percent=1, failed_symbols_output=None):
+def scan_universe(stock_df, export_to_excel=True, parallel=False, max_workers=10, batch_reports=False, quiet=False, progress=False, html_report=False, available_cash=1000, risk_percent=1, portfolio_signal_publisher=None, failed_symbols_output=None):
     if parallel:
         return scan_universe_parallel(
             stock_df,
@@ -265,6 +371,7 @@ def scan_universe(stock_df, export_to_excel=True, parallel=False, max_workers=10
             html_report=html_report,
             available_cash=available_cash,
             risk_percent=risk_percent,
+            portfolio_signal_publisher=portfolio_signal_publisher,
             failed_symbols_output=failed_symbols_output,
         )
 
@@ -284,10 +391,15 @@ def scan_universe(stock_df, export_to_excel=True, parallel=False, max_workers=10
     scanned_at = datetime.now(ZoneInfo("America/New_York"))
     failed_symbols = []
     reason_counts = {}
+    portfolio_reason_counts = {}
+    portfolio_attempts = []
 
     total_stocks = len(stock_df)
     processed = 0
     for _, row in stock_df.iterrows():
+        portfolio_only = bool(row.get("Portfolio Only", False))
+        portfolio_held = bool(row.get("Portfolio Held", portfolio_only))
+        symbol = str(row.get("Symbol", "")).strip().upper()
         result, reason = process_stock(
             row,
             quiet=quiet,
@@ -295,12 +407,17 @@ def scan_universe(stock_df, export_to_excel=True, parallel=False, max_workers=10
             risk_percent=risk_percent,
             include_reason=True,
         )
-        reason_counts[reason] = reason_counts.get(reason, 0) + 1
+        reason_bucket = portfolio_reason_counts if portfolio_only else reason_counts
+        summary_reason = (
+            result.get("Discovery Exclusion Reason")
+            if result is not None and not portfolio_only
+            else None
+        ) or reason
+        reason_bucket[summary_reason] = reason_bucket.get(summary_reason, 0) + 1
+        if portfolio_held:
+            portfolio_attempts.append(technical_signal_attempt(symbol, result, reason))
         if reason in {"download_failure", "insufficient_history"}:
-            failed_symbols.append({
-                "symbol": str(row.get("Symbol", "")).strip().upper(),
-                "reason": reason,
-            })
+            failed_symbols.append({"symbol": symbol, "reason": reason})
         processed += 1
         if progress:
             if total_stocks <= 20 or processed % max(1, total_stocks // 20) == 0 or processed == total_stocks:
@@ -309,6 +426,9 @@ def scan_universe(stock_df, export_to_excel=True, parallel=False, max_workers=10
             continue
         results.append(result)
 
+    _publish_portfolio_attempts(
+        portfolio_attempts, portfolio_signal_publisher, quiet=quiet
+    )
     _write_failed_symbols(
         failed_symbols_output,
         failed_symbols,
@@ -320,7 +440,8 @@ def scan_universe(stock_df, export_to_excel=True, parallel=False, max_workers=10
     if results:
         if not quiet:
             print("Creating Excel Report...")
-        ranked = rank_stocks(results)
+        scanner_results, _ = _partition_scan_results(results)
+        ranked = rank_stocks(scanner_results)
         if export_to_excel:
             if batch_reports:
                 export_batch_reports(ranked.to_dict("records"), top_count=10, batch_size=50)
@@ -330,7 +451,7 @@ def scan_universe(stock_df, export_to_excel=True, parallel=False, max_workers=10
             export_html_report(
                 ranked.to_dict("records"),
                 quiet=quiet,
-                scan_summary=_scan_summary(total_stocks, reason_counts),
+                scan_summary=_scan_summary(total_stocks - _portfolio_row_count(stock_df), reason_counts),
             )
         if not quiet:
             summary = _scan_summary(total_stocks, reason_counts)
@@ -386,7 +507,7 @@ def scan_universe(stock_df, export_to_excel=True, parallel=False, max_workers=10
     return results
 
 
-def scan_universe_parallel(stock_df, export_to_excel=True, max_workers=10, batch_reports=False, quiet=False, progress=False, html_report=False, available_cash=1000, risk_percent=1, failed_symbols_output=None):
+def scan_universe_parallel(stock_df, export_to_excel=True, max_workers=10, batch_reports=False, quiet=False, progress=False, html_report=False, available_cash=1000, risk_percent=1, portfolio_signal_publisher=None, failed_symbols_output=None):
     if not quiet:
         print("=" * 80)
         print("              AI STOCK SCANNER V3.2 - LIQUIDITY FILTERS")
@@ -407,6 +528,8 @@ def scan_universe_parallel(stock_df, export_to_excel=True, max_workers=10, batch
     completed = 0
     total_stocks = len(stock_df)
     reason_counts = {}
+    portfolio_reason_counts = {}
+    portfolio_attempts = []
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         for _, row in stock_df.iterrows():
@@ -418,7 +541,12 @@ def scan_universe_parallel(stock_df, export_to_excel=True, max_workers=10, batch
                     risk_percent,
                     True,
                 )
-            futures[future] = str(row.get("Symbol", "")).strip().upper()
+            portfolio_only = bool(row.get("Portfolio Only", False))
+            futures[future] = {
+                "portfolio_only": portfolio_only,
+                "portfolio_held": bool(row.get("Portfolio Held", portfolio_only)),
+                "symbol": str(row.get("Symbol", "")).strip().upper(),
+            }
 
         for future in as_completed(futures):
             completed += 1
@@ -427,19 +555,49 @@ def scan_universe_parallel(stock_df, export_to_excel=True, max_workers=10, batch
                     print(f"Progress: {completed}/{total_stocks} ({completed / total_stocks * 100:.0f}%)")
             try:
                 result, reason = future.result()
-                reason_counts[reason] = reason_counts.get(reason, 0) + 1
+                metadata = futures[future]
+                reason_bucket = (
+                    portfolio_reason_counts
+                    if metadata["portfolio_only"]
+                    else reason_counts
+                )
+                summary_reason = (
+                    result.get("Discovery Exclusion Reason")
+                    if result is not None and not metadata["portfolio_only"]
+                    else None
+                ) or reason
+                reason_bucket[summary_reason] = reason_bucket.get(summary_reason, 0) + 1
+                if metadata["portfolio_held"]:
+                    portfolio_attempts.append(
+                        technical_signal_attempt(metadata["symbol"], result, reason)
+                    )
                 if reason in {"download_failure", "insufficient_history"}:
                     failed_symbols.append({
-                        "symbol": futures[future],
+                        "symbol": metadata["symbol"],
                         "reason": reason,
                     })
                 if result is not None:
                     results.append(result)
             except Exception as error:
-                reason_counts["analysis_failure"] = reason_counts.get("analysis_failure", 0) + 1
+                metadata = futures[future]
+                reason_bucket = (
+                    portfolio_reason_counts
+                    if metadata["portfolio_only"]
+                    else reason_counts
+                )
+                reason_bucket["analysis_failure"] = reason_bucket.get("analysis_failure", 0) + 1
+                if metadata["portfolio_held"]:
+                    portfolio_attempts.append(
+                        technical_signal_attempt(
+                            metadata["symbol"], None, "analysis_failure"
+                        )
+                    )
                 if not quiet:
                     print(f"Parallel scan error: {error}")
 
+    _publish_portfolio_attempts(
+        portfolio_attempts, portfolio_signal_publisher, quiet=quiet
+    )
     _write_failed_symbols(
         failed_symbols_output,
         failed_symbols,
@@ -452,7 +610,8 @@ def scan_universe_parallel(stock_df, export_to_excel=True, max_workers=10, batch
     if results:
         if not quiet:
             print("Creating Excel Report...")
-        ranked = rank_stocks(results)
+        scanner_results, _ = _partition_scan_results(results)
+        ranked = rank_stocks(scanner_results)
         if export_to_excel:
             if batch_reports:
                 export_batch_reports(ranked.to_dict("records"), top_count=10, batch_size=50)
@@ -462,7 +621,7 @@ def scan_universe_parallel(stock_df, export_to_excel=True, max_workers=10, batch
             export_html_report(
                 ranked.to_dict("records"),
                 quiet=quiet,
-                scan_summary=_scan_summary(total_stocks, reason_counts),
+                scan_summary=_scan_summary(total_stocks - _portfolio_row_count(stock_df), reason_counts),
             )
         if not quiet:
             print()
@@ -559,7 +718,7 @@ def scan_watchlist(export_to_excel=True, parallel=False, max_workers=10, batch_r
     )
 
 
-def scan_nyse(export_to_excel=True, limit=None, force_download=False, universe_source="download", supabase_url="", supabase_secret_key="", parallel=False, max_workers=10, batch_reports=False, quiet=False, progress=False, html_report=False, available_cash=1000, risk_percent=1, failed_symbols_output=None, retry_symbols=None):
+def scan_nyse(export_to_excel=True, limit=None, force_download=False, universe_source="download", supabase_url="", supabase_secret_key="", include_portfolio_symbols=False, parallel=False, max_workers=10, batch_reports=False, quiet=False, progress=False, html_report=False, available_cash=1000, risk_percent=1, failed_symbols_output=None, retry_symbols=None):
     try:
         if universe_source == "supabase":
             tickers = load_latest_ticker_universe(
@@ -586,9 +745,36 @@ def scan_nyse(export_to_excel=True, limit=None, force_download=False, universe_s
 
     tickers = tickers.rename(columns={"Exchange": "Market", "Security Name": "Sector"})
     tickers = _append_retry_symbols(tickers, retry_symbols)
+    portfolio_symbols = []
+    if include_portfolio_symbols:
+        try:
+            portfolio_symbols = load_portfolio_symbols(
+                supabase_url=supabase_url,
+                secret_key=supabase_secret_key,
+            )
+        except PortfolioSymbolError as error:
+            print(
+                f"Portfolio symbols unavailable; continuing with the NYSE universe: {error}",
+                file=sys.stderr,
+            )
+    tickers = extend_universe_with_portfolio(tickers, portfolio_symbols)
+
+    market_date = datetime.now(ZoneInfo("America/New_York")).date()
+    portfolio_signal_publisher = None
+    if portfolio_symbols:
+        portfolio_signal_publisher = lambda attempts: publish_portfolio_technical_signals(
+            attempts,
+            market_date=market_date,
+            supabase_url=supabase_url,
+            secret_key=supabase_secret_key,
+        )
 
     if not quiet:
-        print(f"Loaded NYSE universe: {len(tickers)} tickers (sorted by market cap)")
+        portfolio_only_count = int(tickers["Portfolio Only"].sum())
+        print(
+            f"Loaded NYSE universe: {len(tickers) - portfolio_only_count} tickers "
+            f"plus {portfolio_only_count} portfolio-only symbols"
+        )
 
     return scan_universe(
         tickers,
@@ -601,6 +787,7 @@ def scan_nyse(export_to_excel=True, limit=None, force_download=False, universe_s
         html_report=html_report,
         available_cash=available_cash,
         risk_percent=risk_percent,
+        portfolio_signal_publisher=portfolio_signal_publisher,
         failed_symbols_output=failed_symbols_output,
     )
 
