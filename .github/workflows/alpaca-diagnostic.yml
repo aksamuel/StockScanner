@@ -1,0 +1,89 @@
+name: Alpaca API Diagnostic
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: [".github/workflows/alpaca-diagnostic.yml"]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: github-pages
+    steps:
+      - name: Verify Alpaca credentials and IEX sample prices
+        env:
+          ALPACA_API_KEY_ID: ${{ secrets.ALPACA_API_KEY_ID }}
+          ALPACA_API_SECRET_KEY: ${{ secrets.ALPACA_API_SECRET_KEY }}
+        shell: python
+        run: |
+          import json
+          import os
+          import sys
+          from datetime import datetime, timezone
+          from urllib.request import Request, urlopen
+          from urllib.error import HTTPError, URLError
+
+          names = ("ALPACA_API_KEY_ID", "ALPACA_API_SECRET_KEY")
+          missing = [name for name in names if not os.environ.get(name, "").strip()]
+          if missing:
+              print("FAIL: Missing or empty environment secrets: " + ", ".join(missing))
+              sys.exit(1)
+          if any(os.environ[name] != os.environ[name].strip() for name in names):
+              print("FAIL: A credential contains leading or trailing whitespace. Re-save the matching pair.")
+              sys.exit(1)
+          print("PASS: Both credential variables are present. Values are never printed.")
+          symbols = ("IBM", "JPM", "WDS", "MGA")
+          url = "https://data.alpaca.markets/v2/stocks/snapshots?symbols=" + ",".join(symbols) + "&feed=iex"
+          request = Request(url, headers={
+              "APCA-API-KEY-ID": os.environ[names[0]],
+              "APCA-API-SECRET-KEY": os.environ[names[1]],
+          })
+          try:
+              with urlopen(request, timeout=30) as response:
+                  payload = json.load(response)
+          except HTTPError as error:
+              messages = {
+                  401: "Authentication rejected: verify the matching Alpaca key and secret.",
+                  403: "Access denied: check the key pair and IEX market-data entitlement.",
+                  429: "Rate limited: retry later.",
+              }
+              print("FAIL: HTTP " + str(error.code) + " — " + messages.get(error.code, "Market-data request failed."))
+              sys.exit(1)
+          except (URLError, TimeoutError, ValueError):
+              print("FAIL: Network timeout, connection failure, or invalid JSON response.")
+              sys.exit(1)
+          print("PASS: Alpaca accepted the authenticated IEX snapshot request (HTTP 200).")
+          if not isinstance(payload, dict):
+              print("FAIL: Unexpected response structure.")
+              sys.exit(1)
+          rows = []
+          for symbol in symbols:
+              snapshot = payload.get(symbol) or {}
+              trade = snapshot.get("latestTrade") or {}
+              bar = snapshot.get("dailyBar") or {}
+              price = trade.get("p")
+              stamp = trade.get("t")
+              kind = "latest IEX trade"
+              if not isinstance(price, (int, float)) or price <= 0:
+                  price, stamp, kind = bar.get("c"), bar.get("t"), "IEX daily bar close"
+              if isinstance(price, (int, float)) and price > 0 and isinstance(stamp, str):
+                  print(f"{symbol}: USD {price:.4f}; {kind}; source timestamp {stamp}")
+                  rows.append((symbol, price, stamp, kind))
+              else:
+                  print(f"{symbol}: No usable IEX price in this response.")
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+              summary.write("# Alpaca API diagnostic\n\n")
+              summary.write("Authenticated IEX request: HTTP 200. No portfolio or database updates.\n\n")
+              summary.write("| Symbol | USD price | Source timestamp | Price type |\n|---|---:|---|---|\n")
+              for symbol, price, stamp, kind in rows:
+                  summary.write(f"| {symbol} | {price:.4f} | {stamp} | {kind} |\n")
+              summary.write("\nWeekend prices may be from the last trading session. IEX is not the consolidated US market or official NYSE close.\n")
+          if not rows:
+              print("FAIL: Authentication succeeded but no sample prices were returned.")
+              sys.exit(1)
+          print(f"PASS: Received usable prices for {len(rows)}/{len(symbols)} sample symbols; this does not establish full-universe coverage.")
