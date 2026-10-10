@@ -1,0 +1,68 @@
+name: Twelve Data API Diagnostic
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: [".github/workflows/twelve-data-diagnostic.yml"]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    environment: github-pages
+    steps:
+      - name: Verify Twelve Data key and sample price
+        env:
+          TWELVE_DATA_API_KEY: ${{ secrets.TWELVE_DATA_API_KEY }}
+        shell: python
+        run: |
+          import json
+          import math
+          import os
+          import sys
+          from urllib.parse import urlencode
+          from urllib.request import Request, urlopen
+          from urllib.error import HTTPError, URLError
+
+          key = os.environ.get("TWELVE_DATA_API_KEY", "")
+          if not key.strip():
+              print("FAIL: TWELVE_DATA_API_KEY is missing or empty in the github-pages job.")
+              sys.exit(1)
+          if key != key.strip():
+              print("FAIL: API key contains leading or trailing whitespace.")
+              sys.exit(1)
+          print("PASS: TWELVE_DATA_API_KEY is present. Its value will not be printed.")
+          query = urlencode({"symbol": "IBM", "apikey": key})
+          request = Request("https://api.twelvedata.com/price?" + query,
+                            headers={"Accept": "application/json"})
+          try:
+              with urlopen(request, timeout=30) as response:
+                  payload = json.load(response)
+          except HTTPError as error:
+              print(f"FAIL: Twelve Data HTTP status {error.code}.")
+              sys.exit(1)
+          except (URLError, OSError, ValueError):
+              print("FAIL: Network failure or invalid JSON response. Request URL suppressed.")
+              sys.exit(1)
+          if not isinstance(payload, dict):
+              print("FAIL: Unexpected response structure.")
+              sys.exit(1)
+          if payload.get("status") == "error":
+              code = payload.get("code")
+              category = {401: "invalid API key", 403: "access or subscription denied",
+                          429: "rate limit or credit quota exceeded"}.get(code, "provider request error")
+              print(f"FAIL: Twelve Data returned {category}.")
+              sys.exit(1)
+          try:
+              price = float(payload["price"])
+              assert math.isfinite(price) and price > 0
+          except (KeyError, TypeError, ValueError, AssertionError):
+              print("FAIL: No valid positive IBM price returned.")
+              sys.exit(1)
+          print(f"PASS: Twelve Data returned IBM price USD {price:.4f}.")
+          print("NOTE: Price endpoint does not establish quote freshness or full-universe coverage.")
+          print("PASS: No stored stock data was changed.")
