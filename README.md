@@ -1,18 +1,22 @@
-# StockScanner v2.21.0
+# StockScanner v2.22.0
 
 [![Stock Scanner](https://github.com/aksamuel/StockScanner/actions/workflows/scan.yml/badge.svg)](https://github.com/aksamuel/StockScanner/actions/workflows/scan.yml)
 
 StockScanner scans a watchlist or the NYSE universe, calculates technical and
 analyst signals, sizes positions, and produces Excel and GitHub Pages reports.
 
-**Stable release: v2.21.0** — portfolio review uses an annualized return objective,
+**Stable release: v2.22.0** — adds an isolated Portfolio Intelligence Platform
+(PIP) Python layer with offline fixture/CSV analytics and explicit human approval
+tracking. PIP does not connect live to IBKR, place orders, or change the existing
+scanner and portfolio pages. The existing portfolio review continues to use an annualized return objective,
 and recovery estimates show the shortfall and estimated time to catch up using
 the stock's trailing one-year daily-return trend. The recovery graph compares
 that trend with the moving annual target while retaining breakeven scenarios.
 
 [Help & FAQ](https://aksamuel.github.io/StockScanner/help.html) explains the
 screens and recovery estimates. [Release notes](RELEASE_NOTES.md) describe this
-release; [setup and deployment](README_SETUP.md) covers maintenance.
+release; [setup and deployment](README_SETUP.md) covers maintenance. The
+[PIP FAQ](docs/pip/FAQ.md) describes its current capabilities and limitations.
 
 AI-powered features with ChatGPT integration were introduced in v2.11.0. 🤖
 
