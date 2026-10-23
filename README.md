@@ -1,15 +1,14 @@
-# StockScanner v2.19.0
+# StockScanner v2.20.0
 
 [![Stock Scanner](https://github.com/aksamuel/StockScanner/actions/workflows/scan.yml/badge.svg)](https://github.com/aksamuel/StockScanner/actions/workflows/scan.yml)
 
 StockScanner scans a watchlist or the NYSE universe, calculates technical and
 analyst signals, sizes positions, and produces Excel and GitHub Pages reports.
 
-**Stable release: v2.19.0** — private owner-scoped portfolio Technical
-strength, retained stale evidence, Yahoo-first price collection with Alpaca and
-Twelve Data fallbacks, and next-market-day retries for failed symbols.
-Daily scans run at 07:30 New York time with a 09:00 fallback. Portfolio recovery
-timelines, searchable dropdowns and purchase-price comparisons remain available.
+**Stable release: v2.20.0** — portfolio review thresholds adjustable from 0% to
+100%, recalculation as the target changes, and a refresh action that reloads
+currently stored portfolio and scanner data. The v2.19.0 portfolio-strength,
+stale-evidence, recovery-timeline, and price-collection features remain available.
 
 [Help & FAQ](https://aksamuel.github.io/StockScanner/help.html) explains the
 screens and recovery estimates. [Release notes](RELEASE_NOTES.md) describe this
@@ -35,9 +34,8 @@ AI-powered features with ChatGPT integration were introduced in v2.11.0. 🤖
 - Admin-only activity and user-management pages
 - Admin-only manual daily-scan and hourly-price workflow controls
 - Per-user exception and bought-selection lists protected by RLS
-- On-demand user portfolio imports from broker CSV files, including native IBKR exports
-- Authenticated Sell Advisor page that processes holdings locally and compares each symbol with the newer timestamped hourly or daily scan price without uploading or saving the imported CSV
-- Rule-based portfolio profit/loss, holding-time, target, and stop reviews, with a 7% profit-review threshold and conservative automatic targets from technical, resistance, analyst-proxy, and return-objective inputs
+- On-demand user portfolio imports from broker CSV files, including native IBKR exports and explicit handling of missing currency codes
+- Rule-based portfolio profit/loss, holding-time, target, and stop reviews, with an adjustable 0–100% profit-review target (7% default) and conservative automatic targets from technical, resistance, analyst-proxy, and return-objective inputs
 - Current profit/loss percentage for purchased positions
 - Bought-position time-to-profit status and benchmark-based breakeven-day scenarios
 - Daily Supabase NYSE universe refresh at 03:07 New York time
@@ -204,7 +202,6 @@ Each run creates files under `reports\\YYYY-MM-DD\\`:
 | `my-exceptions.html` | Signed-in user's personal exclusions |
 | `my-bought-selection.html` | Signed-in user's purchased positions and profit/loss |
 | `portfolio-analysis.html` | User-owned CSV-imported holdings and review signals |
-| `sell-advisor.html` | Scan-price-linked review of locally imported portfolio holdings |
 | `database.html` | Approved-user database overview with RLS-scoped counts |
 | `admin.html` | Admin-only activity, usage metrics, and manual workflow controls |
 | `users.html` | Admin-only accept, block, and delete controls |

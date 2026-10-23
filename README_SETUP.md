@@ -1,4 +1,4 @@
-# StockScanner v2.19.0 setup and operations
+# StockScanner v2.20.0 setup and operations
 
 Windows PowerShell commands to create and activate a virtual environment, install dependencies from `requirements.txt`, and verify installation.
 
@@ -250,7 +250,11 @@ The signed-in user pages serve different purposes:
   breakeven period using the Equal-weight Top 20 as a reference scenario.
 - `portfolio-analysis.html`: on-demand broker CSV holdings, including native IBKR exports, current
   return, holding duration, daily scanner evidence, concentration, and
-  sell/partial-sell/hold review signals. The profit-review threshold is 7%.
+  sell/partial-sell/hold review signals. The profit-review target defaults to
+  7% and can be adjusted from 0% through 100%; valid edits recalculate as typed.
+  **Review again** reloads data already stored in the app, not a live quote or
+  a new scan. CSV rows without a currency require an explicit three-letter
+  currency code instead of being silently treated as USD.
   Manual targets override the conservative automatic target, which selects the
   closest valid profit-side price from the return objective, Technical Target 1,
   resistance, and analyst target proxy. Each import atomically replaces only
@@ -286,7 +290,7 @@ daily ticker histories are not retained.
 
 ### Portfolio page deployment and checks
 
-Stable release v2.19.0 retains Symbol, Action review, Recovery scenario / days
+Stable release v2.20.0 retains Symbol, Action review, Recovery scenario / days
 held, and Profit / Loss % first, in that order. Technical strength appears once
 inside Action review. The recovery timeline keeps Today undated and displays
 blue stock-history and orange Top 20 estimates in chronological order. Both the

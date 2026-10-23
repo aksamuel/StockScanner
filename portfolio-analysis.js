@@ -75,7 +75,7 @@ function dateValue(value, rowNumber) {
   return text;
 }
 
-export function portfolioRowsFromCsv(source) {
+export function portfolioRowsFromCsv(source, missingCurrency = "") {
   const rows = parseCsv(source);
   if (rows.length < 2) throw new Error("The CSV must contain a header and at least one holding.");
   if (rows.length > 1001) throw new Error("A CSV import is limited to 1000 holdings.");
@@ -104,7 +104,8 @@ export function portfolioRowsFromCsv(source) {
       throw new Error(`Row ${rowNumber}: invalid ticker symbol.`);
     }
     const boughtOn = dateValue(get(row, "buy_date"), rowNumber);
-    const currency = (get(row, "currency") || "USD").trim().toUpperCase();
+    const currency = String(get(row, "currency") || missingCurrency).trim().toUpperCase();
+    if (!currency) throw new Error(`Row ${rowNumber}: currency is missing; provide a currency column or select a currency for missing rows.`);
     if (!/^[A-Z]{3}$/.test(currency)) throw new Error(`Row ${rowNumber}: invalid currency code.`);
     const notes = get(row, "notes").trim();
     if (notes.length > 500) throw new Error(`Row ${rowNumber}: notes exceed 500 characters.`);
@@ -144,6 +145,13 @@ export function holdingReturnPercent(holding, currentPrice) {
   return (quantity < 0 ? buyPrice - currentPrice : currentPrice - buyPrice) / buyPrice * 100;
 }
 
+function profitReviewThreshold(value) {
+  const threshold = Number(value);
+  return Number.isFinite(threshold) && threshold >= 0 && threshold <= 100
+    ? threshold
+    : DEFAULT_PROFIT_REVIEW_PERCENT;
+}
+
 export function recommendedTargetPrice(holding, context = {}) {
   const optionalNumber = (value) => value === null || value === undefined || value === ""
     ? Number.NaN
@@ -161,9 +169,10 @@ export function recommendedTargetPrice(holding, context = {}) {
   const buyPrice = optionalNumber(holding.buy_price);
   if (!Number.isFinite(buyPrice) || buyPrice <= 0) return null;
   const isShort = Number(holding.quantity) < 0;
-  const reviewTarget = buyPrice * (1 + (isShort ? -1 : 1) * DEFAULT_PROFIT_REVIEW_PERCENT / 100);
+  const profitPercent = profitReviewThreshold(context.profitReviewPercent);
+  const reviewTarget = buyPrice * (1 + (isShort ? -1 : 1) * profitPercent / 100);
   const candidates = [
-    { price: reviewTarget, source: `${DEFAULT_PROFIT_REVIEW_PERCENT}% return objective` },
+    { price: reviewTarget, source: `${profitPercent}% return objective` },
     { price: optionalNumber(context.technicalTarget), source: "Technical Target 1" },
     { price: optionalNumber(context.resistanceTarget), source: "Technical resistance" },
     { price: optionalNumber(context.analystTarget), source: "Analyst target proxy" },
@@ -242,7 +251,7 @@ export function profitTimingLabel(returnPercent, heldDays) {
   return `Break-even · ${duration}`;
 }
 
-export function sellReviewSignal(holding, currentPrice, returnPercent) {
+export function sellReviewSignal(holding, currentPrice, returnPercent, requestedProfitPercent = DEFAULT_PROFIT_REVIEW_PERCENT) {
   if (!Number.isFinite(currentPrice) || returnPercent === null) {
     return { code: "unavailable", label: "Price unavailable" };
   }
@@ -255,8 +264,9 @@ export function sellReviewSignal(holding, currentPrice, returnPercent) {
   if (Number.isFinite(stop) && stop > 0 && (isShort ? currentPrice >= stop : currentPrice <= stop)) {
     return { code: "risk-review", label: "Risk review · stop reached" };
   }
-  if (returnPercent >= DEFAULT_PROFIT_REVIEW_PERCENT) {
-    return { code: "sell-review", label: `Profit review · +${DEFAULT_PROFIT_REVIEW_PERCENT}% rule` };
+  const profitPercent = profitReviewThreshold(requestedProfitPercent);
+  if (returnPercent >= profitPercent) {
+    return { code: "sell-review", label: `Profit review · +${profitPercent}% rule` };
   }
   if (returnPercent <= DEFAULT_LOSS_REVIEW_PERCENT) {
     return { code: "risk-review", label: `Risk review · ${DEFAULT_LOSS_REVIEW_PERCENT}% rule` };
@@ -291,6 +301,7 @@ export function portfolioActionDecision(holding, context = {}) {
   const scannerRecommendation = String(context.scannerRecommendation || "unavailable")
     .trim().toLowerCase().replace(/\s+/g, "-");
   const scannerScore = optionalNumber(context.scannerScore);
+  const profitPercent = profitReviewThreshold(context.profitReviewPercent);
   const isShort = Number(holding.quantity) < 0;
   const targetDetails = context.recommendedTarget || recommendedTargetPrice(holding, context);
   const target = Number(targetDetails?.price);
@@ -337,7 +348,7 @@ export function portfolioActionDecision(holding, context = {}) {
     ], 2);
   }
   if (
-    returnPercent >= DEFAULT_PROFIT_REVIEW_PERCENT
+    returnPercent >= profitPercent
     && (
       ["watch", "avoid"].includes(scannerRecommendation)
       || (Number.isFinite(heldDays) && heldDays >= 180)
@@ -350,7 +361,7 @@ export function portfolioActionDecision(holding, context = {}) {
         ? `${heldDays} days held.`
         : scannerReason;
     return decision("partial-sell", "Partial sell review", [
-      `${returnPercent.toFixed(2)}% return exceeds the ${DEFAULT_PROFIT_REVIEW_PERCENT}% profit-review threshold.`,
+      `${returnPercent.toFixed(2)}% return exceeds the ${profitPercent}% profit-review threshold.`,
       secondaryReason,
     ], 2);
   }

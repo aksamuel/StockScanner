@@ -14,12 +14,19 @@
     .import-card form { display: grid; grid-template-columns: 1fr; }
     .button-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
     .template-link { color: #81d4fa; font-weight: 700; }
+    .explanation-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .explanation-heading h2, .explanation-heading h3 { margin: 0; }
+    .explanation-toggle { min-width: 36px; min-height: 36px; padding: 4px; border-radius: 50%; }
+    .explanation-content { position: relative; padding-top: 14px; }
+    .explanation-close { position: absolute; top: 4px; right: 0; min-width: 34px; min-height: 34px; padding: 0; font-size: 1.4rem; }
     .timestamp { color: #b3e5fc; font-weight: 700; }
     .metrics { margin: 22px 0; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
     .metric strong { display: block; margin-top: 7px; color: #81d4fa; font-size: 1.6rem; }
     #lastImported { font-size: 1rem; overflow-wrap: anywhere; }
     #brokerSelect { max-width: 100%; padding: 10px; border: 1px solid #456175; border-radius: 5px; background: #10212e; color: #e0e0e0; font: inherit; }
     #brokerSelect:focus-visible { outline: 2px solid #4fc3f7; outline-offset: 2px; }
+    .review-target-setting { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+    #profitTargetPercent { width: 76px; }
     .metric-filter { min-height: 0; color: #e0e0e0; text-align: left; font-weight: 400; }
     .metric-filter:hover, .metric-filter:focus-visible { border-color: #4fc3f7; background: #203448; }
     .metric-filter:focus-visible { outline: 2px solid #4fc3f7; outline-offset: 2px; }
@@ -113,7 +120,6 @@
         <a href="/StockScanner/my-exceptions.html">My exceptions</a>
         <a href="/StockScanner/my-bought-selection.html">My bought list</a>
         <a href="/StockScanner/portfolio-analysis.html" aria-current="page">Portfolio analysis</a>
-        <a href="/StockScanner/sell-advisor.html">Sell Advisor</a>
         <a href="/StockScanner/help.html#portfolio">Help &amp; FAQ</a>
       </nav>
     </div>
@@ -128,19 +134,34 @@
           <label>Portfolio CSV file
             <input id="csvFile" type="file" accept=".csv,text/csv" required>
           </label>
+          <label>Currency for rows without a currency
+            <input id="missingCurrency" type="text" maxlength="3" pattern="[A-Za-z]{3}" placeholder="Enter only when needed" autocomplete="off">
+          </label>
           <div class="button-row">
             <button type="submit">Upload and analyze</button>
             <a class="template-link" href="/StockScanner/portfolio-holdings-template.csv" download>Download CSV template</a>
           </div>
         </form>
-        <p class="subtle">Accepted columns: symbol, quantity, buy_price, buy_date. Native IBKR exports using Symbol, Quantity, CostBasisPrice, and OpenDateTime are also accepted. Uploading replaces only your holdings for the named broker.</p>
+        <div class="explanation-heading" id="csvFormatHeading">
+          <h3>CSV format and import details</h3>
+          <button id="showCsvFormat" class="explanation-toggle" type="button" aria-label="Show CSV format details" aria-expanded="false" aria-controls="csvFormatText" title="Show CSV format details">ⓘ</button>
+        </div>
+        <div id="csvFormatText" class="explanation-content" hidden>
+          <button id="hideCsvFormat" class="explanation-close" type="button" aria-label="Close CSV details and return to heading" title="Close CSV details">×</button>
+          <p class="subtle">Accepted columns: symbol, quantity, buy_price, buy_date, and currency. Native IBKR exports using Symbol, Quantity, CostBasisPrice, and OpenDateTime are also accepted. If any row omits currency, enter its three-letter code above; the import does not assume USD. Uploading replaces only your holdings for the named broker.</p>
+        </div>
         <p id="csvStatus" class="subtle" role="status" aria-live="polite"></p>
       </article>
     </section>
 
-    <section class="panel">
-      <h2>How the analysis works</h2>
-      <p>The page combines present profit/loss, days held, the newest daily StockScanner recommendation and score, targets and stop-losses, and each symbol's share of known portfolio market value. A manual target remains the highest-priority target. Otherwise, the automatic target is the lowest valid price at or above cost from the 7% return objective, Technical Target 1, resistance and the analyst target proxy. A reached target or stop takes priority. An Avoid rating combined with a loss of at least 10% produces a sell review; high concentration, weaker trend, long holding time, or a gain of at least 7% can produce a partial-sell review. Missing evidence is disclosed and never guessed.</p>
+    <section class="panel explanation-panel" id="analysisExplanation">
+      <div class="explanation-heading">
+        <h2>How the analysis works</h2>
+        <button id="showExplanation" class="explanation-toggle" type="button" aria-label="Show how the analysis works" aria-expanded="false" aria-controls="analysisExplanationText" title="Show explanation">ⓘ</button>
+      </div>
+      <div id="analysisExplanationText" class="explanation-content" hidden>
+      <button id="hideExplanation" class="explanation-close" type="button" aria-label="Close explanation and return to heading" title="Close explanation">×</button>
+      <p>The page combines present profit/loss, days held, the newest daily StockScanner recommendation and score, targets and stop-losses, and each symbol's share of known portfolio market value. A manual target remains the highest-priority target. Otherwise, the automatic target is the lowest valid price at or above cost from the selected return objective (7% by default), Technical Target 1, resistance and the analyst target proxy. A reached target or stop takes priority. An Avoid rating combined with a loss of at least 10% produces a sell review; high concentration, weaker trend, long holding time, or a gain at or above your selected threshold can produce a partial-sell review. Missing evidence is disclosed and never guessed.</p>
       <p class="subtle">Concentration thresholds: 10% warrants closer review and 20% is treated as high concentration. Decisions are screening prompts for your review, not automatic orders or guaranteed outcomes.</p>
       <p class="warning">IBKR may omit buy dates unless its Flex query uses Open Positions at tax-lot detail. Missing dates are never guessed.</p>
       <p class="subtle">Technical strength appears once inside Action review: below 40 is Weak (red), 40–70 is Moderate (orange), and above 70 is Strong (green). These describe technical conditions, not buy/sell instructions. Recovery and Profit / Loss % are beside Action review.</p>
@@ -148,6 +169,7 @@
       <p class="subtle">View recovery graph compares the stock's own historical growth rate with the Equal-weight Top 20 rate, starting at the latest available price today and aiming at your buy price. Both estimated breakeven dates remain visible. They are scenarios, not guaranteed dates, and exclude fees, taxes, dividends received, and currency conversion. Historical recovery statistics inside the graph show comparable past declines, including unrecovered episodes. Recovery scenarios do not change the action-review signal.</p>
       <p class="subtle">The timeline starts at the grey Today dot. Blue marks the stock-history estimate and orange marks Top 20, ordered by date. Dates use dd/mmm/yyyy; all displayed clocks use New York time, 24-hour HH:mm, with EST/EDT shown.</p>
       <p class="subtle"><span class="price-stale">Amber current prices</span> are more than 75 minutes old. The latest available stale price remains in the analysis until a provider supplies a newer price.</p>
+      </div>
     </section>
 
     <div class="list-toolbar">
@@ -170,6 +192,12 @@
     <div class="list-toolbar">
       <span id="count" class="count" aria-live="polite">0 holdings</span>
       <select id="filter" class="filter" aria-label="Select a stock"><option value="">All stocks</option></select>
+      <label class="review-target-setting" for="profitTargetPercent">Target
+        <input id="profitTargetPercent" type="number" min="0" max="100" step="any" value="7" required aria-label="Profit review target percent">
+        <span>%</span>
+      </label>
+      <button id="reviewAgain" type="button">Review again</button>
+      <span id="reviewStatus" class="subtle" role="status" aria-live="polite"></span>
     </div>
     <p id="recoveryDisclaimer" class="subtle"><strong>Recovery dates are estimates and are not guaranteed.</strong> Actual recovery may happen earlier, later, or not at all.</p>
     <div id="brokerTables" class="broker-tables" aria-describedby="recoveryDisclaimer"></div>
@@ -259,8 +287,20 @@
     const empty = document.querySelector("#empty");
     const message = document.querySelector("#message");
     const filter = document.querySelector("#filter");
+    const profitTargetPercent = document.querySelector("#profitTargetPercent");
+    const reviewAgain = document.querySelector("#reviewAgain");
+    const reviewStatus = document.querySelector("#reviewStatus");
+    const explanationHeading = document.querySelector("#analysisExplanation");
+    const showExplanation = document.querySelector("#showExplanation");
+    const explanationText = document.querySelector("#analysisExplanationText");
+    const hideExplanation = document.querySelector("#hideExplanation");
+    const csvFormatHeading = document.querySelector("#csvFormatHeading");
+    const showCsvFormat = document.querySelector("#showCsvFormat");
+    const csvFormatText = document.querySelector("#csvFormatText");
+    const hideCsvFormat = document.querySelector("#hideCsvFormat");
     const brokerSelect = document.querySelector("#brokerSelect");
     const csvForm = document.querySelector("#csvForm");
+    const missingCurrency = document.querySelector("#missingCurrency");
     const csvStatus = document.querySelector("#csvStatus");
     const editDialog = document.querySelector("#editDialog");
     const editForm = document.querySelector("#editForm");
@@ -289,7 +329,48 @@
     });
 
     if (user) await loadPortfolio();
+    showExplanation.addEventListener("click", () => {
+      explanationText.hidden = false;
+      showExplanation.setAttribute("aria-expanded", "true");
+      showExplanation.setAttribute("aria-label", "Explanation is open");
+      hideExplanation.focus();
+    });
+    hideExplanation.addEventListener("click", () => {
+      explanationText.hidden = true;
+      showExplanation.setAttribute("aria-expanded", "false");
+      showExplanation.setAttribute("aria-label", "Show how the analysis works");
+      explanationHeading.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+    showCsvFormat.addEventListener("click", () => {
+      csvFormatText.hidden = false;
+      showCsvFormat.setAttribute("aria-expanded", "true");
+      showCsvFormat.setAttribute("aria-label", "CSV format details are open");
+      hideCsvFormat.focus();
+    });
+    hideCsvFormat.addEventListener("click", () => {
+      csvFormatText.hidden = true;
+      showCsvFormat.setAttribute("aria-expanded", "false");
+      showCsvFormat.setAttribute("aria-label", "Show CSV format details");
+      csvFormatHeading.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
     filter.addEventListener("change", renderPortfolio);
+    profitTargetPercent.addEventListener("input", () => {
+      if (profitTargetPercent.value !== "" && profitTargetPercent.validity.valid) renderPortfolio();
+    });
+    reviewAgain.addEventListener("click", async () => {
+      if (!user || reviewAgain.disabled || !profitTargetPercent.reportValidity()) return;
+      reviewAgain.disabled = true;
+      reviewStatus.textContent = "Refreshing available portfolio and scan data…";
+      try {
+        reviewStatus.textContent = await loadPortfolio()
+          ? "Review updated with the latest data currently available."
+          : "Refresh failed; the previous review remains visible.";
+      } catch (error) {
+        reviewStatus.textContent = error.message || "Could not refresh portfolio data.";
+      } finally {
+        reviewAgain.disabled = false;
+      }
+    });
     brokerSelect.addEventListener("change", () => {
       portfolioFilter = "all";
       filter.value = "";
@@ -327,7 +408,7 @@
         const broker = document.querySelector("#broker").value.trim().toUpperCase()
           || detectedPortfolioBroker(csvSource);
         if (!broker) throw new Error("Enter a broker name for this CSV format.");
-        const parsedRows = portfolioRowsFromCsv(csvSource);
+        const parsedRows = portfolioRowsFromCsv(csvSource, missingCurrency.value);
         const { data, error } = await supabase.rpc("replace_my_portfolio_holdings", {
           p_broker: broker,
           p_source: "csv",
@@ -369,7 +450,7 @@
       const error = holdingResult.error || importResult.error;
       if (error) {
         setMessage(message, error.message);
-        return;
+        return false;
       }
       holdings = holdingResult.data || [];
       imports = importResult.data || [];
@@ -386,6 +467,7 @@
       if (warnings.length) setMessage(message, `Portfolio loaded. ${warnings.join(" ")}`);
       renderPortfolio();
       void loadStockHistory();
+      return true;
     }
 
     async function loadDailyScannerSignals() {
@@ -607,6 +689,7 @@
           technicalTarget: scanner.technicalTarget,
           resistanceTarget: scanner.resistanceTarget,
           analystTarget,
+          profitReviewPercent: Number(profitTargetPercent.value),
         };
         const target = recommendedTargetPrice(holding, decisionContext);
         return {

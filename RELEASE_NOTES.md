@@ -1,4 +1,28 @@
-# StockScanner v2.19.0
+# StockScanner v2.20.0
+
+Stable release · 23/Oct/2026
+
+This release makes the portfolio profit-review objective user-adjustable and
+refreshes analysis from the latest data already available to the application.
+
+- The portfolio target field defaults to 7% and accepts values from 0% to
+  100%. Valid edits recalculate automatic targets and action reviews as typed.
+- CSV rows with missing currency require an explicit three-letter currency;
+  the import no longer silently assumes USD.
+- Portfolio analysis and CSV-format explanations start collapsed behind info
+  buttons and can be closed back to their headings.
+- Manual targets remain higher priority than the return objective, scanner
+  targets, resistance, or analyst target proxy.
+- **Review again** reloads the portfolio and currently stored scanner and price
+  data. It does not trigger a live quote request or start a new scan.
+- Help, FAQ, release, and setup documentation describe these controls and their
+  data-freshness limitations.
+- No database schema change is required.
+
+The deployment workflow tests the commit, publishes GitHub Pages, then creates
+the matching stable GitHub Release from this file.
+
+## Previous stable release: v2.19.0
 
 Stable release · 02/Oct/2026
 
