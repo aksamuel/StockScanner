@@ -203,6 +203,29 @@ export function daysHeld(boughtOn, now = new Date()) {
   return Math.max(0, Math.floor((now.getTime() - bought.getTime()) / 86_400_000));
 }
 
+export function marketDaysHeld(boughtOn, now = new Date()) {
+  if (!boughtOn) return null;
+  const start = new Date(`${boughtOn}T00:00:00Z`);
+  const end = now instanceof Date ? now : new Date(now);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
+  let marketDays = 0;
+  const cursor = new Date(start);
+  cursor.setUTCDate(cursor.getUTCDate() + 1);
+  while (cursor <= end) {
+    const weekday = cursor.getUTCDay();
+    if (weekday !== 0 && weekday !== 6) marketDays += 1;
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+  return marketDays;
+}
+
+export function annualizedTargetReturnPercent(annualTargetPercent, marketDays) {
+  const annualTarget = Number(annualTargetPercent);
+  if (!Number.isFinite(annualTarget) || annualTarget < 0 || annualTarget > 100
+    || !Number.isFinite(marketDays) || marketDays < 0) return null;
+  return (Math.pow(1 + annualTarget / 100, marketDays / 252) - 1) * 100;
+}
+
 export function equalWeightTopTwentyMetrics(chartData) {
   const labels = Array.isArray(chartData?.labels) ? chartData.labels : [];
   const values = Array.isArray(chartData?.top20) ? chartData.top20 : [];
@@ -297,11 +320,13 @@ export function portfolioActionDecision(holding, context = {}) {
   const currentPrice = optionalNumber(context.currentPrice);
   const returnPercent = optionalNumber(context.returnPercent);
   const heldDays = optionalNumber(context.heldDays);
+  const heldMarketDays = optionalNumber(context.heldMarketDays);
   const concentrationPercent = optionalNumber(context.concentrationPercent);
   const scannerRecommendation = String(context.scannerRecommendation || "unavailable")
     .trim().toLowerCase().replace(/\s+/g, "-");
   const scannerScore = optionalNumber(context.scannerScore);
   const profitPercent = profitReviewThreshold(context.profitReviewPercent);
+  const requiredReturnPercent = annualizedTargetReturnPercent(profitPercent, heldMarketDays);
   const isShort = Number(holding.quantity) < 0;
   const targetDetails = context.recommendedTarget || recommendedTargetPrice(holding, context);
   const target = Number(targetDetails?.price);
@@ -345,6 +370,18 @@ export function portfolioActionDecision(holding, context = {}) {
     return decision("partial-sell", "Partial sell review", [
       `Protect a ${returnPercent.toFixed(2)}% gain; review the position's technical strength.`,
       scannerReason,
+    ], 2);
+  }
+  if (Number.isFinite(requiredReturnPercent) && returnPercent < requiredReturnPercent
+    && Number.isFinite(heldMarketDays) && heldMarketDays >= 21
+    && (scannerRecommendation === "avoid" || scannerRecommendation === "watch"
+      || strength.tone === "weak" || Number.isFinite(concentrationPercent) && concentrationPercent >= 10)) {
+    return decision("partial-sell", "Review · below return target", [
+      `Return is ${returnPercent.toFixed(2)}%; the ${profitPercent}% annual target compounds to ${requiredReturnPercent.toFixed(2)}% over ${heldMarketDays} market days.`,
+      scannerRecommendation === "avoid" || scannerRecommendation === "watch" || strength.tone === "weak"
+        ? scannerReason
+        : `${concentrationPercent.toFixed(1)}% portfolio concentration.`,
+      "Consider selling or replacing only after reviewing fundamentals, costs, tax and alternatives.",
     ], 2);
   }
   if (

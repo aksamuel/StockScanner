@@ -25,7 +25,7 @@ export function formatDate(value) {
 
 export function formatDateTime(value) {
   const parts = timeParts(value);
-  return parts ? `${parts.day}/${parts.month}/${parts.year}, ${parts.hour}:${parts.minute} ${parts.timeZoneName}` : "—";
+  return parts ? `${parts.day}/${parts.month}/${parts.year} ${parts.hour}:${parts.minute} ${parts.timeZoneName}` : "—";
 }
 
 export function parseDateInput(value) {

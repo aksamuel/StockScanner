@@ -1,10 +1,11 @@
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.112.3/+esm';
 import { assess, parseTechnicalDocument, WEIGHTS, isFresh } from './catalyst-model.mjs';
+import { formatDateTime } from './date-format.js';
 const client = createClient('https://cszzbkssxxgwgafwuonc.supabase.co', 'sb_publishable_VnhkG4H4acjm2Hp1k5tzyw_I9xtUrGI');
 const $ = id => document.getElementById(id);
 let rows = [], reviews = [], technical = new Map(), user, selected, sortKey = 'combined';
 const money = n => typeof n === 'number' && Number.isFinite(n) ? `$${n.toFixed(2)}` : '—';
-const date = x => Number.isFinite(Date.parse(x)) ? new Date(x).toLocaleString('en-GB', { timeZone: 'America/New_York' }) + ' NY' : 'Unavailable';
+const date = x => Number.isFinite(Date.parse(x)) ? formatDateTime(x) : 'Unavailable';
 const element = (tag, text, cls) => { const e = document.createElement(tag); if (text !== undefined) e.textContent = text; if (cls) e.className = cls; return e; };
 function link(label, url) { const a = element('a', label); a.href = url; a.target = '_blank'; a.rel = 'noopener noreferrer'; return a; }
 function officialLink(url) { try { const u = new URL(url); return u.protocol === 'https:' && u.hostname === 'www.sec.gov' && u.pathname.startsWith('/Archives/edgar/data/'); } catch { return false; } }

@@ -34,10 +34,10 @@ def test_legacy_report_times_are_normalized_without_changing_data_or_urls():
 <time datetime="2026-09-04T08:25:17Z">Original data</time>
 <script>const raw = "2026-09-04 08:25:17";</script>'''
     result = report_dates.format_report(source)
-    assert '04/Sep/2026, 04:25 EDT' in result
-    assert 'Generated on 04/Sep/2026, 04:25 EDT' in result
-    assert 'Scan completed: 04/Aug/2026, 14:13 EDT' in result
-    assert 'Generated on 31/Dec/2025, 20:07 EST' in result
+    assert '04/Sep/2026 04:25 EDT' in result
+    assert 'Generated on 04/Sep/2026 04:25 EDT' in result
+    assert 'Scan completed: 04/Aug/2026 14:13 EDT' in result
+    assert 'Generated on 31/Dec/2025 20:07 EST' in result
     assert 'href="reports/2026-09-04_08-25-17.html"' in result
     assert 'datetime="2026-09-04T08:25:17Z"' in result
     assert 'const raw = "2026-09-04 08:25:17"' in result

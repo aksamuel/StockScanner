@@ -11,21 +11,21 @@ for (const invalid of ['29/Feb/2026', '31/Apr/2026', '00/Jan/2026', '05/Xyz/2026
   assert.equal(parseDateInput(invalid), null);
 }
 for (const [value, expected] of [
-  ['2026-09-05T18:07:59Z', '05/Sep/2026, 14:07 EDT'],
-  ['2026-01-05T18:07:59Z', '05/Jan/2026, 13:07 EST'],
-  ['2026-09-05T01:07:59Z', '04/Sep/2026, 21:07 EDT'],
-  ['2026-01-01T04:59:59Z', '31/Dec/2025, 23:59 EST'],
-  ['2026-09-05T04:00:59Z', '05/Sep/2026, 00:00 EDT'],
-  ['2026-03-08T06:59:59Z', '08/Mar/2026, 01:59 EST'],
-  ['2026-03-08T07:00:00Z', '08/Mar/2026, 03:00 EDT'],
-  ['2026-11-01T05:30:00Z', '01/Nov/2026, 01:30 EDT'],
-  ['2026-11-01T06:30:00Z', '01/Nov/2026, 01:30 EST'],
-  ['2026-09-05T21:07:59+03:00', '05/Sep/2026, 14:07 EDT'],
+  ['2026-09-05T18:07:59Z', '05/Sep/2026 14:07 EDT'],
+  ['2026-01-05T18:07:59Z', '05/Jan/2026 13:07 EST'],
+  ['2026-09-05T01:07:59Z', '04/Sep/2026 21:07 EDT'],
+  ['2026-01-01T04:59:59Z', '31/Dec/2025 23:59 EST'],
+  ['2026-09-05T04:00:59Z', '05/Sep/2026 00:00 EDT'],
+  ['2026-03-08T06:59:59Z', '08/Mar/2026 01:59 EST'],
+  ['2026-03-08T07:00:00Z', '08/Mar/2026 03:00 EDT'],
+  ['2026-11-01T05:30:00Z', '01/Nov/2026 01:30 EDT'],
+  ['2026-11-01T06:30:00Z', '01/Nov/2026 01:30 EST'],
+  ['2026-09-05T21:07:59+03:00', '05/Sep/2026 14:07 EDT'],
 ]) {
   assert.equal(formatDateTime(value), expected);
   assert.equal(formatDateTime(new Date(value)), expected);
-  assert.equal(formatTime(value), expected.split(', ')[1]);
-  assert.equal(formatTime(value, false), expected.split(', ')[1].slice(0,5));
+  assert.equal(formatTime(value), expected.slice(12));
+  assert.equal(formatTime(value, false), expected.slice(12, 17));
 }
 for (const value of [null, undefined, '', 'invalid']) {
   assert.equal(formatDateTime(value), '—');

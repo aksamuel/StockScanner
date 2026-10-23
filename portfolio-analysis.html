@@ -161,7 +161,7 @@
       </div>
       <div id="analysisExplanationText" class="explanation-content" hidden>
       <button id="hideExplanation" class="explanation-close" type="button" aria-label="Close explanation and return to heading" title="Close explanation">×</button>
-      <p>The page combines present profit/loss, days held, the newest daily StockScanner recommendation and score, targets and stop-losses, and each symbol's share of known portfolio market value. A manual target remains the highest-priority target. Otherwise, the automatic target is the lowest valid price at or above cost from the selected return objective (7% by default), Technical Target 1, resistance and the analyst target proxy. A reached target or stop takes priority. An Avoid rating combined with a loss of at least 10% produces a sell review; high concentration, weaker trend, long holding time, or a gain at or above your selected threshold can produce a partial-sell review. Missing evidence is disclosed and never guessed.</p>
+      <p>The page combines present profit/loss, days held, the newest daily StockScanner recommendation and score, targets and stop-losses, and each symbol's share of known portfolio market value. The annual target (7% by default) compounds over elapsed weekdays at 252 market days per year. A holding at least 21 market days behind its calculated target is flagged for review when technical, scanner or concentration evidence also signals concern. This is a screening prompt to consider selling or replacing, not an automatic instruction. Manual targets still take priority for target-hit reviews; other automatic targets use Technical Target 1, resistance and the analyst target proxy. An Avoid rating combined with a loss of at least 10% produces a sell review. Missing evidence is disclosed and never guessed.</p>
       <p class="subtle">Concentration thresholds: 10% warrants closer review and 20% is treated as high concentration. Decisions are screening prompts for your review, not automatic orders or guaranteed outcomes.</p>
       <p class="warning">IBKR may omit buy dates unless its Flex query uses Open Positions at tax-lot detail. Missing dates are never guessed.</p>
       <p class="subtle">Technical strength appears once inside Action review: below 40 is Weak (red), 40–70 is Moderate (orange), and above 70 is Strong (green). These describe technical conditions, not buy/sell instructions. Recovery and Profit / Loss % are beside Action review.</p>
@@ -192,8 +192,8 @@
     <div class="list-toolbar">
       <span id="count" class="count" aria-live="polite">0 holdings</span>
       <select id="filter" class="filter" aria-label="Select a stock"><option value="">All stocks</option></select>
-      <label class="review-target-setting" for="profitTargetPercent">Target
-        <input id="profitTargetPercent" type="number" min="0" max="100" step="any" value="7" required aria-label="Profit review target percent">
+      <label class="review-target-setting" for="profitTargetPercent">Annual target
+        <input id="profitTargetPercent" type="number" min="0" max="100" step="any" value="7" required aria-label="Annualized return target percent">
         <span>%</span>
       </label>
       <button id="reviewAgain" type="button">Review again</button>
@@ -279,7 +279,7 @@
     import { setFilterOptions } from "/StockScanner/table-filters.js";
     import { formatDateTime, parseDateInput, validateDateInputs } from "/StockScanner/date-format.js";
     import { formatDate, requireApprovedUser, setFormBusy, setMessage, supabase, tableCell } from "/StockScanner/personal-lists.js";
-    import { daysHeld, detectedPortfolioBroker, equalWeightTopTwentyMetrics, holdingReturnPercent, isPriceStale, portfolioActionDecision, portfolioConcentrationPercent, portfolioRowsFromCsv, profitTimingLabel, recommendedTargetPrice } from "/StockScanner/portfolio-analysis.js";
+    import { daysHeld, detectedPortfolioBroker, equalWeightTopTwentyMetrics, holdingReturnPercent, isPriceStale, marketDaysHeld, portfolioActionDecision, portfolioConcentrationPercent, portfolioRowsFromCsv, profitTimingLabel, recommendedTargetPrice } from "/StockScanner/portfolio-analysis.js";
 
     const user = await requireApprovedUser();
     const brokerTables = document.querySelector("#brokerTables");
@@ -642,11 +642,13 @@
       const quote = currentQuote(holding);
       const returnPercent = holdingReturnPercent(holding, quote.price);
       const heldDays = daysHeld(holding.bought_on);
+      const heldMarketDays = marketDaysHeld(holding.bought_on);
       return {
         ...holding,
         quote,
         returnPercent,
         heldDays,
+        heldMarketDays,
         timing: profitTimingLabel(returnPercent, heldDays),
       };
     }
@@ -683,6 +685,7 @@
           currentPrice: holding.quote.price,
           returnPercent: holding.returnPercent,
           heldDays: holding.heldDays,
+          heldMarketDays: holding.heldMarketDays,
           scannerRecommendation: scanner.recommendation,
           scannerScore: scanner.score,
           concentrationPercent,

@@ -4,6 +4,8 @@ import {
   recommendedTargetPrice,
   sellReviewSignal,
   portfolioRowsFromCsv,
+  annualizedTargetReturnPercent,
+  marketDaysHeld,
 } from "../portfolio-analysis.js";
 
 const longHolding = { symbol: "LONG", quantity: 2, buy_price: 100, target_price: null, stop_loss: null };
@@ -15,6 +17,11 @@ assert.equal(recommendedTargetPrice(longHolding, { profitReviewPercent: 100 }).p
 assert.equal(recommendedTargetPrice(shortHolding, { profitReviewPercent: 12 }).price, 88);
 assert.equal(recommendedTargetPrice(longHolding, { profitReviewPercent: 120 }).price, 107);
 assert.equal(recommendedTargetPrice({ ...longHolding, target_price: 123 }, { profitReviewPercent: 12 }).price, 123);
+assert.equal(annualizedTargetReturnPercent(7, 126), (Math.pow(1.07, 0.5) - 1) * 100);
+assert.equal(annualizedTargetReturnPercent(7, 0), 0);
+assert.equal(annualizedTargetReturnPercent(7, null), null);
+assert.equal(marketDaysHeld("2026-01-05", new Date("2026-01-12T12:00:00Z")), 5);
+assert.equal(marketDaysHeld(null), null);
 
 const decisionContext = {
   currentPrice: 108,
@@ -24,6 +31,13 @@ const decisionContext = {
 };
 assert.equal(portfolioActionDecision(longHolding, { ...decisionContext, profitReviewPercent: 7 }).code, "partial-sell");
 assert.equal(portfolioActionDecision(longHolding, { ...decisionContext, profitReviewPercent: 10 }).code, "hold");
+const weakScannerContext = { ...decisionContext, scannerRecommendation: "watch", scannerScore: 30,
+  heldMarketDays: 126, profitReviewPercent: 7, returnPercent: 3 };
+const belowAnnualTarget = portfolioActionDecision(longHolding, weakScannerContext);
+assert.equal(belowAnnualTarget.code, "partial-sell");
+assert.match(belowAnnualTarget.label, /below return target/);
+assert.match(belowAnnualTarget.reasons[0], /3\.44% over 126 market days/);
+assert.equal(portfolioActionDecision(longHolding, { ...weakScannerContext, returnPercent: 4 }).code, "hold");
 assert.equal(sellReviewSignal(longHolding, 108, 8, 7).code, "sell-review");
 assert.equal(sellReviewSignal(longHolding, 108, 8, 10).code, "monitor");
 assert.throws(

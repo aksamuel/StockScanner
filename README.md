@@ -35,7 +35,7 @@ AI-powered features with ChatGPT integration were introduced in v2.11.0. 🤖
 - Admin-only manual daily-scan and hourly-price workflow controls
 - Per-user exception and bought-selection lists protected by RLS
 - On-demand user portfolio imports from broker CSV files, including native IBKR exports and explicit handling of missing currency codes
-- Rule-based portfolio profit/loss, holding-time, target, and stop reviews, with an adjustable 0–100% profit-review target (7% default) and conservative automatic targets from technical, resistance, analyst-proxy, and return-objective inputs
+- Rule-based portfolio profit/loss, holding-time, target, and stop reviews, with an adjustable 0–100% annualized return objective (7% default) compounded over weekdays using 252 market days per year, plus evidence-aware sell/replacement prompts when a holding lags its target
 - Current profit/loss percentage for purchased positions
 - Bought-position time-to-profit status and benchmark-based breakeven-day scenarios
 - Daily Supabase NYSE universe refresh at 03:07 New York time
