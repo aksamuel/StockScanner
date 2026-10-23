@@ -271,14 +271,17 @@ def test_portfolio_page_supports_ibkr_csv_and_rule_based_analysis():
     assert "portfolioActionDecision" in page
 
 
-def test_portfolio_uses_seven_percent_review_and_conservative_automatic_target():
+def test_portfolio_uses_adjustable_review_target_and_conservative_automatic_target():
     page = read("portfolio-analysis.html")
     logic = read("portfolio-analysis.js")
 
     assert "DEFAULT_PROFIT_REVIEW_PERCENT = 7" in logic
     assert "recommendedTargetPrice" in logic
     assert 'source: "7% return objective"' not in logic
-    assert '`${DEFAULT_PROFIT_REVIEW_PERCENT}% return objective`' in logic
+    assert 'source: `${profitPercent}% return objective`' in logic
+    assert "profitReviewPercent: Number(profitTargetPercent.value)" in page
+    assert 'id="profitTargetPercent" type="number" min="0" max="100"' in page
+    assert 'profitTargetPercent.addEventListener("input"' in page
     assert 'source: "Technical Target 1"' in logic
     assert 'source: "Technical resistance"' in logic
     assert 'source: "Analyst target proxy"' in logic
@@ -288,7 +291,7 @@ def test_portfolio_uses_seven_percent_review_and_conservative_automatic_target()
     assert 'fetchDocument("/StockScanner/analysts.html")' in page
     assert "scanner.scannerPrice * (1 + scanner.analystTargetUpside / 100)" in page
     assert 'data-sort-key="target"' in page
-    assert "gain of at least 7%" in page
+    assert "gain at or above your selected threshold" in page
 
 
 def test_portfolio_table_headers_sort_visible_user_holdings():
