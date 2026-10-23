@@ -61,7 +61,14 @@ class DividendAnalysisEngine:
         )
         return max(0.0, min(100.0, score))
 
-    def analyze(self, dividend_records: Iterable[DividendRecord], current_price: float, payout_ratio: float, dividend_growth_rate: float, consistency_score: float) -> Dict[str, float]:
+    def analyze(
+        self,
+        dividend_records: Iterable[DividendRecord],
+        current_price: float,
+        payout_ratio: float,
+        dividend_growth_rate: float,
+        consistency_score: float,
+    ) -> Dict[str, float]:
         annualized_income = self.annualized_income(dividend_records)
         yield_pct = self.current_yield(annualized_income, current_price)
         quality = self.quality_score(
