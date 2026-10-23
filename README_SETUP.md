@@ -273,6 +273,9 @@ The signed-in user pages serve different purposes:
   resistance, and analyst target proxy. Each import atomically replaces only
   the signed-in user's older rows for that broker before the page recalculates
   the analysis; it never truncates another user or broker.
+- `portfolio-intelligence.html`: authenticated PIP module catalog, local-only CSV
+  preflight, illustrative score calculator, and in-memory approval workflow demo.
+  The Python PIP services remain a separate package and are not executed by Pages.
 - `help.html`: the current user guide and FAQ, available from the shared Menu,
   portfolio navigation, and report Help links.
 
