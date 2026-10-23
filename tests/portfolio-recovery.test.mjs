@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { technicalStrength, recoveryScenario, historicalRecovery, stockGrowthMetrics, recoveryGraphModel } from '../portfolio-recovery.js';
+import { technicalStrength, recoveryScenario, historicalRecovery, stockGrowthMetrics, annualTargetCatchupEstimate, recoveryGraphModel } from '../portfolio-recovery.js';
 import { isPriceStale } from '../portfolio-analysis.js';
 
 const priceNow = new Date('2026-09-24T15:00:00-04:00');
@@ -38,6 +38,17 @@ const metrics = stockGrowthMetrics(rising, now);
 assert.ok(Math.abs(metrics.dailyReturn - 0.01) < 1e-12);
 assert.equal(metrics.startDate, '2026-07-07');
 assert.equal(metrics.endDate, '2026-09-04');
+const oneYearTrend = { points: Array.from({length: 252}, (_, i) => ({
+  date: new Date(Date.UTC(2025, 8, 1) + i * 1.5 * 86400000),
+  price: 50 * 1.001 ** i,
+})), dailyReturn: 0.001 };
+const catchup = annualTargetCatchupEstimate({...holding, quote:{price: 102}}, oneYearTrend, 7, 126);
+assert.equal(catchup.requiredReturnPercent, (Math.pow(1.07, 0.5) - 1) * 100);
+assert.ok(Math.abs(catchup.gapPercent - (catchup.requiredReturnPercent - 2)) < 1e-12);
+assert.ok(catchup.days > 0);
+assert.equal(annualTargetCatchupEstimate({...holding, quote:{price: 110}}, oneYearTrend, 7, 126).days, 0);
+assert.match(annualTargetCatchupEstimate(holding, {...oneYearTrend, points: oneYearTrend.points.slice(0, 100)}, 7, 126).unavailable, /200 valid daily prices/);
+assert.match(annualTargetCatchupEstimate({...holding, quantity: -1}, oneYearTrend, 7, 126).unavailable, /short positions/);
 const graph = recoveryGraphModel(holding, rising, {dailyReturn: 0.005}, now);
 assert.equal(graph.stockScenario.days, 23);
 assert.equal(graph.benchmarkScenario.days, 45);
@@ -50,6 +61,16 @@ for (const [projection, scenario] of [[graph.stockProjection,graph.stockScenario
   assert.equal(projection.at(-1).date.getTime(), scenario.date.getTime());
   assert.ok(projection.every(p => p.price <= 100));
 }
+const targetHistory = { points: Array.from({length: 252}, (_, i) => {
+  const date = new Date(Date.UTC(2025, 8, 1) + Math.floor(i * 368 / 251) * 86400000).toISOString().slice(0, 10);
+  return [date, 50 * 1.001 ** i];
+}) };
+const targetGraph = recoveryGraphModel(holding, targetHistory, {dailyReturn: 0.005}, now, {percent: 7, heldMarketDays: 126});
+assert.ok(targetGraph.targetScenario.days > 0);
+assert.ok(targetGraph.annualTargetDate > now);
+assert.ok(targetGraph.annualTargetStockProjection.length > 1);
+assert.ok(targetGraph.annualTargetPriceProjection.length > 1);
+assert.ok(targetGraph.annualTargetPriceProjection.at(-1).price > targetGraph.annualTargetPriceProjection[0].price);
 const falling = {points: points.map(([date], i) => [date, 100 * 0.99 ** i])};
 const noRecovery = recoveryGraphModel(holding, falling, {dailyReturn: 0}, now);
 assert.equal(noRecovery.stockScenario.date, null);

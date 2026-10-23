@@ -1,4 +1,29 @@
-# StockScanner v2.20.0
+# StockScanner v2.21.0
+
+Stable release · 23/Oct/2026
+
+This release adds annualized return tracking and a recovery graph that compares
+the portfolio objective with a stock's trailing one-year daily-return trend.
+
+- The portfolio's default 7% objective is annualized and compounded across
+  weekdays using 252 market days per year. Below-target holdings receive an
+  evidence-aware review prompt; this is not an automatic order.
+- Recovery scenarios show the percentage-point gap to the compounded target
+  and estimate additional market days from the arithmetic mean of trailing
+  one-year daily adjusted-close returns. Insufficient history or a trend that
+  does not outpace the moving target is reported as unavailable.
+- The recovery graph overlays the stock's one-year average-return path and the
+  moving annual target while retaining stock-history and Equal-weight Top 20
+  breakeven scenarios.
+- Positions at or above cost remain in the portfolio but leave the recovery
+  scenario display. Manual targets still take priority for target-hit reviews.
+- Displayed clocks use 24-hour time; displayed dates use dd/mmm/yyyy.
+- No database schema change is required.
+
+The deployment workflow tests the commit, publishes GitHub Pages, then creates
+the matching stable GitHub Release from this file.
+
+## Previous stable release: v2.20.0
 
 Stable release · 23/Oct/2026
 

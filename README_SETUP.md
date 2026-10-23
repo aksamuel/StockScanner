@@ -1,4 +1,4 @@
-# StockScanner v2.20.0 setup and operations
+# StockScanner v2.21.0 setup and operations
 
 Windows PowerShell commands to create and activate a virtual environment, install dependencies from `requirements.txt`, and verify installation.
 
@@ -290,7 +290,7 @@ daily ticker histories are not retained.
 
 ### Portfolio page deployment and checks
 
-Stable release v2.20.0 retains Symbol, Action review, Recovery scenario / days
+Stable release v2.21.0 retains Symbol, Action review, Recovery scenario / days
 held, and Profit / Loss % first, in that order. Technical strength appears once
 inside Action review. The recovery timeline keeps Today undated and displays
 blue stock-history and orange Top 20 estimates in chronological order. Both the

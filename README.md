@@ -1,14 +1,14 @@
-# StockScanner v2.20.0
+# StockScanner v2.21.0
 
 [![Stock Scanner](https://github.com/aksamuel/StockScanner/actions/workflows/scan.yml/badge.svg)](https://github.com/aksamuel/StockScanner/actions/workflows/scan.yml)
 
 StockScanner scans a watchlist or the NYSE universe, calculates technical and
 analyst signals, sizes positions, and produces Excel and GitHub Pages reports.
 
-**Stable release: v2.20.0** — portfolio review thresholds adjustable from 0% to
-100%, recalculation as the target changes, and a refresh action that reloads
-currently stored portfolio and scanner data. The v2.19.0 portfolio-strength,
-stale-evidence, recovery-timeline, and price-collection features remain available.
+**Stable release: v2.21.0** — portfolio review uses an annualized return objective,
+and recovery estimates show the shortfall and estimated time to catch up using
+the stock's trailing one-year daily-return trend. The recovery graph compares
+that trend with the moving annual target while retaining breakeven scenarios.
 
 [Help & FAQ](https://aksamuel.github.io/StockScanner/help.html) explains the
 screens and recovery estimates. [Release notes](RELEASE_NOTES.md) describe this
@@ -353,7 +353,7 @@ are never truncated or changed.
   for native exports. Database values, chart source data, and file paths retain
   their machine-readable date format.
 - All displayed clocks use **New York time, 24-hour HH:mm**, with no seconds;
-  for example `05/Sep/2026, 14:07 EDT` or `05/Jan/2026, 13:07 EST`.
+  for example `05/Sep/2026 14:07 EDT` or `05/Jan/2026 13:07 EST`.
   New York daylight saving and the corresponding calendar date are handled
   automatically, independently of the browser's location. This includes portfolio
   quote/import times, administration, market-data charts, reports, and new Excel

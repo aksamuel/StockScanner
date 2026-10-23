@@ -69,14 +69,57 @@ export function stockGrowthMetrics(history, now = new Date()) {
     points: points.map(([date, price]) => ({ date: new Date(`${date}T00:00:00`), price })) };
 }
 
-export function recoveryGraphModel(holding, history, benchmark, now = new Date()) {
+export function annualTargetCatchupEstimate(holding, metrics, annualTargetPercent, heldMarketDays) {
+  if (!(Number(holding.quantity) > 0)) return { unavailable: 'Not estimated for short positions.' };
+  const cost = Number(holding.buy_price);
+  const current = Number(holding.quote?.price);
+  const annualTarget = Number(annualTargetPercent);
+  if (!(cost > 0) || !(current > 0) || !Number.isFinite(heldMarketDays)
+    || !Number.isFinite(annualTarget) || annualTarget < 0 || annualTarget > 100) {
+    return { unavailable: 'Buy date or price data needed.' };
+  }
+  const requiredReturnPercent = (Math.pow(1 + annualTarget / 100, heldMarketDays / 252) - 1) * 100;
+  const currentReturnPercent = (current / cost - 1) * 100;
+  const gapPercent = Math.max(0, requiredReturnPercent - currentReturnPercent);
+  const targetDailyReturn = Math.pow(1 + annualTarget / 100, 1 / 252) - 1;
+  const targetPrice = cost * Math.pow(1 + annualTarget / 100, heldMarketDays / 252);
+  if (gapPercent === 0) return { requiredReturnPercent, currentReturnPercent, gapPercent, targetDailyReturn, targetPrice, days: 0 };
+  const points = metrics?.points;
+  if (!Array.isArray(points) || points.length < 200 || !Number.isFinite(metrics.dailyReturn)) {
+    return { requiredReturnPercent, currentReturnPercent, gapPercent, targetDailyReturn, targetPrice,
+      unavailable: 'At least 200 valid daily prices needed for a one-year trend estimate.' };
+  }
+  const lastYear = points.slice(-253);
+  if (lastYear.length < 200 || (lastYear.at(-1).date - lastYear[0].date) / 86400000 < 300) {
+    return { requiredReturnPercent, currentReturnPercent, gapPercent, targetDailyReturn, targetPrice,
+      unavailable: 'At least 200 valid daily prices spanning 300 days needed.' };
+  }
+  const dailyReturns = lastYear.slice(1).map((point, index) => point.price / lastYear[index].price - 1);
+  const averageDailyReturn = dailyReturns.reduce((sum, value) => sum + value, 0) / dailyReturns.length;
+  if (!(averageDailyReturn > 0)) {
+    return { requiredReturnPercent, currentReturnPercent, gapPercent, averageDailyReturn, targetDailyReturn, targetPrice,
+      unavailable: 'One-year average daily return is not positive.' };
+  }
+  const relativeDailyReturn = Math.log1p(averageDailyReturn) - Math.log1p(targetDailyReturn);
+  if (!(relativeDailyReturn > 0)) {
+    return { requiredReturnPercent, currentReturnPercent, gapPercent, averageDailyReturn, targetDailyReturn,
+      targetPrice, unavailable: 'The one-year average trend does not outpace the moving annual target.' };
+  }
+  const days = Math.max(0, Math.ceil(Math.log(targetPrice / current) / relativeDailyReturn));
+  return { requiredReturnPercent, currentReturnPercent, gapPercent, averageDailyReturn, targetDailyReturn,
+    targetPrice, days };
+}
+
+export function recoveryGraphModel(holding, history, benchmark, now = new Date(), annualTarget) {
   const stock = stockGrowthMetrics(history, now);
   const stockScenario = recoveryScenario(holding, stock, now);
   const benchmarkScenario = recoveryScenario(holding, benchmark, now);
   const current = Number(holding.quote?.price);
   const target = Number(holding.buy_price);
   if (!(current > 0) || !(target > current) || !(Number(holding.quantity) > 0)) return { unavailable: 'A losing long position with valid prices is required.' };
-  const crossings = [stockScenario.days, benchmarkScenario.days].filter((days) => Number.isFinite(days) && days > 0);
+  const targetScenario = annualTargetCatchupEstimate(holding, stock, annualTarget?.percent, annualTarget?.heldMarketDays);
+  const crossings = [stockScenario.days, benchmarkScenario.days, targetScenario.days]
+    .filter((days) => Number.isFinite(days) && days > 0);
   const horizonDays = Math.min(1826, Math.max(365, Math.ceil(Math.max(0, ...crossings) * 1.08)));
   const dateAfter = (day) => { const date = new Date(now); date.setDate(date.getDate() + day); return date; };
   const projection = (metrics, scenario) => {
@@ -85,8 +128,34 @@ export function recoveryGraphModel(holding, history, benchmark, now = new Date()
     const days = [...new Set([0, ...Array.from({ length: 80 }, (_, i) => Math.ceil((i + 1) * endDay / 80)), endDay])];
     return days.map((day) => ({ day, date: dateAfter(day), price: Math.min(target, current * Math.exp(Math.log1p(metrics.dailyReturn) * day)) }));
   };
-  return { current, target, now, horizonDays, end: dateAfter(horizonDays), stock,
+  const dateAfterMarketDays = (days) => {
+    const date = new Date(now);
+    let remaining = days;
+    while (remaining > 0) {
+      date.setDate(date.getDate() + 1);
+      if (date.getDay() !== 0 && date.getDay() !== 6) remaining -= 1;
+    }
+    return date;
+  };
+  const annualTargetProjection = (dailyRate, basePrice, initialMarketDays) => {
+    if (!Number.isFinite(dailyRate) || dailyRate <= -1 || !(basePrice > 0) || !Number.isFinite(initialMarketDays)) return [];
+    const maxMarketDays = Math.ceil(horizonDays * 252 / 365.25);
+    const endMarketDays = Math.min(maxMarketDays, targetScenario.days ?? maxMarketDays);
+    const marketDays = [...new Set([0, ...Array.from({ length: 80 }, (_, i) => Math.ceil((i + 1) * endMarketDays / 80)), endMarketDays])];
+    return marketDays.map((day) => ({
+      day,
+      date: dateAfterMarketDays(day),
+      price: basePrice * Math.exp(Math.log1p(dailyRate) * day),
+      targetPrice: target * Math.pow(1 + (annualTarget?.percent ?? 0) / 100, (initialMarketDays + day) / 252),
+    }));
+  };
+  const annualTargetStockProjection = annualTargetProjection(targetScenario.averageDailyReturn, current, annualTarget?.heldMarketDays);
+  const annualTargetPriceProjection = annualTargetProjection(targetScenario.targetDailyReturn, targetScenario.targetPrice, annualTarget?.heldMarketDays)
+    .map(({ day, date, targetPrice }) => ({ day, date, price: targetPrice }));
+  const annualTargetDate = Number.isFinite(targetScenario.days) ? dateAfterMarketDays(targetScenario.days) : null;
+  return { current, target, now, horizonDays, end: dateAfter(horizonDays), stock, targetScenario,
     stockScenario, benchmarkScenario, benchmark,
+    annualTargetDate, annualTargetStockProjection, annualTargetPriceProjection,
     history: stock.points || [], stockProjection: projection(stock, stockScenario),
     benchmarkProjection: projection(benchmark, benchmarkScenario) };
 }
