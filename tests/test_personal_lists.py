@@ -291,7 +291,8 @@ def test_portfolio_uses_adjustable_review_target_and_conservative_automatic_targ
     assert 'fetchDocument("/StockScanner/analysts.html")' in page
     assert "scanner.scannerPrice * (1 + scanner.analystTargetUpside / 100)" in page
     assert 'data-sort-key="target"' in page
-    assert "gain at or above your selected threshold" in page
+    assert "The annual target (7% by default) compounds" in page
+    assert "252 market days per year" in page
 
 
 def test_portfolio_table_headers_sort_visible_user_holdings():
