@@ -167,6 +167,7 @@
       <div id="analysisExplanationText" class="explanation-content" hidden>
         <button id="hideExplanation" class="explanation-close" type="button" aria-label="Close explanation" title="Close explanation">×</button>
         <p>The page combines present profit/loss, days held, the newest daily StockScanner recommendation and score, targets and stop-losses, and each symbol's share of known portfolio market value.</p>
+        <p class="subtle">The annual target (7% by default) compounds over 252 market days per year when estimating the market days needed to reach it.</p>
         <p class="subtle">Recovery scenario also shows the percentage-point gap to the compounded annual target and estimated additional market days based on the arithmetic average daily adjusted-close growth.</p>
         <p class="subtle">Concentration thresholds: 10% warrants closer review and 20% is treated as high concentration. Decisions are screening prompts for your review, not automatic orders or guarantees.</p>
         <p class="warning">IBKR may omit buy dates unless its Flex query uses Open Positions at tax-lot detail. Missing dates are never guessed.</p>
@@ -667,20 +668,14 @@
       brokerSelect.value = brokers.includes(selectedBroker) ? selectedBroker : "";
     }
 
+    function isPendingRecovery(holding) {
+      return holding.quote.price === null || Number(holding.quote.price) < Number(holding.buy_price);
+    }
+
     function matchesPortfolioFilter(holding) {
-      if (portfolioFilter === "profitable") {
-        return holding.returnPercent > 0;
-      }
-      if (portfolioFilter === "sell") {
-        return holding.decision.code === "sell";
-      }
-      if (portfolioFilter === "partial-sell") {
-        return holding.decision.code === "partial-sell";
-      }
-      if (portfolioFilter === "hold") {
-        return holding.decision.code === "hold";
-      }
-      return true;
+      if (portfolioFilter === "profitable") return holding.returnPercent > 0;
+      if (portfolioFilter === "all") return true;
+      return holding.decision.code === portfolioFilter;
     }
 
     function updatePortfolioFilterButtons() {
@@ -738,8 +733,8 @@
       });
       const candidates = analyzed.filter(matchesPortfolioFilter);
       const pendingRecoveryCandidates = analyzed.filter(isPendingRecovery).filter(matchesPortfolioFilter);
-      const selected = setFilterOptions(filter, candidates.map(holding => holding.symbol));
-      const visible = pendingRecoveryCandidates.filter(holding => !selected || holding.symbol === selected);
+      const selected = setFilterOptions(filter, pendingRecoveryCandidates.map(holding => holding.symbol));
+      const visible = candidates.filter(holding => !selected || holding.symbol === selected).filter(isPendingRecovery);
       visible.sort(compareHoldings);
       updatePortfolioFilterButtons();
       renderBrokerTables(analyzed, visible);
@@ -1045,7 +1040,7 @@
 
     async function deleteHolding(holding, button) {
       button.disabled = true;
-      const { error } = await supabase.from("user_portfolio_holdings").delete().eq("id", holding.id);
+      const { error } = await supabase.from("user_portfolio_holdings").delete().eq("id", holding.id).eq("user_id", user.id);
       if (error) {
         setMessage(message, error.message);
         button.disabled = false;
@@ -1065,7 +1060,7 @@
         stop_loss: Number(document.querySelector("#editStop").value || 0),
         notes: document.querySelector("#editNotes").value || null,
       };
-      const { error } = await supabase.from("user_portfolio_holdings").update(values).eq("id", id);
+      const { error } = await supabase.from("user_portfolio_holdings").update(values).eq("id", id).eq("user_id", user.id);
       if (error) {
         setMessage(message, error.message);
         return;
