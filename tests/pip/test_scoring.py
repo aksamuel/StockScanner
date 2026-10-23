@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from .scoring import calculate_cps, calculate_sell_score
+from stockscanner.pip.scoring import calculate_cps, calculate_sell_score
 
 
 def test_cps_formula():

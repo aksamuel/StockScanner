@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from .dividend_analysis import DividendAnalysisEngine
+from stockscanner.pip.dividend_analysis import DividendAnalysisEngine
 
 
 def test_dividend_analysis_basic():
