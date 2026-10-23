@@ -13,6 +13,10 @@ class IBKRPortfolioSyncService:
     This service deliberately does not alter existing StockScanner scanner logic.
     It normalizes IBKR files or API payloads into a single internal object model
     for downstream analytics.
+
+    Dividend information should be handled through a separate dividend pipeline,
+    not folded into the CPS formula directly. Actual cash dividends received are
+    tracked as supporting data and can be converted into yield and quality scores.
     """
 
     def __init__(self, repository: Optional[Any] = None):
@@ -44,11 +48,28 @@ class IBKRPortfolioSyncService:
             },
         )
 
+    def normalize_dividend(self, raw_dividend: Dict[str, Any]) -> Dict[str, Any]:
+        """Normalize a raw IBKR dividend record into a consistent portfolio record."""
+
+        return {
+            "symbol": str(raw_dividend.get("symbol") or "UNKNOWN"),
+            "amount": float(raw_dividend.get("amount", 0.0) or 0.0),
+            "ex_date": raw_dividend.get("ex_date"),
+            "pay_date": raw_dividend.get("pay_date"),
+            "account_id": raw_dividend.get("account_id"),
+            "portfolio_id": raw_dividend.get("portfolio_id"),
+            "currency": str(raw_dividend.get("currency", "USD") or "USD"),
+            "metadata": raw_dividend.get("metadata", {}),
+        }
+
     def sync_portfolio(self, raw_positions: List[Dict[str, Any]]) -> List[PositionRecord]:
         records: List[PositionRecord] = []
         for raw_position in raw_positions:
             records.append(self.normalize_position(raw_position))
         return records
+
+    def sync_dividends(self, raw_dividends: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        return [self.normalize_dividend(item) for item in raw_dividends]
 
     def persist_positions(self, portfolio_id: str, positions: List[PositionRecord]) -> List[PositionRecord]:
         """Hook point for repository integration.
