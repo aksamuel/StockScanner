@@ -1,102 +1,169 @@
 from __future__ import annotations
 
-from typing import Dict, Iterable, List
+from dataclasses import dataclass
+from math import isfinite
+from typing import Mapping
+
+
+CPS_WEIGHTS = {
+    "tsr": 40.0,
+    "relative_performance": 20.0,
+    "dividend_growth": 15.0,
+    "earnings_growth": 15.0,
+    "analyst_revisions": 10.0,
+}
+
+SELL_SCORE_WEIGHTS = {
+    "tsr": 20.0,
+    "relative_performance": 20.0,
+    "revisions": 20.0,
+    "dividend_quality": 15.0,
+    "technical_health": 15.0,
+    "earnings_growth": 10.0,
+    "opportunity_cost": 15.0,
+}
+
+
+@dataclass(frozen=True)
+class ScoringResult:
+    score: float | None
+    confidence: float
+    reasons: tuple[str, ...]
+    component_scores: Mapping[str, float]
 
 
 def normalize_score(value: float, minimum: float = 0.0, maximum: float = 100.0) -> float:
-    """Clamp a value into a 0..100 style score range."""
+    """Clamp a finite component score into the 0..100 range."""
+    if maximum <= minimum:
+        raise ValueError("maximum must be greater than minimum")
+    if not isfinite(float(value)):
+        raise ValueError("score must be finite")
+    return max(minimum, min(maximum, float(value)))
 
-    if maximum == minimum:
+
+def calculate_weighted_score(
+    components: Mapping[str, float | None],
+    weights: Mapping[str, float],
+) -> ScoringResult:
+    """Normalize available 0..100 component scores and report missing-data confidence."""
+    if not weights or any(not isfinite(float(weight)) or float(weight) <= 0 for weight in weights.values()):
+        raise ValueError("weights must be finite positive values")
+
+    total_weight = sum(float(weight) for weight in weights.values())
+    available: dict[str, float] = {}
+    reasons: list[str] = []
+    available_weight = 0.0
+
+    for name, weight in weights.items():
+        value = components.get(name)
+        if value is None:
+            reasons.append(f"{name.replace('_', ' ').title()} data is missing.")
+            continue
+        try:
+            numeric_value = float(value)
+        except (TypeError, ValueError):
+            reasons.append(f"{name.replace('_', ' ').title()} data is invalid.")
+            continue
+        if not isfinite(numeric_value):
+            reasons.append(f"{name.replace('_', ' ').title()} data is invalid.")
+            continue
+        available[name] = normalize_score(numeric_value)
+        available_weight += float(weight)
+
+    if not available:
+        return ScoringResult(None, 0.0, tuple(reasons or ("No score inputs are available.",)), {})
+
+    weighted_total = sum(float(weights[name]) * score for name, score in available.items())
+    return ScoringResult(
+        score=weighted_total / available_weight,
+        confidence=available_weight / total_weight,
+        reasons=tuple(reasons),
+        component_scores=available,
+    )
+
+
+def score_weighted_average(items) -> float:
+    """Return a normalized weighted average from (weight, score) pairs."""
+    pairs = [(float(weight), normalize_score(value)) for weight, value in items]
+    if not pairs:
         return 0.0
-    return max(minimum, min(maximum, value))
+    if any(not isfinite(weight) or weight <= 0 for weight, _ in pairs):
+        raise ValueError("weights must be finite positive values")
+    total_weight = sum(weight for weight, _ in pairs)
+    return sum(weight * value for weight, value in pairs) / total_weight
 
 
-def score_weighted_average(items: Iterable[tuple[float, float]]) -> float:
-    """Return a weighted average where each item is (weight, value)."""
+def calculate_cps_result(
+    components: Mapping[str, float | None],
+    weights: Mapping[str, float] | None = None,
+) -> ScoringResult:
+    return calculate_weighted_score(components, CPS_WEIGHTS if weights is None else weights)
 
-    total_weight = 0.0
-    total_value = 0.0
-    for weight, value in items:
-        total_weight += weight
-        total_value += weight * value
-    if total_weight == 0:
-        return 0.0
-    return total_value / total_weight
+
+def calculate_sell_score_result(
+    components: Mapping[str, float | None],
+    weights: Mapping[str, float] | None = None,
+) -> ScoringResult:
+    return calculate_weighted_score(components, SELL_SCORE_WEIGHTS if weights is None else weights)
 
 
 def calculate_cps(
-    tsr: float,
-    relative_performance: float,
-    dividend_growth: float,
-    earnings_growth: float,
-    analyst_revisions: float,
-) -> float:
-    """Capital Productivity Score (CPS) formula.
-
-    Formula:
-      40% TSR
-      20% Relative Performance vs SPY
-      15% Dividend Growth
-      15% Earnings Growth
-      10% Analyst Revisions
-    """
-
-    return score_weighted_average(
-        [
-            (0.40, normalize_score(tsr)),
-            (0.20, normalize_score(relative_performance)),
-            (0.15, normalize_score(dividend_growth)),
-            (0.15, normalize_score(earnings_growth)),
-            (0.10, normalize_score(analyst_revisions)),
-        ]
+    tsr: float | None,
+    relative_performance: float | None,
+    dividend_growth: float | None,
+    earnings_growth: float | None,
+    analyst_revisions: float | None,
+    weights: Mapping[str, float] | None = None,
+) -> float | None:
+    result = calculate_cps_result(
+        {
+            "tsr": tsr,
+            "relative_performance": relative_performance,
+            "dividend_growth": dividend_growth,
+            "earnings_growth": earnings_growth,
+            "analyst_revisions": analyst_revisions,
+        },
+        weights,
     )
+    return result.score
 
 
 def calculate_sell_score(
-    tsr: float,
-    relative_performance: float,
-    revisions: float,
-    dividend_quality: float,
-    technical_health: float,
-    earnings_growth: float,
-    opportunity_cost: float,
-) -> float:
-    """Sell Confidence Score formula.
-
-    Formula:
-      20% TSR
-      20% Relative Performance
-      20% Revisions
-      15% Dividend Quality
-      15% Technical Health
-      10% Earnings Growth
-      15% Opportunity Cost
-    """
-
-    return score_weighted_average(
-        [
-            (0.20, normalize_score(tsr)),
-            (0.20, normalize_score(relative_performance)),
-            (0.20, normalize_score(revisions)),
-            (0.15, normalize_score(dividend_quality)),
-            (0.15, normalize_score(technical_health)),
-            (0.10, normalize_score(earnings_growth)),
-            (0.15, normalize_score(opportunity_cost)),
-        ]
+    tsr: float | None,
+    relative_performance: float | None,
+    revisions: float | None,
+    dividend_quality: float | None,
+    technical_health: float | None,
+    earnings_growth: float | None,
+    opportunity_cost: float | None,
+    weights: Mapping[str, float] | None = None,
+) -> float | None:
+    result = calculate_sell_score_result(
+        {
+            "tsr": tsr,
+            "relative_performance": relative_performance,
+            "revisions": revisions,
+            "dividend_quality": dividend_quality,
+            "technical_health": technical_health,
+            "earnings_growth": earnings_growth,
+            "opportunity_cost": opportunity_cost,
+        },
+        weights,
     )
+    return result.score
 
 
-def build_score_breakdown(data: Dict[str, float]) -> Dict[str, float]:
-    """Return the canonical score components used by the PIP engine."""
-
-    return {
-        "tsr": float(data.get("tsr", 0.0)),
-        "relative_performance": float(data.get("relative_performance", 0.0)),
-        "dividend_growth": float(data.get("dividend_growth", 0.0)),
-        "earnings_growth": float(data.get("earnings_growth", 0.0)),
-        "analyst_revisions": float(data.get("analyst_revisions", 0.0)),
-        "dividend_quality": float(data.get("dividend_quality", 0.0)),
-        "technical_health": float(data.get("technical_health", 0.0)),
-        "opportunity_cost": float(data.get("opportunity_cost", 0.0)),
-        "revisions": float(data.get("revisions", 0.0)),
-    }
+def build_score_breakdown(data: Mapping[str, float | None]) -> dict[str, float | None]:
+    """Return canonical components without disguising absent data as a zero score."""
+    keys = (
+        "tsr",
+        "relative_performance",
+        "dividend_growth",
+        "earnings_growth",
+        "analyst_revisions",
+        "dividend_quality",
+        "technical_health",
+        "opportunity_cost",
+        "revisions",
+    )
+    return {key: data.get(key) for key in keys}

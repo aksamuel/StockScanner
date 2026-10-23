@@ -17,11 +17,11 @@ class PositionRecord:
     account_id: Optional[str] = None
     portfolio_id: Optional[str] = None
     quantity: float = 0.0
-    average_cost: float = 0.0
-    market_price: float = 0.0
-    market_value: float = 0.0
+    average_cost: Optional[float] = None
+    market_price: Optional[float] = None
+    market_value: Optional[float] = None
     currency: str = "USD"
-    cost_basis: float = 0.0
+    cost_basis: Optional[float] = None
     entry_date: Optional[datetime] = None
     last_updated: Optional[datetime] = None
     notes: Dict[str, Any] = field(default_factory=dict)
@@ -47,7 +47,7 @@ class ReplacementCandidate:
     """Replacement candidate with a score and rationale."""
 
     symbol: str
-    score: float
+    score: Optional[float]
     rationale: List[str] = field(default_factory=list)
     expected_benefit: float = 0.0
     confidence: float = 0.0
@@ -67,6 +67,7 @@ class SellRecommendation:
     approved_by: Optional[str] = None
     status: str = "draft"
     replacement_candidates: List[ReplacementCandidate] = field(default_factory=list)
+    id: Optional[str] = None
 
 
 @dataclass

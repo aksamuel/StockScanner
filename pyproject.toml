@@ -43,4 +43,4 @@ py-modules = [
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["stockscanner"]
+include = ["stockscanner*"]
