@@ -3,7 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Optional
 
-from .models import PositionRecord, SellRecommendation
+from .models import PositionRecord, ReplacementCandidate, SellRecommendation
+from .replacement_engine import ReplacementCandidateEngine
 from .scoring import calculate_cps, calculate_sell_score
 
 
@@ -77,6 +78,8 @@ class DecisionEngine:
         opportunity_cost: float,
         revisions: float,
         recommendation_threshold: float = 65.0,
+        peer_scores: Optional[Iterable[tuple[str, float]]] = None,
+        replacement_limit: int = 5,
     ) -> PortfolioAnalysisResult:
         cps = calculate_cps(
             tsr=tsr,
@@ -95,6 +98,15 @@ class DecisionEngine:
             earnings_growth=earnings_growth,
             opportunity_cost=opportunity_cost,
         )
+
+        replacement_candidates: List[ReplacementCandidate] = []
+        if peer_scores is not None:
+            replacement_candidates = ReplacementCandidateEngine().generate_candidates(
+                symbol=symbol,
+                current_score=sell_score,
+                peer_scores=peer_scores,
+                max_candidates=replacement_limit,
+            )
 
         if sell_score >= recommendation_threshold:
             recommendation = "sell"
@@ -129,9 +141,22 @@ class DecisionEngine:
             "technical_health": technical_health,
             "opportunity_cost": opportunity_cost,
             "revisions": revisions,
+            "replacement_candidates": replacement_candidates,
         }
 
         self.repository.upsert_score(portfolio_id, symbol, score_record)
+
+        recommendation_record = SellRecommendation(
+            portfolio_id=portfolio_id,
+            symbol=symbol,
+            score=sell_score,
+            recommendation=recommendation,
+            rationale=rationale,
+            confidence=max(0.0, min(1.0, sell_score / 100.0)),
+            status="draft",
+            replacement_candidates=replacement_candidates,
+        )
+        self.repository.create_recommendation(recommendation_record)
 
         return PortfolioAnalysisResult(
             symbol=symbol,

@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
-from typing import List
+from typing import List, Optional
 
-from .models import SellRecommendation
+from .models import ReplacementCandidate, SellRecommendation
 
 
 @dataclass
@@ -23,6 +23,7 @@ class SellAdvisor:
         opportunity_cost: float,
         technical_health: float,
         relative_performance: float,
+        replacement_candidates: Optional[List[ReplacementCandidate]] = None,
     ) -> SellRecommendation:
         reasons: List[str] = []
 
@@ -43,6 +44,13 @@ class SellAdvisor:
         if relative_performance < 40:
             reasons.append("Relative performance versus the broader market is weak.")
 
+        if replacement_candidates:
+            top = "; ".join(
+                f"{candidate.symbol} (+{candidate.expected_benefit:.1f} pts)"
+                for candidate in replacement_candidates[:3]
+            )
+            reasons.append(f"Stronger replacement candidates are available: {top}.")
+
         if not reasons:
             reasons.append("No material risk triggers were detected from the current score set.")
 
@@ -55,4 +63,5 @@ class SellAdvisor:
             confidence=max(0.0, min(1.0, sell_score / 100.0)),
             created_at=datetime.utcnow(),
             status="draft",
+            replacement_candidates=replacement_candidates or [],
         )

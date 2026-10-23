@@ -43,6 +43,17 @@ class ScoreBreakdown:
 
 
 @dataclass
+class ReplacementCandidate:
+    """Replacement candidate with a score and rationale."""
+
+    symbol: str
+    score: float
+    rationale: List[str] = field(default_factory=list)
+    expected_benefit: float = 0.0
+    confidence: float = 0.0
+
+
+@dataclass
 class SellRecommendation:
     """Recommendation object created by the sell advisor."""
 
@@ -55,17 +66,7 @@ class SellRecommendation:
     created_at: Optional[datetime] = None
     approved_by: Optional[str] = None
     status: str = "draft"
-
-
-@dataclass
-class ReplacementCandidate:
-    """Replacement candidate with a score and rationale."""
-
-    symbol: str
-    score: float
-    rationale: List[str] = field(default_factory=list)
-    expected_benefit: float = 0.0
-    confidence: float = 0.0
+    replacement_candidates: List[ReplacementCandidate] = field(default_factory=list)
 
 
 @dataclass
