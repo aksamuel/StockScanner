@@ -46,6 +46,8 @@ on:
       - "my-bought-selection.html"
       - "portfolio-analysis.html"
       - "portfolio-analysis.js"
+      - "sell-advisor.html"
+      - "sell-advisor.js"
       - "market-prices.html"
       - "market-prices.js"
       - "database.html"
