@@ -16,4 +16,3 @@
 - **Financial-data quality:** choose trusted sources and freshness requirements
   for dividend sustainability, earnings growth, analyst revisions, and target
   prices before relying on the scores.
-

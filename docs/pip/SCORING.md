@@ -48,4 +48,3 @@ is zero, and the result contains a reason. The `calculate_cps` and
 
 Input scores outside 0–100 are clamped; non-finite and non-numeric inputs are
 treated as missing. Scores use no current-time, network, or random inputs.
-
