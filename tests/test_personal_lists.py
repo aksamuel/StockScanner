@@ -312,6 +312,14 @@ def test_portfolio_table_headers_sort_visible_user_holdings():
     assert 'header.setAttribute("aria-sort", active ? sortDirection : "none")' in page
 
 
+def test_portfolio_analysis_hides_positions_that_have_recovered_cost():
+    page = read("portfolio-analysis.html")
+
+    assert "analyzed.filter(isPendingRecovery).filter(matchesPortfolioFilter)" in page
+    assert "function isPendingRecovery(holding)" in page
+    assert "Number(holding.quote.price) < Number(holding.buy_price)" in page
+
+
 def test_portfolio_kpis_filter_the_holdings_table_accessibly():
     page = read("portfolio-analysis.html")
 

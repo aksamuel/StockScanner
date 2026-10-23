@@ -709,7 +709,7 @@
           decision: portfolioActionDecision(holding, { ...decisionContext, recommendedTarget: target }),
         };
       });
-      const candidates = analyzed.filter(matchesPortfolioFilter);
+      const candidates = analyzed.filter(isPendingRecovery).filter(matchesPortfolioFilter);
       const selected = setFilterOptions(filter, candidates.map(holding => holding.symbol));
       const visible = candidates.filter(holding => !selected || holding.symbol === selected);
       visible.sort(compareHoldings);
@@ -774,6 +774,11 @@
         return holding.decision.code === portfolioFilter;
       }
       return true;
+    }
+
+    function isPendingRecovery(holding) {
+      if (Number(holding.quantity) <= 0 || holding.quote?.price === null || holding.buy_price === null) return true;
+      return Number(holding.quote.price) < Number(holding.buy_price);
     }
 
     function updatePortfolioFilterButtons() {
