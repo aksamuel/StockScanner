@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, Optional
@@ -28,18 +28,22 @@ class ApprovalDecision:
 class ApprovalWorkflow:
     """Simple workflow for review and approval of sell recommendations."""
 
+    decisions: Dict[str, ApprovalDecision] = field(default_factory=dict)
+
     def submit(self, recommendation_id: str) -> ApprovalDecision:
-        return ApprovalDecision(
+        decision = ApprovalDecision(
             recommendation_id=recommendation_id,
             status=ApprovalStatus.PENDING,
             actor=None,
             reason="Submitted for review.",
             created_at=datetime.utcnow(),
-            metadata={},
+            metadata={"approval": "pending"},
         )
+        self.decisions[recommendation_id] = decision
+        return decision
 
     def approve(self, recommendation_id: str, actor: str, reason: str) -> ApprovalDecision:
-        return ApprovalDecision(
+        decision = ApprovalDecision(
             recommendation_id=recommendation_id,
             status=ApprovalStatus.APPROVED,
             actor=actor,
@@ -47,9 +51,11 @@ class ApprovalWorkflow:
             created_at=datetime.utcnow(),
             metadata={"approval": "approved"},
         )
+        self.decisions[recommendation_id] = decision
+        return decision
 
     def reject(self, recommendation_id: str, actor: str, reason: str) -> ApprovalDecision:
-        return ApprovalDecision(
+        decision = ApprovalDecision(
             recommendation_id=recommendation_id,
             status=ApprovalStatus.REJECTED,
             actor=actor,
@@ -57,9 +63,11 @@ class ApprovalWorkflow:
             created_at=datetime.utcnow(),
             metadata={"approval": "rejected"},
         )
+        self.decisions[recommendation_id] = decision
+        return decision
 
     def escalate(self, recommendation_id: str, actor: str, reason: str) -> ApprovalDecision:
-        return ApprovalDecision(
+        decision = ApprovalDecision(
             recommendation_id=recommendation_id,
             status=ApprovalStatus.ESCALATED,
             actor=actor,
@@ -67,3 +75,8 @@ class ApprovalWorkflow:
             created_at=datetime.utcnow(),
             metadata={"approval": "escalated"},
         )
+        self.decisions[recommendation_id] = decision
+        return decision
+
+    def latest(self, recommendation_id: str) -> Optional[ApprovalDecision]:
+        return self.decisions.get(recommendation_id)
