@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Portfolio Intelligence | StockScanner</title>
+  <link rel="stylesheet" href="/StockScanner/personal-lists.css">
+  <style>
+    main { width: min(100%, 1200px); }
+    .intro, .workbench, .module-card { margin-bottom: 18px; padding: 18px; border: 1px solid #334b5f; border-radius: 9px; background: #1a2a3a; }
+    .notice { padding: 12px 14px; border-left: 4px solid #ffb74d; background: #322b20; }
+    .workbench-grid, .module-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(285px, 1fr)); gap: 14px; }
+    .module-card { margin: 0; }
+    .module-card h3 { margin: 0 0 8px; color: #b3e5fc; }
+    .module-card p { margin: 0 0 10px; color: #b0bec5; line-height: 1.45; }
+    .module-card a, .source-link { color: #81d4fa; }
+    .pill { display: inline-block; margin-bottom: 8px; padding: 3px 8px; border: 1px solid #456175; border-radius: 999px; color: #b0bec5; font-size: .75rem; }
+    .score-inputs { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+    .score-result { min-height: 88px; margin: 14px 0; padding: 14px; border-radius: 7px; background: #10212d; }
+    .score-result strong { display: block; color: #81d4fa; font-size: 1.5rem; }
+    .workbench h2 { margin-top: 0; color: #b3e5fc; }
+    .workbench h3 { color: #b3e5fc; }
+    .button-row { display: flex; flex-wrap: wrap; gap: 9px; align-items: center; }
+    .subtle { color: #90a4ae; }
+    .table-wrap { margin-top: 12px; }
+    table { min-width: 680px; }
+    #approvalEvents { padding-left: 22px; }
+    #approvalEvents li { margin: 5px 0; }
+    #approvalStatus { color: #81d4fa; font-weight: 700; }
+    .empty-state { color: #90a4ae; }
+  </style>
+</head>
+<body>
+  <main>
+    <header class="page-header">
+      <div>
+        <h1>Portfolio Intelligence</h1>
+        <p class="subtitle">PIP review workbench · isolated from the existing scanner workflow</p>
+      </div>
+      <nav class="page-nav" aria-label="Application">
+        <a href="/StockScanner/index.html">Dashboard</a>
+        <a href="/StockScanner/portfolio-analysis.html">Portfolio analysis</a>
+        <a href="/StockScanner/help.html#portfolio">Help &amp; FAQ</a>
+      </nav>
+    </header>
+
+    <section class="intro" aria-labelledby="aboutPip">
+      <h2 id="aboutPip">Review the PIP capabilities</h2>
+      <p>This page is a safe browser-side review console: CSV preflight stays on this device, score inputs are illustrative, and the approval panel is an in-memory workflow demo. The production PIP engines are Python modules and are not hosted or invoked by GitHub Pages.</p>
+      <p class="notice"><strong>Not connected to a live brokerage or PIP database.</strong> No data is uploaded or saved here, no trade is recommended from sample values, and no order can be placed. Run the linked Python tests to verify the actual PIP package.</p>
+      <p><a class="source-link" href="https://github.com/aksamuel/StockScanner/blob/main/docs/pip/FAQ.md">PIP FAQ</a> · <a class="source-link" href="https://github.com/aksamuel/StockScanner/blob/main/docs/pip/ARCHITECTURE.md">Architecture</a> · <a class="source-link" href="https://github.com/aksamuel/StockScanner/blob/main/tests/test_pip_integration.py">PIP tests</a></p>
+    </section>
+
+    <section class="module-grid" aria-label="PIP modules">
+      <article class="module-card"><span class="pill">Python service · offline CSV</span><h3>IBKR portfolio sync</h3><p>Normalizes local CSV/Flex records, masks account identifiers, and exposes repository adapters. No live IBKR connection.</p><a href="https://github.com/aksamuel/StockScanner/blob/main/stockscanner/pip/ibkr_sync.py">Review sync source</a></article>
+      <article class="module-card"><span class="pill">Python analysis</span><h3>Position lifecycle</h3><p>Summarizes holding duration and total return when entry, market-value, and dividend inputs exist.</p><a href="https://github.com/aksamuel/StockScanner/blob/main/stockscanner/pip/position_lifecycle.py">Review lifecycle source</a></article>
+      <article class="module-card"><span class="pill">Python analysis</span><h3>Dead money detector</h3><p>Flags weak productivity only when supporting return or opportunity-cost evidence is available; reports confidence and reasons.</p><a href="https://github.com/aksamuel/StockScanner/blob/main/stockscanner/pip/dead_money.py">Review detector source</a></article>
+      <article class="module-card"><span class="pill">Python analysis</span><h3>Opportunity cost</h3><p>Ranks supplied alternatives against a holding and reports an estimated relative score benefit.</p><a href="https://github.com/aksamuel/StockScanner/blob/main/stockscanner/pip/opportunity_cost.py">Review opportunity-cost source</a></article>
+      <article class="module-card"><span class="pill">Python analysis</span><h3>Dividend analysis</h3><p>Computes income, yield, growth, quality, confidence, and reasons for missing dividend inputs.</p><a href="https://github.com/aksamuel/StockScanner/blob/main/stockscanner/pip/dividend_analysis.py">Review dividend source</a></article>
+      <article class="module-card"><span class="pill">Python analysis</span><h3>Growth analysis</h3><p>Normalizes earnings and revenue growth into a bounded score and lowers confidence for missing data.</p><a href="https://github.com/aksamuel/StockScanner/blob/main/stockscanner/pip/growth_analysis.py">Review growth source</a></article>
+      <article class="module-card"><span class="pill">Python analysis</span><h3>Forward-looking analysis</h3><p>Combines supplied analyst target upside and revision scores; output is an indicator, not a forecast.</p><a href="https://github.com/aksamuel/StockScanner/blob/main/stockscanner/pip/forward_looking.py">Review forward-looking source</a></article>
+      <article class="module-card"><span class="pill">Interactive formula preview</span><h3>Capital Productivity Score</h3><p>Uses the specified 40/20/15/15/10 weights. Missing components lower confidence instead of becoming zeroes.</p><a href="https://github.com/aksamuel/StockScanner/blob/main/stockscanner/pip/scoring.py">Review scoring source</a></article>
+      <article class="module-card"><span class="pill">Interactive formula preview</span><h3>Sell Confidence Score</h3><p>Uses specified weights totaling 115%, normalizes by available weight, and lists missing inputs.</p><a href="https://github.com/aksamuel/StockScanner/blob/main/stockscanner/pip/sell_advisor.py">Review Sell Advisor source</a></article>
+      <article class="module-card"><span class="pill">Python ranking</span><h3>Replacement candidates</h3><p>Ranks supplied scanner/CPS candidates, excludes held symbols, and honors candidate concentration limits.</p><a href="https://github.com/aksamuel/StockScanner/blob/main/stockscanner/pip/replacement_engine.py">Review replacement source</a></article>
+      <article class="module-card"><span class="pill">Python recommendations</span><h3>Sell Advisor</h3><p>Produces a human-readable hold, partial-sell, sell, or watch review with confidence and rationale.</p><a href="https://github.com/aksamuel/StockScanner/blob/main/stockscanner/pip/sell_advisor.py">Review advisor source</a></article>
+      <article class="module-card"><span class="pill">In-memory workflow demo</span><h3>Order approval workflow</h3><p>Validates explicit review transitions and records demo audit entries in this page session. It has no order transmitter.</p><a href="https://github.com/aksamuel/StockScanner/blob/main/stockscanner/pip/approval_workflow.py">Review workflow source</a></article>
+    </section>
+
+    <div class="workbench-grid" style="margin-top: 18px">
+      <section class="workbench" aria-labelledby="csvTitle">
+        <h2 id="csvTitle">Local CSV preflight</h2>
+        <p class="subtle">Choose a portfolio CSV to validate and preview normalized holdings in this browser. It is not sent to Supabase or persisted.</p>
+        <label for="csvFile">Portfolio CSV (max 1 MB)
+          <input id="csvFile" type="file" accept=".csv,text/csv">
+        </label>
+        <label for="missingCurrency">Currency for rows with no currency column
+          <input id="missingCurrency" type="text" maxlength="3" pattern="[A-Za-z]{3}" placeholder="e.g. USD">
+        </label>
+        <p id="csvStatus" class="subtle" role="status" aria-live="polite">No file selected.</p>
+        <div class="table-wrap" id="csvPreview" hidden>
+          <table>
+            <thead><tr><th>Symbol</th><th>Quantity</th><th>Cost basis/share</th><th>Buy date</th><th>Currency</th></tr></thead>
+            <tbody id="csvRows"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="workbench" aria-labelledby="scoreTitle">
+        <h2 id="scoreTitle">Score formula review</h2>
+        <p class="subtle">Enter illustrative 0–100 component scores. These browser calculations mirror the documented formulas; they are not generated from your portfolio data.</p>
+        <div class="button-row">
+          <button id="loadSample" type="button">Load sample scores</button>
+          <button id="clearScores" class="secondary" type="button">Clear scores</button>
+        </div>
+        <div class="score-inputs" id="scoreInputs"></div>
+        <div class="score-result" aria-live="polite"><span>Capital Productivity Score</span><strong id="cpsValue">Unavailable</strong><span id="cpsConfidence" class="subtle">Confidence: 0%</span><p id="cpsReasons" class="subtle"></p></div>
+        <div class="score-result" aria-live="polite"><span>Sell Confidence Score</span><strong id="sellScoreValue">Unavailable</strong><span id="sellScoreConfidence" class="subtle">Confidence: 0%</span><p id="sellScoreReasons" class="subtle"></p></div>
+      </section>
+    </div>
+
+    <section class="workbench" aria-labelledby="approvalTitle">
+      <h2 id="approvalTitle">Human approval transition demo</h2>
+      <p class="subtle">This temporary demonstration starts at proposed and keeps its audit trail only in page memory. Approval is not order submission; there is no brokerage connection.</p>
+      <p>Demo status: <span id="approvalStatus">proposed</span></p>
+      <label for="reviewer">Reviewer name
+        <input id="reviewer" type="text" maxlength="80" value="Demo reviewer">
+      </label>
+      <label for="approvalReason">Decision reason
+        <input id="approvalReason" type="text" maxlength="300" value="Reviewed sample evidence">
+      </label>
+      <div class="button-row" style="margin-top: 12px">
+        <button type="button" data-transition="under_review">Begin review</button>
+        <button type="button" data-transition="approved">Approve demo</button>
+        <button type="button" data-transition="rejected" class="secondary">Reject demo</button>
+        <button type="button" data-transition="cancelled" class="secondary">Cancel demo</button>
+      </div>
+      <p id="approvalMessage" role="status" aria-live="polite"></p>
+      <h3>In-memory audit trail</h3>
+      <ol id="approvalEvents"><li class="empty-state">No transitions recorded.</li></ol>
+    </section>
+  </main>
+  <script type="module" src="/StockScanner/auth.js" data-stockscanner-auth></script>
+  <script type="module" src="/StockScanner/pip-dashboard.js"></script>
+</body>
+</html>

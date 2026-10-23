@@ -1,4 +1,38 @@
-# StockScanner v2.21.0
+# StockScanner v2.22.0
+
+Stable release · 23/Oct/2026
+
+This release introduces an additive Portfolio Intelligence Platform (PIP)
+Python layer for offline portfolio analysis and human-reviewed screening.
+
+- Adds fixture-backed and local IBKR CSV/Flex-export normalization for accounts,
+  positions, transactions, and dividends. It does not connect live to IBKR.
+- Adds lifecycle, dead-money, opportunity-cost, dividend, growth, and
+  forward-looking analysis helpers, plus configurable CPS and Sell Confidence
+  scores with explicit missing-data reasons and reduced confidence.
+- Preserves the specified Sell Score weights, which total 115%, and normalizes
+  by their total. This remains an open question for the maintainer.
+- Adds replacement-candidate ranking that excludes held symbols and supports
+  portfolio concentration limits.
+- Adds validated recommendation approval states and append-only audit records.
+  There is no order-transmission implementation; recommendations are screening
+  prompts and require explicit human review.
+- Adds a separate Supabase PIP schema with owner/approved-user RLS, masked
+  account identifiers, and append-only audit logs. Reuses `auth.users` and
+  `public.user_access`; leaves existing scanner, portfolio imports, pages, RPCs,
+  and Edge Functions unchanged.
+- Documents PIP capabilities, rollout, security, and limitations in
+  `docs/pip/`.
+
+PIP is a library layer, not an enabled website feature. The GitHub Pages workflow
+does not apply database migrations or establish a live IBKR integration. Review
+`docs/pip/MIGRATION_PLAN.md` before applying the additive schema. No order
+placement is available.
+
+The deployment workflow tests the commit, publishes GitHub Pages, then creates
+the matching stable GitHub Release from this file.
+
+## Previous stable release: v2.21.0
 
 Stable release · 23/Oct/2026
 

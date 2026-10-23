@@ -20,6 +20,16 @@ export function technicalStrength(score) {
     tone: value < 40 ? 'weak' : value <= 70 ? 'moderate' : 'strong', score: value };
 }
 
+export function filterPortfolioHoldings(holdings, filter = "all") {
+  return (holdings || []).filter((holding) => {
+    if (filter === "profitable") return holding.returnPercent > 0;
+    if (filter === "sell") return holding.decision?.code === "sell";
+    if (filter === "partial-sell") return holding.decision?.code === "partial-sell";
+    if (filter === "hold") return holding.decision?.code === "hold";
+    return true;
+  });
+}
+
 export function parseCsv(source) {
   const rows = [];
   let row = [];
@@ -56,7 +66,10 @@ export function parseCsv(source) {
 
 function numberValue(value, label, rowNumber, { required = false, nonzero = false } = {}) {
   const text = String(value || "").replace(/[,$%]/g, "").trim();
-  if (!text && !required) return null;
+  if (!text) {
+    if (!required) return null;
+    throw new Error(`Row ${rowNumber}: ${label} is required.`);
+  }
   const parsed = Number(text);
   if (!Number.isFinite(parsed) || (nonzero && parsed === 0)) {
     throw new Error(`Row ${rowNumber}: ${label} must be ${nonzero ? "a non-zero" : "a valid"} number.`);
@@ -69,32 +82,38 @@ function dateValue(value, rowNumber) {
   if (!text) return null;
   const displayDate = parseDateInput(text);
   if (displayDate) return displayDate;
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(text) || Number.isNaN(Date.parse(`${text}T00:00:00Z`))) {
-    throw new Error(`Row ${rowNumber}: buy_date must use dd/mmm/yyyy (for example 05/Sep/2026). Native YYYY-MM-DD exports are also accepted.`);
+  const match = /^(\d{4})-(\d{2})-(\d{2})(?:[T\s,].*)?$/.exec(text)
+    || /^(\d{4})(\d{2})(\d{2})$/.exec(text);
+  if (match) {
+    const [, year, month, day] = match;
+    const iso = `${year}-${month}-${day}`;
+    const parsed = new Date(`${iso}T00:00:00Z`);
+    if (!Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === iso) return iso;
   }
-  return text;
+  throw new Error(`Row ${rowNumber}: buy_date must use dd/mmm/yyyy, YYYY-MM-DD, or an IBKR YYYYMMDD date.`);
 }
 
 export function portfolioRowsFromCsv(source, missingCurrency = "") {
   const rows = parseCsv(source);
   if (rows.length < 2) throw new Error("The CSV must contain a header and at least one holding.");
   if (rows.length > 1001) throw new Error("A CSV import is limited to 1000 holdings.");
-  const headers = rows[0].map((value) => value.trim().toLowerCase());
+  const normalizeHeader = (value) => value.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+  const headers = rows[0].map(normalizeHeader);
   const columnAliases = {
     symbol: ["symbol"],
     quantity: ["quantity"],
-    buy_price: ["buy_price", "costbasisprice", "cost_basis_price"],
-    buy_date: ["buy_date", "opendatetime", "open_date_time", "trade_date"],
+    buy_price: ["buyprice", "costbasisprice", "costbasis"],
+    buy_date: ["buydate", "opendatetime", "tradedate"],
   };
   const columnIndexes = Object.fromEntries(Object.entries(columnAliases).map(([name, aliases]) => [
     name,
     aliases.map((alias) => headers.indexOf(alias)).find((index) => index >= 0) ?? -1,
   ]));
-  for (const required of Object.keys(columnAliases)) {
+  for (const required of ["symbol", "quantity", "buy_price"]) {
     if (columnIndexes[required] < 0) throw new Error(`Missing required CSV column: ${required}`);
   }
   const get = (row, name) => {
-    const index = columnIndexes[name] ?? headers.indexOf(name);
+    const index = columnIndexes[name] ?? headers.indexOf(normalizeHeader(name));
     return index >= 0 ? row[index] || "" : "";
   };
   return rows.slice(1).map((row, index) => {
@@ -131,8 +150,8 @@ export function portfolioRowsFromCsv(source, missingCurrency = "") {
 
 export function detectedPortfolioBroker(source) {
   const [header = []] = parseCsv(source);
-  const headers = header.map((value) => value.trim().toLowerCase());
-  return ["clientaccountid", "symbol", "quantity", "costbasisprice", "opendatetime"]
+  const headers = header.map((value) => value.trim().toLowerCase().replace(/[^a-z0-9]/g, ""));
+  return ["symbol", "quantity", "costbasisprice", "opendatetime"]
     .every((column) => headers.includes(column)) ? "IBKR" : null;
 }
 

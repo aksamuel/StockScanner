@@ -46,10 +46,20 @@ class OpportunityCostEngine:
         items.sort(key=lambda item: item.expected_benefit, reverse=True)
         return items
 
-    def summary(self, items: Iterable[OpportunityCostItem]) -> Dict[str, float]:
+    def summary(self, items: Iterable[OpportunityCostItem]) -> Dict[str, object]:
         items = list(items)
         if not items:
-            return {"total_expected_benefit": 0.0, "average_confidence": 0.0}
+            return {
+                "total_expected_benefit": 0.0,
+                "average_confidence": 0.0,
+                "confidence": 0.0,
+                "reasons": ("No alternative candidates are available for comparison.",),
+            }
         total = sum(item.expected_benefit for item in items)
         avg_conf = sum(item.confidence for item in items) / len(items)
-        return {"total_expected_benefit": total, "average_confidence": avg_conf}
+        return {
+            "total_expected_benefit": total,
+            "average_confidence": avg_conf,
+            "confidence": avg_conf,
+            "reasons": (),
+        }

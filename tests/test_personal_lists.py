@@ -254,8 +254,11 @@ def test_portfolio_page_supports_ibkr_csv_and_rule_based_analysis():
     assert '.rpc("replace_my_portfolio_holdings"' in page
     assert page.count('.eq("user_id", user.id)') >= 4
     assert "symbol,quantity,buy_price,buy_date" in template
-    assert 'buy_price: ["buy_price", "costbasisprice", "cost_basis_price"]' in logic
-    assert 'buy_date: ["buy_date", "opendatetime", "open_date_time", "trade_date"]' in logic
+    assert 'buy_price: ["buyprice", "costbasisprice", "costbasis"]' in logic
+    assert 'buy_date: ["buydate", "opendatetime", "tradedate"]' in logic
+    assert 'value.trim().toLowerCase().replace(/[^a-z0-9]/g, "")' in logic
+    assert '["symbol", "quantity", "buy_price"]' in logic
+    assert 'return ["symbol", "quantity", "costbasisprice", "opendatetime"]' in logic
     assert '.toUpperCase().replace(/\\s+/g, "-")' in logic
     assert "Native IBKR exports using Symbol, Quantity, CostBasisPrice, and OpenDateTime" in page
     assert "holdingReturnPercent" in logic
@@ -312,12 +315,12 @@ def test_portfolio_table_headers_sort_visible_user_holdings():
     assert 'header.setAttribute("aria-sort", active ? sortDirection : "none")' in page
 
 
-def test_portfolio_analysis_hides_positions_that_have_recovered_cost():
+def test_portfolio_analysis_keeps_recovered_positions_visible():
     page = read("portfolio-analysis.html")
 
-    assert "analyzed.filter(isPendingRecovery).filter(matchesPortfolioFilter)" in page
-    assert "function isPendingRecovery(holding)" in page
-    assert "Number(holding.quote.price) < Number(holding.buy_price)" in page
+    assert "filterPortfolioHoldings(analyzed, portfolioFilter)" in page
+    assert "const costRecovered =" in page
+    assert "if (!costRecovered)" in page
 
 
 def test_portfolio_kpis_filter_the_holdings_table_accessibly():
@@ -328,9 +331,9 @@ def test_portfolio_kpis_filter_the_holdings_table_accessibly():
     assert page.count('class="metric metric-filter"') == 5
     assert page.count('aria-controls="brokerTables"') == 6
     assert 'let portfolioFilter = "all"' in page
-    assert "const pendingRecoveryCandidates = analyzed.filter(isPendingRecovery).filter(matchesPortfolioFilter)" in page
-    assert "setFilterOptions(filter, pendingRecoveryCandidates.map(holding => holding.symbol))" in page
-    assert "pendingRecoveryCandidates.filter(holding => !selected || holding.symbol === selected)" in page
+    assert "const filteredHoldings = filterPortfolioHoldings(analyzed, portfolioFilter)" in page
+    assert "setFilterOptions(filter, filteredHoldings.map(holding => holding.symbol))" in page
+    assert "filteredHoldings.filter(holding => !selected || holding.symbol === selected)" in page
     assert 'holding.returnPercent > 0' in page
     assert 'holding.decision.code === "sell"' in page
     assert 'holding.decision.code === "partial-sell"' in page

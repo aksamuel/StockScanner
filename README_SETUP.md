@@ -1,4 +1,4 @@
-# StockScanner v2.21.0 setup and operations
+# StockScanner v2.22.0 setup and operations
 
 Windows PowerShell commands to create and activate a virtual environment, install dependencies from `requirements.txt`, and verify installation.
 
@@ -136,6 +136,12 @@ Then run:
 .venv\Scripts\python.exe -m pytest
 ```
 
+To run just the offline PIP tests:
+
+```cmd
+.venv\Scripts\python.exe -m pytest -q tests\pip tests\test_pip_integration.py
+```
+
 ## Apply the Supabase migrations
 
 Apply the migrations in timestamp order:
@@ -152,11 +158,18 @@ Apply the migrations in timestamp order:
 10. `20260831214500_document_backend_only_rls.sql`
 11. `20261002000000_add_portfolio_technical_signals.sql`
 12. `20261002110000_add_failed_symbol_scan_history.sql`
+13. `20261002114954_add_catalyst_research_beta.sql`
+14. `20261023_pip_core_schema.sql`
 
 The 20260831 migrations add backend-only leases and price telemetry. The two
 20261002 migrations add owner-gated portfolio Technical-strength storage,
 failed-symbol queue/history, and per-symbol price timestamps. Apply both and
 deploy `portfolio-signals` before publishing v2.19.0.
+
+The PIP migration is additive and reuses `auth.users` and the approved-user
+records in `public.user_access`. GitHub Pages deployment does not apply SQL
+migrations. Review the [PIP migration plan](docs/pip/MIGRATION_PLAN.md) and
+[PIP FAQ](docs/pip/FAQ.md) before applying it to a Supabase project.
 
 ## Activate invite-only Supabase authentication
 
@@ -260,6 +273,9 @@ The signed-in user pages serve different purposes:
   resistance, and analyst target proxy. Each import atomically replaces only
   the signed-in user's older rows for that broker before the page recalculates
   the analysis; it never truncates another user or broker.
+- `portfolio-intelligence.html`: authenticated PIP module catalog, local-only CSV
+  preflight, illustrative score calculator, and in-memory approval workflow demo.
+  The Python PIP services remain a separate package and are not executed by Pages.
 - `help.html`: the current user guide and FAQ, available from the shared Menu,
   portfolio navigation, and report Help links.
 

@@ -153,7 +153,7 @@
         </div>
         <div id="csvFormatText" class="explanation-content" hidden>
           <button id="hideCsvFormat" class="explanation-close" type="button" aria-label="Close CSV details and return to heading" title="Close CSV details">×</button>
-          <p class="subtle">Accepted columns: symbol, quantity, buy_price, buy_date, and currency. Native IBKR exports using Symbol, Quantity, CostBasisPrice, and OpenDateTime are also accepted.</p>
+          <p class="subtle">Required columns: symbol, quantity, and buy_price. Buy date and currency may be omitted; choose a currency for rows without one. Native IBKR exports using Symbol, Quantity, CostBasisPrice, and OpenDateTime are also accepted, including YYYYMMDD dates.</p>
         </div>
         <p id="csvStatus" class="subtle" role="status" aria-live="polite"></p>
       </article>
@@ -286,7 +286,7 @@
     import { setFilterOptions } from "/StockScanner/table-filters.js";
     import { formatDateTime, parseDateInput, validateDateInputs } from "/StockScanner/date-format.js";
     import { formatDate, requireApprovedUser, setFormBusy, setMessage, supabase, tableCell } from "/StockScanner/personal-lists.js";
-    import { daysHeld, detectedPortfolioBroker, equalWeightTopTwentyMetrics, holdingReturnPercent, isPriceStale, marketDaysHeld, portfolioActionDecision, portfolioConcentrationPercent, portfolioReturnPercent, recommendedTargetPrice } from "/StockScanner/portfolio-analysis.js";
+    import { daysHeld, detectedPortfolioBroker, equalWeightTopTwentyMetrics, filterPortfolioHoldings, holdingReturnPercent, isPriceStale, marketDaysHeld, portfolioActionDecision, portfolioConcentrationPercent, portfolioReturnPercent, recommendedTargetPrice } from "/StockScanner/portfolio-analysis.js";
 
     const user = await requireApprovedUser();
     const brokerTables = document.querySelector("#brokerTables");
@@ -674,22 +674,6 @@
       brokerSelect.value = brokers.includes(selectedBroker) ? selectedBroker : "";
     }
 
-    function matchesPortfolioFilter(holding) {
-      if (portfolioFilter === "profitable") {
-        return holding.returnPercent > 0;
-      }
-      if (portfolioFilter === "sell") {
-        return holding.decision.code === "sell";
-      }
-      if (portfolioFilter === "partial-sell") {
-        return holding.decision.code === "partial-sell";
-      }
-      if (portfolioFilter === "hold") {
-        return holding.decision.code === "hold";
-      }
-      return true;
-    }
-
     function updatePortfolioFilterButtons() {
       document.querySelectorAll(".metric-filter").forEach((button) => {
         const active = button.dataset.portfolioFilter === portfolioFilter;
@@ -699,13 +683,6 @@
             ? "Active filter. Click again to show all holdings."
             : `Show ${button.dataset.portfolioFilter}`;
       });
-    }
-
-    function isPendingRecovery(holding) {
-      if (Number(holding.quantity) <= 0) return false;
-      if (holding.buy_price === null || holding.buy_price === undefined || Number.isNaN(Number(holding.buy_price))) return false;
-      if (holding.quote?.price === null || holding.quote?.price === undefined || Number.isNaN(Number(holding.quote?.price))) return false;
-      return Number(holding.quote.price) < Number(holding.buy_price);
     }
 
     function renderPortfolio() {
@@ -750,9 +727,9 @@
           decision: portfolioActionDecision(holding, { ...decisionContext, recommendedTarget: target }),
         };
       });
-      const pendingRecoveryCandidates = analyzed.filter(isPendingRecovery).filter(matchesPortfolioFilter);
-      const selected = setFilterOptions(filter, pendingRecoveryCandidates.map(holding => holding.symbol));
-      const visible = pendingRecoveryCandidates.filter(holding => !selected || holding.symbol === selected);
+      const filteredHoldings = filterPortfolioHoldings(analyzed, portfolioFilter);
+      const selected = setFilterOptions(filter, filteredHoldings.map(holding => holding.symbol));
+      const visible = filteredHoldings.filter(holding => !selected || holding.symbol === selected);
       visible.sort(compareHoldings);
       updatePortfolioFilterButtons();
       renderBrokerTables(analyzed, visible);
