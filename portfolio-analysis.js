@@ -20,6 +20,16 @@ export function technicalStrength(score) {
     tone: value < 40 ? 'weak' : value <= 70 ? 'moderate' : 'strong', score: value };
 }
 
+export function filterPortfolioHoldings(holdings, filter = "all") {
+  return (holdings || []).filter((holding) => {
+    if (filter === "profitable") return holding.returnPercent > 0;
+    if (filter === "sell") return holding.decision?.code === "sell";
+    if (filter === "partial-sell") return holding.decision?.code === "partial-sell";
+    if (filter === "hold") return holding.decision?.code === "hold";
+    return true;
+  });
+}
+
 export function parseCsv(source) {
   const rows = [];
   let row = [];

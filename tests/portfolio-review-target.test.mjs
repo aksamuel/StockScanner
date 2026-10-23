@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import {
   portfolioActionDecision,
+  filterPortfolioHoldings,
   recommendedTargetPrice,
   sellReviewSignal,
   portfolioRowsFromCsv,
@@ -10,6 +11,11 @@ import {
 
 const longHolding = { symbol: "LONG", quantity: 2, buy_price: 100, target_price: null, stop_loss: null };
 const shortHolding = { symbol: "SHORT", quantity: -2, buy_price: 100, target_price: null, stop_loss: null };
+const recoveredHolding = { symbol: "PROFIT", returnPercent: 5, decision: { code: "hold" } };
+const losingHolding = { symbol: "LOSS", returnPercent: -5, decision: { code: "sell" } };
+assert.deepEqual(filterPortfolioHoldings([recoveredHolding, losingHolding]).map(({ symbol }) => symbol), ["PROFIT", "LOSS"]);
+assert.deepEqual(filterPortfolioHoldings([recoveredHolding, losingHolding], "profitable").map(({ symbol }) => symbol), ["PROFIT"]);
+assert.deepEqual(filterPortfolioHoldings([recoveredHolding, losingHolding], "sell").map(({ symbol }) => symbol), ["LOSS"]);
 
 assert.equal(recommendedTargetPrice(longHolding).price, 107);
 assert.equal(recommendedTargetPrice(longHolding, { profitReviewPercent: 0 }).price, 100);
