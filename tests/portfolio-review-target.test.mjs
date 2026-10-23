@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import {
   portfolioActionDecision,
   filterPortfolioHoldings,
+  detectedPortfolioBroker,
   recommendedTargetPrice,
   sellReviewSignal,
   portfolioRowsFromCsv,
@@ -16,6 +17,11 @@ const losingHolding = { symbol: "LOSS", returnPercent: -5, decision: { code: "se
 assert.deepEqual(filterPortfolioHoldings([recoveredHolding, losingHolding]).map(({ symbol }) => symbol), ["PROFIT", "LOSS"]);
 assert.deepEqual(filterPortfolioHoldings([recoveredHolding, losingHolding], "profitable").map(({ symbol }) => symbol), ["PROFIT"]);
 assert.deepEqual(filterPortfolioHoldings([recoveredHolding, losingHolding], "sell").map(({ symbol }) => symbol), ["LOSS"]);
+const ibkrCsv = "Symbol, Quantity, Cost Basis Price, Open Date Time, Currency\nAAPL,2,120.50,20250102,USD";
+assert.equal(detectedPortfolioBroker(ibkrCsv), "IBKR");
+assert.equal(portfolioRowsFromCsv(ibkrCsv)[0].bought_on, "2025-01-02");
+assert.equal(portfolioRowsFromCsv("symbol,quantity,buy_price\nAAPL,2,120", "USD")[0].bought_on, null);
+assert.throws(() => portfolioRowsFromCsv("symbol,quantity,buy_price\nAAPL,2,", "USD"), /buy_price is required/);
 
 assert.equal(recommendedTargetPrice(longHolding).price, 107);
 assert.equal(recommendedTargetPrice(longHolding, { profitReviewPercent: 0 }).price, 100);

@@ -153,7 +153,7 @@
         </div>
         <div id="csvFormatText" class="explanation-content" hidden>
           <button id="hideCsvFormat" class="explanation-close" type="button" aria-label="Close CSV details and return to heading" title="Close CSV details">×</button>
-          <p class="subtle">Accepted columns: symbol, quantity, buy_price, buy_date, and currency. Native IBKR exports using Symbol, Quantity, CostBasisPrice, and OpenDateTime are also accepted.</p>
+          <p class="subtle">Required columns: symbol, quantity, and buy_price. Buy date and currency may be omitted; choose a currency for rows without one. Native IBKR exports using Symbol, Quantity, CostBasisPrice, and OpenDateTime are also accepted, including YYYYMMDD dates.</p>
         </div>
         <p id="csvStatus" class="subtle" role="status" aria-live="polite"></p>
       </article>

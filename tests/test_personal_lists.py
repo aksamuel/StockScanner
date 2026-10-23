@@ -254,8 +254,11 @@ def test_portfolio_page_supports_ibkr_csv_and_rule_based_analysis():
     assert '.rpc("replace_my_portfolio_holdings"' in page
     assert page.count('.eq("user_id", user.id)') >= 4
     assert "symbol,quantity,buy_price,buy_date" in template
-    assert 'buy_price: ["buy_price", "costbasisprice", "cost_basis_price"]' in logic
-    assert 'buy_date: ["buy_date", "opendatetime", "open_date_time", "trade_date"]' in logic
+    assert 'buy_price: ["buyprice", "costbasisprice", "costbasis"]' in logic
+    assert 'buy_date: ["buydate", "opendatetime", "tradedate"]' in logic
+    assert 'value.trim().toLowerCase().replace(/[^a-z0-9]/g, "")' in logic
+    assert '["symbol", "quantity", "buy_price"]' in logic
+    assert 'return ["symbol", "quantity", "costbasisprice", "opendatetime"]' in logic
     assert '.toUpperCase().replace(/\\s+/g, "-")' in logic
     assert "Native IBKR exports using Symbol, Quantity, CostBasisPrice, and OpenDateTime" in page
     assert "holdingReturnPercent" in logic
