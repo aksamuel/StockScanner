@@ -286,7 +286,7 @@
     import { setFilterOptions } from "/StockScanner/table-filters.js";
     import { formatDateTime, parseDateInput, validateDateInputs } from "/StockScanner/date-format.js";
     import { formatDate, requireApprovedUser, setFormBusy, setMessage, supabase, tableCell } from "/StockScanner/personal-lists.js";
-    import { daysHeld, detectedPortfolioBroker, equalWeightTopTwentyMetrics, filterPortfolioHoldings, holdingReturnPercent, isPriceStale, marketDaysHeld, portfolioActionDecision, portfolioConcentrationPercent, portfolioReturnPercent, recommendedTargetPrice } from "/StockScanner/portfolio-analysis.js";
+    import { daysHeld, detectedPortfolioBroker, equalWeightTopTwentyMetrics, filterPortfolioHoldings, holdingReturnPercent, isPriceStale, marketDaysHeld, portfolioActionDecision, portfolioConcentrationPercent, portfolioReturnPercent, recommendedTargetPrice, portfolioRowsFromCsv } from "/StockScanner/portfolio-analysis.js";
 
     const user = await requireApprovedUser();
     const brokerTables = document.querySelector("#brokerTables");

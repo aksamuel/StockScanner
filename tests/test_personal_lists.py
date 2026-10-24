@@ -250,6 +250,7 @@ def test_portfolio_page_supports_ibkr_csv_and_rule_based_analysis():
     assert 'id="ibkrImport"' not in page
     assert 'supabase.functions.invoke("import-ibkr-portfolio"' not in page
     assert 'id="csvFile"' in page
+    assert 'portfolioRowsFromCsv } from "/StockScanner/portfolio-analysis.js";' in page
     assert 'href="/StockScanner/portfolio-holdings-template.csv"' in page
     assert '.rpc("replace_my_portfolio_holdings"' in page
     assert page.count('.eq("user_id", user.id)') >= 4
