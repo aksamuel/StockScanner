@@ -83,7 +83,7 @@ function dateValue(value, rowNumber) {
   const displayDate = parseDateInput(text);
   if (displayDate) return displayDate;
   const match = /^(\d{4})-(\d{2})-(\d{2})(?:[T\s,].*)?$/.exec(text)
-    || /^(\d{4})(\d{2})(\d{2})$/.exec(text);
+    || /^(\d{4})(\d{2})(\d{2})(?:[T\s,].*)?$/.exec(text);
   if (match) {
     const [, year, month, day] = match;
     const iso = `${year}-${month}-${day}`;
