@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 
@@ -246,11 +247,18 @@ def test_portfolio_page_supports_ibkr_csv_and_rule_based_analysis():
     page = read("portfolio-analysis.html")
     logic = read("portfolio-analysis.js")
     template = read("portfolio-holdings-template.csv")
+    import_match = re.search(
+        r'import \{([^}]+)\} from "/StockScanner/portfolio-analysis\.js";',
+        page,
+    )
+    exported_names = set(re.findall(r"export function (\w+)", logic))
 
     assert 'id="ibkrImport"' not in page
     assert 'supabase.functions.invoke("import-ibkr-portfolio"' not in page
     assert 'id="csvFile"' in page
     assert 'portfolioRowsFromCsv } from "/StockScanner/portfolio-analysis.js";' in page
+    assert import_match
+    assert {name.strip() for name in import_match.group(1).split(",")} <= exported_names
     assert 'href="/StockScanner/portfolio-holdings-template.csv"' in page
     assert '.rpc("replace_my_portfolio_holdings"' in page
     assert page.count('.eq("user_id", user.id)') >= 4
