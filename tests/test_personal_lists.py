@@ -248,7 +248,7 @@ def test_portfolio_page_supports_ibkr_csv_and_rule_based_analysis():
     logic = read("portfolio-analysis.js")
     template = read("portfolio-holdings-template.csv")
     import_match = re.search(
-        r'import \{([^}]+)\} from "/StockScanner/portfolio-analysis\.js";',
+        r"""import \{([^}]+)\} from ["'][^"']*/portfolio-analysis\.js";""",
         page,
     )
     exported_names = set(re.findall(r"export function (\w+)", logic))
@@ -256,10 +256,11 @@ def test_portfolio_page_supports_ibkr_csv_and_rule_based_analysis():
     assert 'id="ibkrImport"' not in page
     assert 'supabase.functions.invoke("import-ibkr-portfolio"' not in page
     assert 'id="csvFile"' in page
-    assert 'portfolioRowsFromCsv } from "/StockScanner/portfolio-analysis.js";' in page
     assert import_match
-    assert {name.strip() for name in import_match.group(1).split(",")} <= exported_names
-    assert 'href="/StockScanner/portfolio-holdings-template.csv"' in page
+    imported_names = {name.strip() for name in import_match.group(1).split(",")}
+    assert "portfolioRowsFromCsv" in imported_names
+    assert imported_names <= exported_names
+    assert re.search(r"""href=["'][^"']*portfolio-holdings-template\.csv["']""", page)
     assert '.rpc("replace_my_portfolio_holdings"' in page
     assert page.count('.eq("user_id", user.id)') >= 4
     assert "symbol,quantity,buy_price,buy_date" in template
@@ -299,8 +300,8 @@ def test_portfolio_uses_adjustable_review_target_and_conservative_automatic_targ
     assert 'source: "Analyst target proxy"' in logic
     assert "Math.min(...candidates.map" in logic
     assert 'targetDetails?.type === "manual"' in logic
-    assert 'fetchDocument("/StockScanner/technical.html")' in page
-    assert 'fetchDocument("/StockScanner/analysts.html")' in page
+    assert 'fetchDocument("./technical.html")' in page
+    assert 'fetchDocument("./analysts.html")' in page
     assert "scanner.scannerPrice * (1 + scanner.analystTargetUpside / 100)" in page
     assert 'data-sort-key="target"' in page
     assert "The annual target (7% by default) compounds" in page
@@ -317,8 +318,10 @@ def test_portfolio_table_headers_sort_visible_user_holdings():
     ):
         assert f'data-sort-key="{key}"' in page
         assert f'data-sort-column="{key}"' in page
-    assert 'let sortKey = "symbol"' in page
-    assert 'let sortDirection = "ascending"' in page
+    assert 'let sortKey = "action"' in page
+    assert 'let sortDirection = "descending"' in page
+    assert "action: holding.decision.priority" in page
+    assert 'selectedKey === "action" ? "descending" : "ascending"' in page
     assert "visible.sort(compareHoldings)" in page
     assert "updateSortHeaders()" in page
     assert 'header.setAttribute("aria-sort", active ? sortDirection : "none")' in page
