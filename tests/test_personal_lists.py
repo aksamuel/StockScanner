@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 
@@ -246,11 +247,20 @@ def test_portfolio_page_supports_ibkr_csv_and_rule_based_analysis():
     page = read("portfolio-analysis.html")
     logic = read("portfolio-analysis.js")
     template = read("portfolio-holdings-template.csv")
+    import_match = re.search(
+        r"""import \{([^}]+)\} from ["'][^"']*/portfolio-analysis\.js";""",
+        page,
+    )
+    exported_names = set(re.findall(r"export function (\w+)", logic))
 
     assert 'id="ibkrImport"' not in page
     assert 'supabase.functions.invoke("import-ibkr-portfolio"' not in page
     assert 'id="csvFile"' in page
-    assert 'href="/StockScanner/portfolio-holdings-template.csv"' in page
+    assert import_match
+    imported_names = {name.strip() for name in import_match.group(1).split(",")}
+    assert "portfolioRowsFromCsv" in imported_names
+    assert imported_names <= exported_names
+    assert re.search(r"""href=["'][^"']*portfolio-holdings-template\.csv["']""", page)
     assert '.rpc("replace_my_portfolio_holdings"' in page
     assert page.count('.eq("user_id", user.id)') >= 4
     assert "symbol,quantity,buy_price,buy_date" in template
@@ -290,8 +300,8 @@ def test_portfolio_uses_adjustable_review_target_and_conservative_automatic_targ
     assert 'source: "Analyst target proxy"' in logic
     assert "Math.min(...candidates.map" in logic
     assert 'targetDetails?.type === "manual"' in logic
-    assert 'fetchDocument("/StockScanner/technical.html")' in page
-    assert 'fetchDocument("/StockScanner/analysts.html")' in page
+    assert 'fetchDocument("./technical.html")' in page
+    assert 'fetchDocument("./analysts.html")' in page
     assert "scanner.scannerPrice * (1 + scanner.analystTargetUpside / 100)" in page
     assert 'data-sort-key="target"' in page
     assert "The annual target (7% by default) compounds" in page
