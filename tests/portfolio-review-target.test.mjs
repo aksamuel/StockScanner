@@ -52,6 +52,26 @@ assert.match(belowAnnualTarget.reasons[0], /3\.44% over 126 market days/);
 assert.equal(portfolioActionDecision(longHolding, { ...weakScannerContext, returnPercent: 4 }).code, "hold");
 assert.equal(sellReviewSignal(longHolding, 108, 8, 7).code, "sell-review");
 assert.equal(sellReviewSignal(longHolding, 108, 8, 10).code, "monitor");
+const reviewDecisions = [
+  portfolioActionDecision(
+    { ...longHolding, stop_loss: 90 },
+    { currentPrice: 80, returnPercent: -20, recommendedTarget: { price: 100, type: "manual" } },
+  ),
+  portfolioActionDecision(
+    longHolding,
+    { currentPrice: 100, returnPercent: 0, concentrationPercent: 20, recommendedTarget: { price: 120 } },
+  ),
+  portfolioActionDecision(
+    longHolding,
+    { currentPrice: 100, returnPercent: 0, concentrationPercent: 5, scannerRecommendation: "buy",
+      recommendedTarget: { price: 120 } },
+  ),
+  portfolioActionDecision(longHolding, { currentPrice: null, returnPercent: null }),
+];
+assert.deepEqual(
+  reviewDecisions.sort((left, right) => right.priority - left.priority).map(({ code }) => code),
+  ["sell", "partial-sell", "hold", "unavailable"],
+);
 assert.throws(
   () => portfolioRowsFromCsv("symbol,quantity,buy_price,buy_date\nABC,1,10,2026-01-01"),
   /currency is missing/,

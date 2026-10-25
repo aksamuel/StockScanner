@@ -308,8 +308,10 @@ def test_portfolio_table_headers_sort_visible_user_holdings():
     ):
         assert f'data-sort-key="{key}"' in page
         assert f'data-sort-column="{key}"' in page
-    assert 'let sortKey = "symbol"' in page
-    assert 'let sortDirection = "ascending"' in page
+    assert 'let sortKey = "action"' in page
+    assert 'let sortDirection = "descending"' in page
+    assert "action: holding.decision.priority" in page
+    assert 'selectedKey === "action" ? "descending" : "ascending"' in page
     assert "visible.sort(compareHoldings)" in page
     assert "updateSortHeaders()" in page
     assert 'header.setAttribute("aria-sort", active ? sortDirection : "none")' in page
