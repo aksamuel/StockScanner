@@ -47,7 +47,7 @@
 
     <section class="intro" aria-labelledby="aboutPip">
       <h2 id="aboutPip">Portfolio analysis and human review</h2>
-      <p>Connect this page to a deployed PIP API to import CSV/Flex exports, persist portfolio analysis, and review auditable recommendations. Scoring inputs are supplied by you; PIP does not fetch live market fundamentals.</p>
+      <p>Connect this page to a deployed PIP API to import CSV/Flex exports, load available Yahoo research and shared market prices, persist portfolio analysis, and review auditable recommendations. Market facts are displayed with their sources; PIP does not invent score conversions for raw returns.</p>
       <p class="notice"><strong>No live IBKR connection or order transmitter is available.</strong> CSV imports and analysis are saved only after you connect an API and explicitly submit them. Approval records a human decision; it does not submit an order.</p>
       <p><a class="source-link" href="https://github.com/aksamuel/StockScanner/blob/main/docs/pip/FAQ.md">PIP FAQ</a> · <a class="source-link" href="https://github.com/aksamuel/StockScanner/blob/main/docs/pip/ARCHITECTURE.md">Architecture</a> · <a class="source-link" href="https://github.com/aksamuel/StockScanner/blob/main/tests/test_pip_integration.py">PIP tests</a></p>
     </section>
@@ -121,6 +121,9 @@
         <label for="analysisSymbol">Holding symbol
           <input id="analysisSymbol" type="text" maxlength="30" placeholder="AAPL" pattern="[A-Za-z0-9.-]{1,30}">
         </label>
+        <button id="loadResearch" type="button" disabled>Load available research</button>
+        <p id="researchStatus" class="subtle" role="status" aria-live="polite">Connect the API, select a portfolio, and enter an imported holding symbol.</p>
+        <p id="researchResult" class="score-result" aria-live="polite" hidden></p>
         <details style="margin: 12px 0">
           <summary>Additional inputs for lifecycle, dividends, growth, and replacements</summary>
           <p class="subtle">Imported position values are used when these optional overrides are blank. Enter growth rates and dividend ratios as decimals (for example, 0.08 means 8%).</p>

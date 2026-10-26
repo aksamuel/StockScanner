@@ -132,6 +132,24 @@ optional analysis inputs cover position overrides, dividend and growth metrics,
 analyst targets/revisions, and candidate symbols with 0–100 scores; blank
 position values reuse imported records where possible.
 
+The authenticated `POST /api/pip/portfolios/{id}/research` route uses the
+existing Yahoo historical-price and analyst-consensus helpers and reads the
+latest shared `price_snapshots` row. That snapshot is produced by the existing
+Yahoo-first price collection with Alpaca and Twelve Data fallbacks. The request
+sends only the imported holding's symbol to Yahoo; account identifiers,
+quantities, cost basis, user IDs, and Supabase tokens are not sent to market
+data providers. The browser displays raw historical price return, SPY-relative
+performance, available analyst consensus/target information, and Yahoo
+per-share dividend history. It fills the available current-price and target
+inputs, but does not convert raw returns into component scores or treat
+per-share dividend events as portfolio cash income.
+
+The current provider adapters do not expose earnings/revenue growth or analyst
+estimate revision history to PIP. Those fields remain missing, lowering score
+confidence. Raw returns are evidence only until a documented 0–100 mapping is
+approved. Provider/API keys remain in the existing server-side price workflow;
+the PIP browser never receives them.
+
 API routes:
 
 | Method | Route | Purpose |
@@ -139,15 +157,15 @@ API routes:
 | GET | `/healthz` | Service health (no user data) |
 | GET, POST | `/api/pip/portfolios` | List or create caller-owned portfolios |
 | POST | `/api/pip/portfolios/{id}/sync/csv` | Import a CSV/Flex export |
+| POST | `/api/pip/portfolios/{id}/research` | Load available research for an imported holding |
 | POST | `/api/pip/analysis` | Run modules, persist scores and propose a recommendation |
 | GET | `/api/pip/portfolios/{id}/recommendations` | List portfolio recommendations |
 | GET | `/api/pip/recommendations/{id}/events` | Read the append-only audit history |
 | POST | `/api/pip/recommendations/{id}/transitions` | Record a human workflow transition |
 
-The API does not fetch market or fundamental data. Analysis reuses imported
-position/dividend rows and saved analyst/score inputs where available; other
-components remain explicitly missing until supplied. Broker sync is CSV/Flex
-only, and no route submits an order.
+Analysis reuses imported position/dividend rows and saved analyst/score inputs
+where available; other components remain explicitly missing until supplied.
+Broker sync is CSV/Flex only, and no route submits an order.
 
 ## Decision quality guidance
 The PIP layer helps by giving better evidence, not by guaranteeing a right decision. It is most useful when it answers:

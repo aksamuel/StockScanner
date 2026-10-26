@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from fastapi.testclient import TestClient
 
 from stockscanner.pip.api import create_app
+from stockscanner.pip.research import ResearchDataUnavailable
 
 
 USER_ID = "33333333-3333-4333-8333-333333333333"
@@ -122,6 +123,8 @@ class PipelineQuery:
                 "portfolio_id": self.client.portfolio_id,
                 "status": "under_review",
             }
+        elif self.table_name == "price_snapshots":
+            data = [self.client.market_snapshot] if self.client.market_snapshot else []
         elif self.table_name == "user_access":
             data = {"status": "approved"}
         else:
@@ -139,6 +142,13 @@ class PipelineClient(FakeClient):
         super().__init__("approved")
         self.writes = []
         self.rpc_calls = []
+        self.market_snapshot = {
+            "generated_at": "2026-01-01T15:00:00Z",
+            "prices": {"AAPL": 150.0},
+            "price_timestamps": {"AAPL": "2026-01-01T14:59:00Z"},
+            "provider_by_symbol": {"AAPL": "Yahoo"},
+            "stale_symbols": [],
+        }
 
     def table(self, table):
         return PipelineQuery(self, table)
@@ -211,6 +221,58 @@ def test_pip_api_cors_is_restricted_to_configured_browser_origin():
     assert response.headers["access-control-allow-origin"] == "https://app.example.test"
 
 
+def test_research_api_requires_an_imported_holding_and_uses_shared_price_snapshot():
+    fake = PipelineClient()
+    calls = []
+
+    def fetch_research(symbol, *, market_snapshot):
+        calls.append((symbol, market_snapshot))
+        return {"symbol": symbol, "price": market_snapshot["prices"][symbol]}
+
+    app = create_app(
+        client_factory=lambda url, key: fake,
+        environ={
+            "SUPABASE_URL": "https://project.example.test",
+            "SUPABASE_PUBLISHABLE_KEY": "public-test-key",
+        },
+        research_fetcher=fetch_research,
+    )
+    client = TestClient(app)
+    response = client.post(
+        f"/api/pip/portfolios/{fake.portfolio_id}/research",
+        headers={"Authorization": "Bearer user-access-token"},
+        json={"symbol": "aapl"},
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json() == {"symbol": "AAPL", "price": 150.0}
+    assert calls == [("AAPL", fake.market_snapshot)]
+
+
+def test_research_api_surfaces_provider_failure_without_success_fallback():
+    fake = PipelineClient()
+
+    def unavailable_research(_symbol, *, market_snapshot):
+        raise ResearchDataUnavailable("No market research data was returned.")
+
+    app = create_app(
+        client_factory=lambda url, key: fake,
+        environ={
+            "SUPABASE_URL": "https://project.example.test",
+            "SUPABASE_PUBLISHABLE_KEY": "public-test-key",
+        },
+        research_fetcher=unavailable_research,
+    )
+    response = TestClient(app).post(
+        f"/api/pip/portfolios/{fake.portfolio_id}/research",
+        headers={"Authorization": "Bearer user-access-token"},
+        json={"symbol": "AAPL"},
+    )
+
+    assert response.status_code == 502
+    assert response.json()["detail"] == "No market research data was returned."
+
+
 def test_analysis_api_runs_modules_and_persists_score_and_proposed_recommendation():
     fake = PipelineClient()
     app = create_app(
@@ -227,7 +289,7 @@ def test_analysis_api_runs_modules_and_persists_score_and_proposed_recommendatio
         json={
             "portfolio_id": fake.portfolio_id,
             "symbol": "aapl",
-            "position": {"market_price": 120, "dividends_received": 12},
+            "position": {"market_price": 130, "dividends_received": 12},
             "scores": {
                 "tsr": 70,
                 "relative_performance": 65,
@@ -243,7 +305,7 @@ def test_analysis_api_runs_modules_and_persists_score_and_proposed_recommendatio
                 "earnings_growth_percent": 10,
                 "revenue_growth_percent": 8,
             },
-            "forward": {"target_price": 132, "analyst_revisions_score": 80},
+            "forward": {"target_price": 143, "analyst_revisions_score": 80},
             "peer_scores": [{"symbol": "MSFT", "score": 90}],
         },
     )
@@ -264,6 +326,7 @@ def test_analysis_api_runs_modules_and_persists_score_and_proposed_recommendatio
     }
     assert "analyst_signals" in {table for table, _ in fake.writes}
     assert result["modules"]["growth"]["confidence"] == 1
+    assert abs(result["modules"]["lifecycle"]["total_return_percent"] - 36) < 1e-9
     assert result["modules"]["forward_looking"]["score"] == 68
     assert result["recommendation"]["replacement_candidates"][0]["symbol"] == "MSFT"
     assert fake.rpc_calls[0][0] == "pip_transition_sell_recommendation"

@@ -12,8 +12,21 @@ PIP analysis.
 The package provides fixture/CSV portfolio normalization, lifecycle and
 productivity analysis, dividend/growth/forward-looking helpers, CPS and Sell
 Confidence scores, replacement ranking, recommendation helpers, and explicit
-approval-state tracking. The Supabase migration and adapters provide an optional
-owner-scoped persistence layer.
+approval-state tracking. It can also load Yahoo historical prices and available
+analyst consensus through the existing scanner helpers, and read the shared
+Yahoo/Alpaca/Twelve Data price snapshot. The Supabase migration and adapters
+provide an optional owner-scoped persistence layer.
+
+## Which research data is currently available?
+
+For an imported holding, PIP can show the latest shared price snapshot, Yahoo
+historical price return, relative performance to SPY, analyst consensus/target
+data when Yahoo provides it, and dividend events per share. It does not treat
+raw returns as 0–100 component scores or per-share dividend events as portfolio
+cash income. The current adapters do not expose earnings/revenue growth or
+historical analyst estimate revisions to PIP, so those factors remain missing
+and reduce score confidence. The research request sends only the ticker symbol
+to Yahoo; portfolio details and Supabase tokens stay out of provider requests.
 
 ## Does sync connect to my IBKR account?
 
@@ -71,4 +84,3 @@ apply and verify the PIP migration in the intended Supabase project, and add a
 reviewed server-side integration for any real-data persistence. Live IBKR
 retrieval and order execution are out of scope. GitHub Pages deployment alone
 does not apply database migrations or enable PIP.
-

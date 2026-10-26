@@ -171,6 +171,9 @@ The PIP migration is additive and reuses `auth.users` and the approved-user
 records in `public.user_access`. GitHub Pages deployment does not apply SQL
 migrations. Review the [PIP migration plan](docs/pip/MIGRATION_PLAN.md) and
 [PIP FAQ](docs/pip/FAQ.md) before applying it to a Supabase project.
+PIP research reads the authenticated `price_snapshots` table populated by the
+existing Yahoo-first collection job with Alpaca and Twelve Data fallbacks; keep
+that job and its Supabase snapshot migration configured for shared quotes.
 
 ## Run the Portfolio Intelligence API
 
@@ -181,6 +184,11 @@ service-role key to this API. After installing `requirements.txt`, run
 HTTPS. Then open the Portfolio Intelligence page, enter the deployed API's
 HTTPS URL, and connect. Details and routes are in
 [docs/portfolio-intelligence-pip.md](docs/portfolio-intelligence-pip.md).
+The page's **Load available research** action uses the existing Yahoo history
+and analyst helpers plus the shared price snapshot. It sends only the imported
+holding's symbol to Yahoo. Earnings growth and analyst revision history are not
+provided by the current adapters and remain unavailable rather than being
+estimated.
 
 ## Activate invite-only Supabase authentication
 

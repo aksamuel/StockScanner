@@ -32,6 +32,7 @@ from .ibkr_sync import CSVPortfolioDataSource, IBKRPortfolioSyncService
 from .opportunity_cost import OpportunityCostEngine
 from .position_lifecycle import PositionLifecycleAnalyzer
 from .repository import SupabaseAuditLogSink, SupabasePortfolioRepository
+from .research import ResearchDataUnavailable, collect_research_data
 from .scoring import calculate_cps_result
 
 
@@ -146,6 +147,18 @@ class AnalysisRequest(StrictModel):
         return value
 
 
+class ResearchRequest(StrictModel):
+    symbol: str
+
+    @field_validator("symbol")
+    @classmethod
+    def normalize_symbol(cls, value: str) -> str:
+        value = value.strip().upper()
+        if not SYMBOL_PATTERN.fullmatch(value):
+            raise ValueError("Invalid symbol")
+        return value
+
+
 class ApprovalTransitionRequest(StrictModel):
     status: ApprovalStatus
     actor: str | None = Field(default=None, max_length=80)
@@ -177,8 +190,10 @@ def create_app(
     *,
     client_factory: Callable[[str, str], Any] = create_client,
     environ: dict[str, str] | None = None,
+    research_fetcher: Callable[..., dict[str, Any]] | None = None,
 ) -> FastAPI:
     settings = os.environ if environ is None else environ
+    fetch_research = research_fetcher or collect_research_data
     app = FastAPI(
         title="StockScanner Portfolio Intelligence API",
         version="1.0.0",
@@ -332,6 +347,44 @@ def create_app(
         except (ValueError, csv.Error) as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 
+    @app.post("/api/pip/portfolios/{portfolio_id}/research")
+    def research(
+        portfolio_id: UUID,
+        body: ResearchRequest,
+        user: AuthenticatedUser = Depends(require_user),
+    ) -> dict[str, Any]:
+        owned_portfolio(user, portfolio_id)
+        position_result = user.client.table("positions").select(
+            "symbol"
+        ).eq("portfolio_id", str(portfolio_id)).eq(
+            "symbol", body.symbol
+        ).limit(1).execute()
+        if not _response_data(
+            position_result,
+            "Unable to verify the selected holding.",
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail="Import this holding into the selected portfolio before loading research.",
+            )
+
+        snapshot_result = user.client.table("price_snapshots").select(
+            "generated_at,prices,price_timestamps,provider_by_symbol,stale_symbols"
+        ).eq("source", "hourly_yahoo").order(
+            "generated_at", desc=True
+        ).limit(1).execute()
+        snapshots = _response_data(
+            snapshot_result,
+            "Unable to load the shared market-price snapshot.",
+        ) or []
+        try:
+            return fetch_research(
+                body.symbol,
+                market_snapshot=snapshots[0] if snapshots else None,
+            )
+        except ResearchDataUnavailable as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+
     @app.post("/api/pip/analysis")
     def analyze(
         body: AnalysisRequest,
@@ -387,6 +440,11 @@ def create_app(
             if stored_market_value is not None and total_quantity
             else next((row["market_price"] for row in position_rows if row.get("market_price")), None)
         )
+        current_price = (
+            body.dividends.current_price
+            or body.position.market_price
+            or stored_market_price
+        )
 
         stored_score_result = user.client.table("stock_scores").select(
             "tsr,relative_performance,dividend_growth,earnings_growth,analyst_revisions,"
@@ -439,7 +497,6 @@ def create_app(
                 status_code=422,
                 detail="Dividend history must use the holding's currency; PIP does not convert currencies.",
             )
-        current_price = body.dividends.current_price or body.position.market_price or stored_market_price
         dividend = DividendAnalysisEngine().analyze(
             dividend_records=dividend_records,
             current_price=current_price,
@@ -483,7 +540,13 @@ def create_app(
 
         entry_date = body.position.entry_date or stored_entry_date
         cost_basis = body.position.cost_basis if body.position.cost_basis is not None else stored_cost_basis
-        market_value = body.position.market_value if body.position.market_value is not None else stored_market_value
+        market_value = body.position.market_value
+        if market_value is None:
+            market_value = (
+                current_price * total_quantity
+                if current_price is not None and total_quantity
+                else stored_market_value
+            )
 
         cps_result = calculate_cps_result(components)
         lifecycle = PositionLifecycleAnalyzer().summarize_position(

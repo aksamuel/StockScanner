@@ -211,6 +211,13 @@ if (typeof document !== "undefined") {
     document.querySelector("#importCsv").disabled = !apiConnected || !csvText || !portfolioSelect.value;
   }
 
+  function updateResearchEnabled() {
+    const symbol = document.querySelector("#analysisSymbol").value.trim();
+    document.querySelector("#loadResearch").disabled = !apiConnected
+      || !portfolioSelect.value
+      || !/^[A-Z0-9][A-Z0-9.-]{0,29}$/i.test(symbol);
+  }
+
   function renderRecommendations(rows, selectId = null) {
     recommendationSelect.replaceChildren();
     const placeholder = document.createElement("option");
@@ -299,6 +306,7 @@ if (typeof document !== "undefined") {
     if (portfolios.some((portfolio) => portfolio.id === previous)) portfolioSelect.value = previous;
     document.querySelector("#portfolioControls").hidden = false;
     updateImportEnabled();
+    updateResearchEnabled();
     await loadRecommendations();
   }
 
@@ -343,6 +351,7 @@ if (typeof document !== "undefined") {
       apiConnected = false;
       apiStatus.textContent = error.message || "PIP API connection failed.";
       updateImportEnabled();
+      updateResearchEnabled();
       updateTransitionButtons();
     } finally {
       setBusy(button, false);
@@ -367,6 +376,7 @@ if (typeof document !== "undefined") {
       portfolioSelect.value = created.id;
       await loadRecommendations();
       updateImportEnabled();
+      updateResearchEnabled();
       apiStatus.textContent = `Created portfolio ${created.name}.`;
     } catch (error) {
       apiStatus.textContent = error.message || "Portfolio creation failed.";
@@ -394,6 +404,54 @@ if (typeof document !== "undefined") {
   document.querySelector("#clearScores").addEventListener("click", () => {
     for (const input of inputElements.values()) input.value = "";
     updateScores();
+  });
+  document.querySelector("#analysisSymbol").addEventListener("input", () => {
+    document.querySelector("#researchResult").hidden = true;
+    document.querySelector("#researchStatus").textContent = "Load research for this holding before analyzing it.";
+    updateResearchEnabled();
+  });
+  document.querySelector("#loadResearch").addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    const output = document.querySelector("#researchStatus");
+    try {
+      const portfolioId = selectedPortfolio();
+      const symbol = document.querySelector("#analysisSymbol").value.trim().toUpperCase();
+      if (!/^[A-Z0-9][A-Z0-9.-]{0,29}$/.test(symbol)) throw new Error("Enter a valid holding symbol.");
+      document.querySelector("#researchResult").hidden = true;
+      setBusy(button, true, "Loading research…");
+      output.textContent = "Fetching available Yahoo research and the shared market-price snapshot…";
+      const research = await apiRequest(
+        `/api/pip/portfolios/${encodeURIComponent(portfolioId)}/research`,
+        { method: "POST", body: JSON.stringify({ symbol }) },
+      );
+      if (research.price.price !== null) {
+        document.querySelector("#pipMarketPrice").value = research.price.price;
+      }
+      if (research.analyst.target_price !== null) {
+        document.querySelector("#pipTargetPrice").value = research.analyst.target_price;
+      }
+      if (research.analyst.target_upside_percent !== null) {
+        document.querySelector("#pipTargetUpside").value = research.analyst.target_upside_percent;
+      }
+
+      const returned = research.returns;
+      const dividendTotal = research.dividends.trailing_365_days_per_share;
+      const details = [
+        `Price: ${research.price.price === null ? "unavailable" : research.price.price} (${research.price.source || "source unavailable"}${research.price.as_of ? `, as of ${research.price.as_of}` : ""}${research.price.stale ? ", marked stale" : ""}).`,
+        `Yahoo history (${returned.start_date || "?"} to ${returned.end_date || "?"}, ${returned.basis || "basis unavailable"}): return ${returned.price_return_percent === null ? "unavailable" : `${returned.price_return_percent}%`}; SPY ${returned.spy_return_percent === null ? "unavailable" : `${returned.spy_return_percent}%`}; relative performance ${returned.relative_performance_percentage_points === null ? "unavailable" : `${returned.relative_performance_percentage_points} percentage points`}.`,
+        `Analyst consensus: ${research.analyst.rating || "unavailable"}; target upside ${research.analyst.target_upside_percent === null ? "unavailable" : `${research.analyst.target_upside_percent}%`}.`,
+        `Yahoo trailing dividends: ${dividendTotal === null ? "unavailable" : `${dividendTotal} per share`} (not portfolio cash income).`,
+      ];
+      const result = document.querySelector("#researchResult");
+      result.textContent = `${details.join(" ")} ${research.warnings.join(" ")}`;
+      result.hidden = false;
+      output.textContent = "Available research loaded. Market price and analyst target inputs were filled where available; score fields are unchanged.";
+    } catch (error) {
+      output.textContent = error.message || "Could not load market research.";
+    } finally {
+      setBusy(button, false);
+      updateResearchEnabled();
+    }
   });
   updateScores();
 
@@ -467,6 +525,7 @@ if (typeof document !== "undefined") {
 
   portfolioSelect.addEventListener("change", async () => {
     updateImportEnabled();
+    updateResearchEnabled();
     if (!apiConnected) return;
     try {
       await loadRecommendations();
@@ -603,4 +662,5 @@ if (typeof document !== "undefined") {
       ? "Authenticated. Select Connect and load portfolios."
       : "Authenticated. Configure the PIP API URL to begin.";
   }
+  updateResearchEnabled();
 }
