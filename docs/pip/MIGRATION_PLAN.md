@@ -30,9 +30,9 @@ role key belongs in browser code or fixtures.
 
 Credentials and tokens must never be stored in PIP columns. Keep connection
 configuration in environment variables or Supabase secrets. Account identifiers
-must be masked in any persisted metadata, logs, and audit events. Audit history is
-append-only: permit owner-scoped inserts and reads but define no update/delete
-policy for authenticated users.
+must be masked in any persisted metadata, logs, and audit events. Audit history is append-only: authenticated owners can read events but cannot
+insert, update, or delete them directly. The narrowly scoped approval RPC writes
+each event atomically with the corresponding recommendation transition.
 
 ## Rollout order
 
@@ -40,9 +40,9 @@ policy for authenticated users.
    migrations are deployed.
 2. Apply the additive PIP core schema migration; verify all requested tables,
    keys, timestamps, and indexes.
-3. Apply/verify RLS policies as the authenticated owner, another approved user,
+3. Apply/verify RLS policies and approval RPC grants as the authenticated owner, another approved user,
    a pending user, and an anonymous user. Confirm cross-owner operations fail.
-4. Deploy the PIP code with fixture-backed sync only. Keep any IBKR live transport
+4. Deploy the authenticated API with caller-token PostgREST access. Keep any IBKR live transport
    and order transmission absent.
 5. Validate imported CSV/Flex records and reconcile PIP snapshots against the
    existing holdings import before enabling scheduled/manual ingestion.
@@ -62,4 +62,3 @@ policy for authenticated users.
   before enabling client reads; default to no access when approval is absent.
 - Roll back by disabling PIP entry points and stopping new ingestion. Preserve
   append-only audit evidence and all existing scanner/import tables.
-

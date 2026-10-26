@@ -48,3 +48,11 @@ is zero, and the result contains a reason. The `calculate_cps` and
 
 Input scores outside 0–100 are clamped; non-finite and non-numeric inputs are
 treated as missing. Scores use no current-time, network, or random inputs.
+Confidence is input coverage only and is not reduced because the resulting score
+is low. Replacement candidates are compared against the current holding's CPS,
+not its separately weighted Sell Score.
+
+Dividend income is named `trailing_twelve_month_income` and includes only dated
+events in the trailing 365-day window. If the events have no usable dates, income
+and yield are unavailable rather than treating an arbitrary multi-period sum as
+annualized.

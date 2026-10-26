@@ -160,6 +160,7 @@ Apply the migrations in timestamp order:
 12. `20261002110000_add_failed_symbol_scan_history.sql`
 13. `20261002114954_add_catalyst_research_beta.sql`
 14. `20261023_pip_core_schema.sql`
+15. `20261024_pip_approval_rpc.sql`
 
 The 20260831 migrations add backend-only leases and price telemetry. The two
 20261002 migrations add owner-gated portfolio Technical-strength storage,
@@ -170,6 +171,16 @@ The PIP migration is additive and reuses `auth.users` and the approved-user
 records in `public.user_access`. GitHub Pages deployment does not apply SQL
 migrations. Review the [PIP migration plan](docs/pip/MIGRATION_PLAN.md) and
 [PIP FAQ](docs/pip/FAQ.md) before applying it to a Supabase project.
+
+## Run the Portfolio Intelligence API
+
+Configure `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, and an exact
+`PIP_CORS_ORIGINS` allowlist in the API host environment. Never provide a
+service-role key to this API. After installing `requirements.txt`, run
+`stockscanner-pip-api` (or `python -m uvicorn stockscanner.pip.api:app`) behind
+HTTPS. Then open the Portfolio Intelligence page, enter the deployed API's
+HTTPS URL, and connect. Details and routes are in
+[docs/portfolio-intelligence-pip.md](docs/portfolio-intelligence-pip.md).
 
 ## Activate invite-only Supabase authentication
 
@@ -273,9 +284,9 @@ The signed-in user pages serve different purposes:
   resistance, and analyst target proxy. Each import atomically replaces only
   the signed-in user's older rows for that broker before the page recalculates
   the analysis; it never truncates another user or broker.
-- `portfolio-intelligence.html`: authenticated PIP module catalog, local-only CSV
-  preflight, illustrative score calculator, and in-memory approval workflow demo.
-  The Python PIP services remain a separate package and are not executed by Pages.
+- `portfolio-intelligence.html`: authenticated PIP API client for CSV/Flex imports,
+  Python analysis, recommendations, and persisted human approval. Configure and
+  deploy the FastAPI service separately; it has no live IBKR or order transmitter.
 - `help.html`: the current user guide and FAQ, available from the shared Menu,
   portfolio navigation, and report Help links.
 

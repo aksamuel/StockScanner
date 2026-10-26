@@ -47,9 +47,12 @@ class PositionLifecycleAnalyzer:
 
         invested = fields.get("cost_basis")
         market_value = fields.get("market_value")
-        dividends = fields.get("dividends", 0.0)
+        dividends = fields.get("dividends")
         total_return = None
-        if invested is not None and market_value is not None and float(invested) != 0:
+        if (
+            invested is not None and market_value is not None and dividends is not None
+            and float(invested) != 0
+        ):
             total_return = ((float(market_value) + float(dividends or 0.0)) / float(invested) - 1) * 100
         snapshot = PortfolioHealthSnapshot(
             symbol=symbol,

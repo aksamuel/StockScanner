@@ -104,6 +104,19 @@ def test_csv_flex_source_reads_existing_export_without_network(tmp_path: Path):
     assert records["accounts"][0]["masked_account_id"] == "***0000"
     assert records["positions"][0].symbol == "MSFT"
     assert records["positions"][0].market_value == 375
+    assert records["positions"][0].account_id == "***0000"
+    assert "U99990000" not in repr(records)
+
+
+def test_csv_import_applies_explicit_default_currency_to_positions():
+    from io import StringIO
+
+    source = CSVPortfolioDataSource(
+        StringIO("Account,Symbol,Quantity,AverageCost\nU12345678,AAPL,2,100\n"),
+        default_currency="GBP",
+    )
+    records = IBKRPortfolioSyncService().sync(source, "portfolio-id")
+    assert records["positions"][0].currency == "GBP"
 
 
 def test_sync_rejects_invalid_position_rows():
@@ -236,6 +249,9 @@ def test_supabase_audit_sink_records_transition_and_state_without_raw_ids():
         error = None
         data = []
 
+        def execute(self):
+            return self
+
     class Query:
         def __init__(self, client, table):
             self.client, self.table_name = client, table
@@ -256,10 +272,15 @@ def test_supabase_audit_sink_records_transition_and_state_without_raw_ids():
             return Response()
 
     class Client:
-        calls = []
+        def __init__(self):
+            self.calls = []
 
         def table(self, table):
             return Query(self, table)
+
+        def rpc(self, name, params):
+            self.calls.append((name, params))
+            return Response()
 
     client = Client()
     recommendation_id = "11111111-1111-4111-8111-111111111111"
@@ -272,8 +293,11 @@ def test_supabase_audit_sink_records_transition_and_state_without_raw_ids():
     workflow.propose(recommendation_id)
     workflow.begin_review(recommendation_id, "reviewer")
     workflow.approve(recommendation_id, "reviewer", "Reviewed.")
-    assert any(call[0] == "audit_logs" and call[1] == "insert" for call in client.calls)
-    assert any(call[0] == "sell_recommendations" and call[1] == "update" for call in client.calls)
+    transition_calls = [call for call in client.calls if call[0] == "pip_transition_sell_recommendation"]
+    assert len(transition_calls) == 3
+    assert transition_calls[-1][1]["p_expected_status"] == "under_review"
+    assert transition_calls[-1][1]["p_next_status"] == "approved"
+    assert transition_calls[-1][1]["p_actor"] == "reviewer"
 
 
 def test_sell_advisor_can_recommend_partial_review():
@@ -331,7 +355,9 @@ def test_order_transmission_is_disabled_by_default_and_in_ci():
 
 def test_pip_migration_has_rls_and_append_only_audit_logs():
     migration = Path(__file__).parents[1] / "supabase/migrations/20261023_pip_core_schema.sql"
+    approval_migration = Path(__file__).parents[1] / "supabase/migrations/20261024_pip_approval_rpc.sql"
     sql = migration.read_text(encoding="utf-8").lower()
+    approval_sql = approval_migration.read_text(encoding="utf-8").lower()
     tables = (
         "pip_profiles", "portfolios", "ibkr_accounts", "positions", "transactions",
         "dividends", "daily_snapshots", "analyst_signals", "stock_scores",
@@ -354,3 +380,9 @@ def test_pip_migration_has_rls_and_append_only_audit_logs():
     assert "grant select, insert on public.audit_logs to authenticated" in sql
     assert "for update to authenticated" not in sql.split("create policy \"pip owners read audit logs\"", 1)[1]
     assert "for delete to authenticated" not in sql.split("create policy \"pip owners read audit logs\"", 1)[1]
+    assert "security definer" in approval_sql
+    assert "auth.uid()" in approval_sql
+    assert "revoke update, delete on public.sell_recommendations from anon, authenticated" in approval_sql
+    assert "pip_transition_sell_recommendation" in approval_sql
+    assert "revoke insert on public.audit_logs from anon, authenticated" in approval_sql
+    assert "approved_by is null" in approval_sql

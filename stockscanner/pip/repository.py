@@ -61,27 +61,20 @@ class SupabaseAuditLogSink:
         recommendation_id = event.get("entity_id")
         if recommendation_id is not None:
             UUID(str(recommendation_id))
-        payload = {
-            "portfolio_id": str(UUID(self.portfolio_id)),
-            "user_id": str(UUID(self.user_id)),
-            "entity_type": event["entity_type"],
-            "entity_id": str(recommendation_id) if recommendation_id is not None else None,
-            "event_type": event["event_type"],
-            "event_details": {
-                key: value for key, value in event.items()
-                if key not in {"entity_type", "entity_id", "event_type", "created_at"}
+        UUID(self.portfolio_id)
+        UUID(self.user_id)
+        result = self.client.rpc(
+            "pip_transition_sell_recommendation",
+            {
+                "p_recommendation_id": str(recommendation_id),
+                "p_expected_status": event.get("from_status"),
+                "p_next_status": event["to_status"],
+                "p_actor": event.get("actor"),
+                "p_reason": event.get("reason"),
             },
-            "created_at": event["created_at"],
-        }
-        result = self.client.table("audit_logs").insert(payload).execute()
+        ).execute()
         if getattr(result, "error", None):
-            raise RuntimeError("Unable to persist PIP audit event")
-        update = {"status": event["to_status"]}
-        if event["to_status"] == "approved":
-            update["approved_by"] = event.get("actor")
-        state_result = self.client.table("sell_recommendations").update(update).eq("id", str(recommendation_id)).execute()
-        if getattr(state_result, "error", None):
-            raise RuntimeError("Unable to persist PIP approval state")
+            raise RuntimeError("Unable to persist PIP approval transition and audit event")
 
 
 class SupabasePortfolioRepository(PortfolioRepository):
@@ -214,8 +207,6 @@ class SupabasePortfolioRepository(PortfolioRepository):
             "rationale": recommendation.rationale,
             "confidence": recommendation.confidence,
             "status": recommendation.status,
-            "created_at": recommendation.created_at.isoformat() if recommendation.created_at else None,
-            "approved_by": recommendation.approved_by,
             "metadata": {
                 "replacement_candidates": [
                     {
@@ -229,6 +220,10 @@ class SupabasePortfolioRepository(PortfolioRepository):
                 ],
             },
         }
+        if recommendation.created_at is not None:
+            row["created_at"] = recommendation.created_at.isoformat()
+        if recommendation.approved_by is not None:
+            row["approved_by"] = str(UUID(recommendation.approved_by))
         row = self._json_safe(row)
         response = self.client.table("sell_recommendations").insert(row).execute()
         if getattr(response, "error", None):

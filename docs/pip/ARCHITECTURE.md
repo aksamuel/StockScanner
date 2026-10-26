@@ -20,11 +20,12 @@ user's import. `price_snapshots` is scanner market data, not a portfolio-specifi
 history store. The established approval model is `auth.users` plus
 `public.user_access.status = 'approved'`.
 
-PIP belongs in the independent `stockscanner/pip/` package and new migrations,
-without modifying scanner discovery, static pages, Edge Functions, or existing
-tests. Python package discovery must include `stockscanner*` so the PIP subpackage
-is present in built distributions. Existing declared runtime dependencies are
-listed in `pyproject.toml`; `requirements.txt` is the deployment install list.
+PIP belongs in the independent `stockscanner/pip/` package and additive
+migrations. Existing scanner discovery and workflows remain unchanged; the
+Portfolio Intelligence page is now an API client. Python package discovery
+includes `stockscanner*` so the PIP subpackage and API are present in built
+distributions. Runtime dependencies are listed in `pyproject.toml` and
+`requirements.txt`.
 Pytest and the Node test runner are the existing validation tools. The site
 deployment workflow runs both test suites before publishing.
 
@@ -66,6 +67,21 @@ are deterministic Python functions with explicit missing-data confidence. All
 recommendations are advisory screening prompts and require a separately recorded
 human approval.
 
+The deployable FastAPI service is `stockscanner.pip.api:app` (console command
+`stockscanner-pip-api`). Each request authenticates its bearer token with Supabase
+Auth, requires approved `user_access`, and uses the same token for PostgREST so
+table RLS remains active. The service never uses a service-role key. The API
+integrates lifecycle, dead-money, opportunity-cost, dividend, growth,
+forward-looking, scoring, recommendation, and approval modules. The browser page
+uses the signed-in Supabase access token only for API requests; its configured API
+URL is stored locally and never contains credentials.
+
+Approval state and its audit event are persisted in one owner-checked database
+function. `approved_by` stores `auth.uid()` as a UUID; the reviewer label remains
+separate audit detail. Authenticated clients cannot directly update
+recommendation status or insert audit events. The API records approval only and
+does not submit orders.
+
 ## Risks and controls
 
 - **Cross-user data access:** enable RLS on every PIP table; authorization requires
@@ -82,4 +98,3 @@ human approval.
   feature-flagged, non-CI design review.
 - **Migration drift:** apply the new PIP migration after the existing user approval
   and portfolio-import migrations. Never alter existing portfolio tables or RPCs.
-

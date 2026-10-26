@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from math import isfinite
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, Iterable, List, Optional
 
 
@@ -22,14 +23,36 @@ class DividendRecord:
 class DividendAnalysisEngine:
     """Compute dividend signal quality based on income, growth, and sustainability."""
 
-    def annualized_income(self, dividend_records: Iterable[DividendRecord]) -> float | None:
-        amounts = [float(record.amount) for record in dividend_records if record.amount is not None]
+    def trailing_twelve_month_income(
+        self,
+        dividend_records: Iterable[DividendRecord],
+        as_of: date | None = None,
+    ) -> float | None:
+        """Sum dated dividend events in the trailing 365-day window."""
+        end = as_of or datetime.now(timezone.utc).date()
+        cutoff = end - timedelta(days=365)
+        amounts = []
+        for record in dividend_records:
+            event_date = record.pay_date or record.ex_date
+            if event_date is None:
+                continue
+            try:
+                parsed_date = (
+                    event_date.date() if isinstance(event_date, datetime)
+                    else event_date if isinstance(event_date, date)
+                    else date.fromisoformat(str(event_date)[:10])
+                )
+                amount = float(record.amount)
+            except (TypeError, ValueError):
+                continue
+            if cutoff < parsed_date <= end and isfinite(amount):
+                amounts.append(amount)
         return sum(amounts) if amounts else None
 
-    def current_yield(self, annualized_income: float | None, current_price: float | None) -> float | None:
-        if annualized_income is None or current_price is None or current_price <= 0:
+    def current_yield(self, trailing_twelve_month_income: float | None, current_price: float | None) -> float | None:
+        if trailing_twelve_month_income is None or current_price is None or current_price <= 0:
             return None
-        return (annualized_income / current_price) * 100.0
+        return (trailing_twelve_month_income / current_price) * 100.0
 
     def growth_score(self, growth_rate: float | None) -> float | None:
         """Map a dividend growth rate to a 0..100 score."""
@@ -40,7 +63,7 @@ class DividendAnalysisEngine:
 
     def quality_score(
         self,
-        annualized_income: float | None,
+        trailing_twelve_month_income: float | None,
         current_price: float | None,
         payout_ratio: float | None,
         dividend_growth_rate: float | None,
@@ -52,7 +75,7 @@ class DividendAnalysisEngine:
         more complete portfolio decision scoring rather than an independent buy/sell verdict.
         """
 
-        yield_pct = self.current_yield(annualized_income, current_price)
+        yield_pct = self.current_yield(trailing_twelve_month_income, current_price)
         yield_score = min(100.0, yield_pct * 10.0) if yield_pct is not None else None
         growth_component = self.growth_score(dividend_growth_rate)
         consistency_component = (
@@ -83,8 +106,8 @@ class DividendAnalysisEngine:
         consistency_score: float | None,
     ) -> Dict[str, Any]:
         dividend_records = list(dividend_records)
-        annualized_income = self.annualized_income(dividend_records)
-        yield_pct = self.current_yield(annualized_income, current_price)
+        trailing_twelve_month_income = self.trailing_twelve_month_income(dividend_records)
+        yield_pct = self.current_yield(trailing_twelve_month_income, current_price)
         inputs = (yield_pct, dividend_growth_rate, consistency_score, payout_ratio)
         weights = (0.30, 0.30, 0.25, 0.15)
         available_weight = sum(
@@ -100,14 +123,14 @@ class DividendAnalysisEngine:
             if value is None or not isfinite(float(value))
         )
         quality = self.quality_score(
-            annualized_income=annualized_income,
+            trailing_twelve_month_income=trailing_twelve_month_income,
             current_price=current_price,
             payout_ratio=payout_ratio,
             dividend_growth_rate=dividend_growth_rate,
             consistency_score=consistency_score,
         )
         return {
-            "annualized_income": annualized_income,
+            "trailing_twelve_month_income": trailing_twelve_month_income,
             "current_yield_pct": yield_pct,
             "dividend_quality_score": quality,
             "growth_score": self.growth_score(dividend_growth_rate),

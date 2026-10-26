@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
 from math import isfinite
 from pathlib import Path
-from typing import Any, Mapping, Protocol
+from typing import Any, Mapping, Protocol, TextIO
 
 from .models import PositionRecord
 
@@ -85,13 +85,26 @@ class FixturePortfolioDataSource:
 class CSVPortfolioDataSource:
     """Read existing IBKR CSV/Flex exports without making a network request."""
 
-    def __init__(self, path: str | Path, account_name: str = "IBKR"):
-        self.path = Path(path)
+    def __init__(
+        self,
+        path: str | Path | TextIO,
+        account_name: str = "IBKR",
+        default_currency: str | None = "USD",
+    ):
         self.account_name = account_name
+        self.csv_stream = path if hasattr(path, "read") else None
+        self.path = None if self.csv_stream is not None else Path(path)
+        if default_currency is not None and not re.fullmatch(r"[A-Za-z]{3}", default_currency.strip()):
+            raise ValueError("Default currency must be a three-letter code")
+        self.default_currency = default_currency.strip().upper() if default_currency else None
 
     def load_portfolio(self) -> PortfolioData:
-        with self.path.open("r", newline="", encoding="utf-8-sig") as csv_file:
-            rows = list(csv.DictReader(csv_file))
+        if self.csv_stream is not None:
+            rows = list(csv.DictReader(self.csv_stream))
+        else:
+            assert self.path is not None
+            with self.path.open("r", newline="", encoding="utf-8-sig") as csv_file:
+                rows = list(csv.DictReader(csv_file))
         if not rows:
             return PortfolioData()
         if len(rows) > 1000:
@@ -102,6 +115,9 @@ class CSVPortfolioDataSource:
         dividends: list[dict[str, Any]] = []
         accounts: dict[str, dict[str, Any]] = {}
         for row in rows:
+            currency = str(_field(row, "currency", default=self.default_currency) or "").strip().upper()
+            if not re.fullmatch(r"[A-Z]{3}", currency):
+                raise ValueError("Currency is missing or invalid in portfolio input")
             symbol = _field(row, "symbol", "ticker")
             account = _field(row, "accountId", "clientAccountId", "account")
             if account:
@@ -109,7 +125,7 @@ class CSVPortfolioDataSource:
                 accounts[masked or ""] = {
                     "account_name": self.account_name,
                     "masked_account_id": masked,
-                    "currency": _field(row, "currency", default="USD"),
+                    "currency": currency,
                 }
             transaction_date = _field(row, "tradeDate", "trade_date", "date")
             transaction_type = _field(row, "transactionType", "transaction_type", "type")
@@ -120,7 +136,7 @@ class CSVPortfolioDataSource:
                     "quantity": _field(row, "quantity", "shares"),
                     "price": _field(row, "price", "tradePrice"),
                     "trade_date": transaction_date,
-                    "currency": _field(row, "currency", default="USD"),
+                    "currency": currency,
                 })
             amount = _field(row, "dividendAmount", "dividend_amount", "amount")
             ex_date = _field(row, "exDate", "ex_date")
@@ -131,7 +147,7 @@ class CSVPortfolioDataSource:
                     "amount": amount,
                     "ex_date": ex_date,
                     "pay_date": pay_date,
-                    "currency": _field(row, "currency", default="USD"),
+                    "currency": currency,
                 })
             quantity = _field(row, "quantity", "position")
             if symbol and quantity is not None:
@@ -142,7 +158,7 @@ class CSVPortfolioDataSource:
                     "average_cost": _field(row, "averageCost", "average_cost", "costBasisPrice", "buy_price"),
                     "market_price": _field(row, "marketPrice", "market_price", "current_price"),
                     "market_value": _field(row, "marketValue", "market_value"),
-                    "currency": _field(row, "currency", default="USD"),
+                    "currency": currency,
                     "entry_date": _field(row, "openDateTime", "entry_date", "buy_date"),
                 })
         return PortfolioData(accounts=list(accounts.values()), positions=positions, transactions=transactions, dividends=dividends)

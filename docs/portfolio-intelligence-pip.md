@@ -1,6 +1,7 @@
 # Portfolio Intelligence Platform (PIP)
 
-This document captures the implementation plan and architecture for the StockScanner portfolio intelligence layer.
+This document describes the implemented PIP analytics package, authenticated API,
+Supabase persistence, and human review workflow.
 
 ## Objective
 Add a modular portfolio intelligence layer to StockScanner without disturbing the current stock scanner discovery, reporting, and dashboard workflows.
@@ -25,7 +26,7 @@ The existing StockScanner repository already has the correct core ingredients:
 - report generation and dashboard conventions
 - AI-assisted analysis and evaluation patterns
 
-The PIP layer should therefore be implemented as an adjacent service layer rather than a rewrite of the core scanner.
+The PIP layer is an adjacent service rather than a rewrite of the core scanner.
 
 ## Recommended package layout
 - `stockscanner/pip/__init__.py`
@@ -100,6 +101,54 @@ The migration in `supabase/migrations/20261023_pip_core_schema.sql` creates:
 - replacement_candidates
 - audit_logs
 
+`auth.users` is the identity table; `pip_profiles` contains only optional profile
+metadata. The API uses each request's verified Supabase access token for all
+PostgREST operations. It does not use or accept a service-role key.
+
+## Deploying the API
+
+Install the project dependencies, apply `20261023_pip_core_schema.sql` followed by
+`20261024_pip_approval_rpc.sql`, then configure the API host with:
+
+- `SUPABASE_URL`
+- `SUPABASE_PUBLISHABLE_KEY`
+- `PIP_CORS_ORIGINS`, a comma-separated exact allowlist of browser origins
+- Optional `PIP_API_HOST` and `PIP_API_PORT` (defaults `127.0.0.1:8000`)
+
+Start the service with `stockscanner-pip-api` (or
+`python -m uvicorn stockscanner.pip.api:app`). Put it behind HTTPS before
+connecting a browser. Do not configure a service-role key. The API verifies the
+Supabase token, requires `user_access.status = 'approved'`, and relies on owner
+RLS for portfolio reads and writes. The approval RPC is narrowly scoped to one
+authenticated owner's state transition and appends its audit entry atomically.
+
+The static Portfolio Intelligence page connects to a configured API URL, keeps
+that URL in local browser storage, and never stores the Supabase access token.
+The user explicitly imports a CSV/Flex export and explicitly submits analysis.
+Imports are limited to 1 MB and 1,000 CSV rows. The page can list portfolios,
+create a portfolio, import normalized positions/transactions/dividends, run
+analysis for an imported holding, and persist human approval transitions. Its
+optional analysis inputs cover position overrides, dividend and growth metrics,
+analyst targets/revisions, and candidate symbols with 0–100 scores; blank
+position values reuse imported records where possible.
+
+API routes:
+
+| Method | Route | Purpose |
+| --- | --- | --- |
+| GET | `/healthz` | Service health (no user data) |
+| GET, POST | `/api/pip/portfolios` | List or create caller-owned portfolios |
+| POST | `/api/pip/portfolios/{id}/sync/csv` | Import a CSV/Flex export |
+| POST | `/api/pip/analysis` | Run modules, persist scores and propose a recommendation |
+| GET | `/api/pip/portfolios/{id}/recommendations` | List portfolio recommendations |
+| GET | `/api/pip/recommendations/{id}/events` | Read the append-only audit history |
+| POST | `/api/pip/recommendations/{id}/transitions` | Record a human workflow transition |
+
+The API does not fetch market or fundamental data. Analysis reuses imported
+position/dividend rows and saved analyst/score inputs where available; other
+components remain explicitly missing until supplied. Broker sync is CSV/Flex
+only, and no route submits an order.
+
 ## Decision quality guidance
 The PIP layer helps by giving better evidence, not by guaranteeing a right decision. It is most useful when it answers:
 - Why is this holding weak?
@@ -122,3 +171,8 @@ The PIP layer helps by giving better evidence, not by guaranteeing a right decis
 - Treat an automated recommendation as advisory evidence, not certainty.
 - Keep every recommendation tied to source data and audit records.
 - Score calculations should be deterministic and versioned.
+- Confidence measures available input coverage, not whether a score is strong.
+- Replacement quality scores are compared to the current holding's CPS, not its
+  distinct Sell Score.
+- Dividend yield uses dated cash events from the trailing 365-day period; an
+  undated sum is reported as unavailable rather than mislabeled as annual income.
