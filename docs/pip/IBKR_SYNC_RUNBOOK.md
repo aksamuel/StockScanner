@@ -9,6 +9,9 @@ normalizer for explicit browser-uploaded CSV/Flex files.
 2. From the Portfolio Intelligence page, choose the target portfolio and
    explicitly import the CSV. The API validates and persists normalized records
    through the caller's Supabase JWT and owner RLS.
+   Repeated symbols remain separate position rows. Re-import the same export in
+   the same row order to update them; imports do not delete rows omitted by a
+   later export.
 3. Validate normalized symbols, quantities, dates, currencies, and row counts
    before persisting through a server-side repository.
 4. Compare the PIP output with existing `user_portfolio_holdings`; do not replace,

@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: stockscanner-pip-api
+    runtime: python
+    plan: free
+    buildCommand: python -m pip install --upgrade pip && python -m pip install .
+    startCommand: uvicorn stockscanner.pip.api:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /healthz
+    envVars:
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_PUBLISHABLE_KEY
+        sync: false
+      - key: PIP_CORS_ORIGINS
+        value: https://aksamuel.github.io,http://127.0.0.1:8001,http://localhost:8001
+      - key: PIP_IBKR_ORDER_TRANSMISSION_ENABLED
+        value: "false"

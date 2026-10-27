@@ -108,6 +108,57 @@ def test_csv_flex_source_reads_existing_export_without_network(tmp_path: Path):
     assert "U99990000" not in repr(records)
 
 
+def test_csv_import_accepts_workbench_day_month_year_buy_date():
+    from io import StringIO
+
+    source = CSVPortfolioDataSource(
+        StringIO(
+            "Account,Symbol,Quantity,CostBasisPrice,BuyDate,Currency\n"
+            "U12345678,AAPL,2,100,02/Jan/2025,USD\n"
+        )
+    )
+    records = IBKRPortfolioSyncService().sync(source, "portfolio-id")
+    assert records["positions"][0].entry_date == datetime(2025, 1, 2, tzinfo=timezone.utc)
+
+
+def test_csv_import_keeps_duplicate_symbol_lots_distinct_in_supabase():
+    from io import StringIO
+
+    class Response:
+        error = None
+        data = []
+
+        def execute(self):
+            return self
+
+    class Query:
+        def __init__(self, client, table):
+            self.client, self.table = client, table
+
+        def upsert(self, rows, on_conflict):
+            self.client.position_rows = rows
+            return Response()
+
+    class Client:
+        def table(self, table):
+            return Query(self, table)
+
+    source = CSVPortfolioDataSource(
+        StringIO(
+            "Symbol,Quantity,CostBasisPrice,BuyDate,Currency\n"
+            "AAPL,2,100,02/Jan/2025,USD\n"
+            "AAPL,1,110,15/Jan/2025,USD\n"
+        )
+    )
+    client = Client()
+    IBKRPortfolioSyncService(SupabasePortfolioRepository(client)).sync(source, "portfolio-id")
+
+    rows = client.position_rows
+    assert len(rows) == 2
+    assert {row["symbol"] for row in rows} == {"AAPL"}
+    assert len({row["source_key"] for row in rows}) == 2
+
+
 def test_csv_import_applies_explicit_default_currency_to_positions():
     from io import StringIO
 

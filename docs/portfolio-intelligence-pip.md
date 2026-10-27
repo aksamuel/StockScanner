@@ -122,6 +122,30 @@ Supabase token, requires `user_access.status = 'approved'`, and relies on owner
 RLS for portfolio reads and writes. The approval RPC is narrowly scoped to one
 authenticated owner's state transition and appends its audit entry atomically.
 
+### Render test deployment
+
+The root `render.yaml` defines a Render Blueprint for the API only. It pins the
+native runtime to Python 3.11, installs the package, starts Uvicorn on Render's
+assigned port, and checks `/healthz`. It uses Render's Free plan for testing;
+free services can sleep after inactivity and are not suitable for production.
+Portfolio data remains in Supabase, not on Render's ephemeral filesystem.
+
+To create the service, push this branch, sign in to Render, and create a
+Blueprint from `aksamuel/StockScanner` on the branch containing `render.yaml`.
+When prompted, enter `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` as Render
+environment values. Use the Supabase project URL and publishable key only;
+never use a service-role or secret key. The Blueprint restricts browser access
+to the configured GitHub Pages origin and the local workbench on port 8001.
+Adjust `PIP_CORS_ORIGINS` in Render if the workbench is hosted at another exact
+origin.
+
+After the service is live, open its `https://<service>.onrender.com/healthz`
+URL and confirm it returns `{"status":"ok","service":"pip"}`. Copy the service's
+base HTTPS URL into the Portfolio Intelligence page's API URL field and
+connect. The Blueprint does not publish the static workbench; use the local
+workbench or publish the updated page separately. A free service's first
+request after sleeping can take about a minute to wake it.
+
 The static Portfolio Intelligence page connects to a configured API URL, keeps
 that URL in local browser storage, and never stores the Supabase access token.
 The user explicitly imports a CSV/Flex export and explicitly submits analysis.

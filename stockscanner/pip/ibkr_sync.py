@@ -44,9 +44,13 @@ def _date(value: Any) -> date | None:
     if value in (None, ""):
         return None
     text = str(value).strip()
-    for format_string in ("%Y-%m-%d", "%d/%b/%Y", "%Y%m%d"):
+    for format_string, width in (
+        ("%Y-%m-%d", 10),
+        ("%d/%b/%Y", 11),
+        ("%Y%m%d", 8),
+    ):
         try:
-            return datetime.strptime(text[:10], format_string).date()
+            return datetime.strptime(text[:width], format_string).date()
         except ValueError:
             continue
     try:
@@ -114,7 +118,7 @@ class CSVPortfolioDataSource:
         transactions: list[dict[str, Any]] = []
         dividends: list[dict[str, Any]] = []
         accounts: dict[str, dict[str, Any]] = {}
-        for row in rows:
+        for row_number, row in enumerate(rows, start=1):
             currency = str(_field(row, "currency", default=self.default_currency) or "").strip().upper()
             if not re.fullmatch(r"[A-Z]{3}", currency):
                 raise ValueError("Currency is missing or invalid in portfolio input")
@@ -154,6 +158,7 @@ class CSVPortfolioDataSource:
                 positions.append({
                     "symbol": symbol,
                     "account_id": account,
+                    "source_key": f"csv-row:{row_number}",
                     "quantity": quantity,
                     "average_cost": _field(row, "averageCost", "average_cost", "costBasisPrice", "buy_price"),
                     "market_price": _field(row, "marketPrice", "market_price", "current_price"),
@@ -186,6 +191,10 @@ class IBKRPortfolioSyncService:
         cost_basis = quantity * average_cost if average_cost is not None else None
         entry_date_value = _field(raw_position, "entry_date", "openDateTime", "buy_date")
         entry_date = _date(entry_date_value)
+        notes = {"source": str(_field(raw_position, "source", default="ibkr"))}
+        source_key = _field(raw_position, "source_key")
+        if source_key:
+            notes["source_key"] = str(source_key)
         return PositionRecord(
             symbol=symbol,
             account_id=mask_account_identifier(_field(raw_position, "account_id", "accountId", "clientAccountId")),
@@ -198,7 +207,7 @@ class IBKRPortfolioSyncService:
             cost_basis=cost_basis,
             entry_date=datetime.combine(entry_date, datetime.min.time(), tzinfo=timezone.utc) if entry_date else None,
             last_updated=self.clock(),
-            notes={"source": str(_field(raw_position, "source", default="ibkr"))},
+            notes=notes,
         )
 
     def normalize_transaction(self, raw: Mapping[str, Any], portfolio_id: str) -> dict[str, Any]:

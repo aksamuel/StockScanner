@@ -133,6 +133,12 @@ class SupabasePortfolioRepository(PortfolioRepository):
         rows = []
         for position in positions:
             account_key = position.account_id or "unassigned"
+            position_source_key = position.notes.get("source_key")
+            source_key = (
+                f"{account_key}:{position.symbol}:{position_source_key}"
+                if position_source_key
+                else f"{account_key}:{position.symbol}"
+            )
             rows.append({
                 "portfolio_id": portfolio_id,
                 "account_id": self.account_ids.get(account_key),
@@ -145,7 +151,7 @@ class SupabasePortfolioRepository(PortfolioRepository):
                 "currency": position.currency,
                 "entry_date": position.entry_date.isoformat() if position.entry_date else None,
                 "last_updated": position.last_updated.isoformat() if position.last_updated else None,
-                "source_key": f"{account_key}:{position.symbol}",
+                "source_key": source_key,
                 "metadata": position.notes,
             })
         return self._upsert("positions", rows, "portfolio_id,source_key")
