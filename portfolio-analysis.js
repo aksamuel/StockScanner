@@ -148,6 +148,38 @@ export function portfolioRowsFromCsv(source, missingCurrency = "") {
   });
 }
 
+export function portfolioCsvRecordTypes(source) {
+  const rows = parseCsv(source);
+  if (rows.length < 2) throw new Error("The CSV must contain a header and at least one supported record.");
+  if (rows.length > 1001) throw new Error("A CSV import is limited to 1000 records.");
+
+  const normalizeHeader = (value) => value.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+  const headers = rows[0].map(normalizeHeader);
+  const column = (...aliases) => aliases
+    .map((alias) => headers.indexOf(normalizeHeader(alias)))
+    .find((index) => index >= 0) ?? -1;
+  const symbol = column("symbol", "ticker");
+  const quantity = column("quantity", "position");
+  const tradeDate = column("tradeDate", "date");
+  const transactionType = column("transactionType", "type");
+  const dividendAmount = column("dividendAmount", "amount");
+  const dividendDate = column("exDate", "payDate");
+  const hasValue = (row, index) => index >= 0 && Boolean(row[index]?.trim());
+  const recordTypes = new Set();
+
+  for (const row of rows.slice(1)) {
+    if (!hasValue(row, symbol)) continue;
+    if (hasValue(row, quantity)) recordTypes.add("positions");
+    if (hasValue(row, tradeDate) && hasValue(row, transactionType)) recordTypes.add("transactions");
+    if (hasValue(row, dividendAmount) && hasValue(row, dividendDate)) recordTypes.add("dividends");
+  }
+
+  if (!recordTypes.size) {
+    throw new Error("The CSV must contain supported position, transaction, or dividend records.");
+  }
+  return ["positions", "transactions", "dividends"].filter((type) => recordTypes.has(type));
+}
+
 export function detectedPortfolioBroker(source) {
   const [header = []] = parseCsv(source);
   const headers = header.map((value) => value.trim().toLowerCase().replace(/[^a-z0-9]/g, ""));

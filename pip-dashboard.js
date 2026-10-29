@@ -1,4 +1,4 @@
-import { portfolioRowsFromCsv } from "./portfolio-analysis.js";
+import { portfolioCsvRecordTypes, portfolioRowsFromCsv } from "./portfolio-analysis.js";
 
 export const PIP_CPS_WEIGHTS = Object.freeze({
   tsr: 40,
@@ -519,26 +519,37 @@ if (typeof document !== "undefined") {
     }
     try {
       const content = await file.text();
-      const rows = portfolioRowsFromCsv(content, document.querySelector("#missingCurrency").value);
       csvText = content;
-      for (const holding of rows) {
-        const row = document.createElement("tr");
-        for (const value of [
-          holding.symbol,
-          Number(holding.quantity).toLocaleString(),
-          holding.buy_price === null ? "Not provided" : `${holding.currency} ${holding.buy_price}`,
-          holding.bought_on || "Not provided",
-          holding.currency,
-        ]) {
-          const cell = document.createElement("td");
-          cell.textContent = value;
-          row.append(cell);
+      const recordTypes = portfolioCsvRecordTypes(content);
+      if (recordTypes.length === 1 && recordTypes[0] === "positions") {
+        try {
+          const rows = portfolioRowsFromCsv(content, document.querySelector("#missingCurrency").value);
+          for (const holding of rows) {
+            const row = document.createElement("tr");
+            for (const value of [
+              holding.symbol,
+              Number(holding.quantity).toLocaleString(),
+              holding.buy_price === null ? "Not provided" : `${holding.currency} ${holding.buy_price}`,
+              holding.bought_on || "Not provided",
+              holding.currency,
+            ]) {
+              const cell = document.createElement("td");
+              cell.textContent = value;
+              row.append(cell);
+            }
+            tableBody.append(row);
+          }
+          preview.hidden = false;
+          output.textContent = `${rows.length} holding${rows.length === 1 ? "" : "s"} validated locally from ${file.name}. Select Import to save them to your PIP portfolio.`;
+        } catch (error) {
+          if (!/Missing required CSV column: buy_price/.test(error.message)) throw error;
+          output.textContent = `Detected ${recordTypes.join(", ")} in ${file.name}. Select Import to upload the CSV to your PIP portfolio.`;
         }
-        tableBody.append(row);
+      } else {
+        output.textContent = `Detected ${recordTypes.join(", ")} in ${file.name}. Select Import to upload the CSV to your PIP portfolio.`;
       }
-      preview.hidden = false;
-      output.textContent = `${rows.length} holding${rows.length === 1 ? "" : "s"} validated locally from ${file.name}. Select Import to save them to your PIP portfolio.`;
     } catch (error) {
+      csvText = null;
       output.textContent = error.message || "The CSV could not be validated.";
     }
     updateImportEnabled();

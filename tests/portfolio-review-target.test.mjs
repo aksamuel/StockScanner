@@ -6,6 +6,7 @@ import {
   recommendedTargetPrice,
   sellReviewSignal,
   portfolioRowsFromCsv,
+  portfolioCsvRecordTypes,
   annualizedTargetReturnPercent,
   marketDaysHeld,
 } from "../portfolio-analysis.js";
@@ -22,6 +23,22 @@ assert.equal(detectedPortfolioBroker(ibkrCsv), "IBKR");
 assert.equal(portfolioRowsFromCsv(ibkrCsv)[0].bought_on, "2025-01-02");
 assert.equal(portfolioRowsFromCsv("symbol,quantity,buy_price\nAAPL,2,120", "USD")[0].bought_on, null);
 assert.throws(() => portfolioRowsFromCsv("symbol,quantity,buy_price\nAAPL,2,", "USD"), /buy_price is required/);
+assert.deepEqual(
+  portfolioCsvRecordTypes("Symbol,DividendAmount,PayDate,Currency\nAAPL,1.25,2026-01-02,USD"),
+  ["dividends"],
+);
+assert.deepEqual(
+  portfolioCsvRecordTypes("Symbol,Quantity\nAAPL,2"),
+  ["positions"],
+);
+assert.deepEqual(
+  portfolioCsvRecordTypes("Symbol,TradeDate,TransactionType,Shares\nAAPL,2026-01-02,BUY,2"),
+  ["transactions"],
+);
+assert.throws(
+  () => portfolioCsvRecordTypes("Symbol,DividendAmount,PayDate\nAAPL,,"),
+  /supported position, transaction, or dividend records/,
+);
 
 assert.equal(recommendedTargetPrice(longHolding).price, 107);
 assert.equal(recommendedTargetPrice(longHolding, { profitReviewPercent: 0 }).price, 100);
