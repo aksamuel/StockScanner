@@ -1,4 +1,4 @@
-import { portfolioCsvRecordTypes, portfolioRowsFromCsv } from "./portfolio-analysis.js";
+import { portfolioImportPreviewFromCsv, portfolioRowsFromCsv } from "./portfolio-analysis.js";
 
 export const PIP_CPS_WEIGHTS = Object.freeze({
   tsr: 40,
@@ -60,7 +60,7 @@ export function calculatePipScore(components, weights) {
   };
 }
 
-export { portfolioRowsFromCsv };
+export { portfolioImportPreviewFromCsv, portfolioRowsFromCsv };
 
 if (typeof document !== "undefined") {
   const scoreFields = [
@@ -96,26 +96,6 @@ if (typeof document !== "undefined") {
   let apiConnected = false;
   let selectedRecommendation = null;
   let researchRequestId = 0;
-  let analysisContext = JSON.stringify([
-    portfolioSelect.value,
-    document.querySelector("#analysisSymbol").value.trim().toUpperCase(),
-  ]);
-  const holdingInputIds = [
-    "#pipEntryDate",
-    "#pipCostBasis",
-    "#pipMarketValue",
-    "#pipMarketPrice",
-    "#pipDividendsReceived",
-    "#pipPayoutRatio",
-    "#pipDividendGrowth",
-    "#pipDividendConsistency",
-    "#pipEarningsGrowth",
-    "#pipRevenueGrowth",
-    "#pipTargetPrice",
-    "#pipTargetUpside",
-    "#pipForwardRevisions",
-    "#pipPeerScores",
-  ];
 
   function renderScore(result, valueId, confidenceId, reasonsId) {
     document.querySelector(valueId).textContent = result.score === null ? "Unavailable" : `${result.score.toFixed(1)} / 100`;
@@ -239,21 +219,32 @@ if (typeof document !== "undefined") {
       || !/^[A-Z0-9][A-Z0-9.-]{0,29}$/i.test(symbol);
   }
 
-  function syncAnalysisContext() {
-    const symbol = document.querySelector("#analysisSymbol").value.trim().toUpperCase();
-    const context = JSON.stringify([portfolioSelect.value, symbol]);
-    if (context === analysisContext) return;
-    analysisContext = context;
+  function resetAnalysisInputs() {
     researchRequestId += 1;
-    for (const id of holdingInputIds) document.querySelector(id).value = "";
+    const researchButton = document.querySelector("#loadResearch");
+    if (researchButton.dataset.originalText) setBusy(researchButton, false);
     for (const input of inputElements.values()) input.value = "";
+    for (const id of [
+      "#pipEntryDate",
+      "#pipCostBasis",
+      "#pipMarketValue",
+      "#pipMarketPrice",
+      "#pipDividendsReceived",
+      "#pipPayoutRatio",
+      "#pipDividendGrowth",
+      "#pipDividendConsistency",
+      "#pipEarningsGrowth",
+      "#pipRevenueGrowth",
+      "#pipTargetPrice",
+      "#pipTargetUpside",
+      "#pipForwardRevisions",
+      "#pipPeerScores",
+    ]) {
+      document.querySelector(id).value = "";
+    }
     document.querySelector("#researchResult").hidden = true;
     document.querySelector("#analysisResult").hidden = true;
-    document.querySelector("#analysisStatus").textContent = "";
-    document.querySelector("#researchStatus").textContent = "Load research for this holding before analyzing it.";
-    setBusy(document.querySelector("#loadResearch"), false);
     updateScores();
-    updateResearchEnabled();
   }
 
   function renderRecommendations(rows, selectId = null) {
@@ -342,7 +333,7 @@ if (typeof document !== "undefined") {
       portfolioSelect.append(option);
     });
     if (portfolios.some((portfolio) => portfolio.id === previous)) portfolioSelect.value = previous;
-    syncAnalysisContext();
+    if (portfolioSelect.value !== previous) resetAnalysisInputs();
     document.querySelector("#portfolioControls").hidden = false;
     updateImportEnabled();
     updateResearchEnabled();
@@ -365,7 +356,11 @@ if (typeof document !== "undefined") {
       `Dividends: trailing 12-month income ${modules.dividends.trailing_twelve_month_income === null ? "unavailable" : modules.dividends.trailing_twelve_month_income.toFixed(2)}; yield ${modules.dividends.current_yield_pct === null ? "unavailable" : `${modules.dividends.current_yield_pct.toFixed(2)}%`}.`,
       `Growth: ${modules.growth.score === null ? "unavailable" : `${modules.growth.score.toFixed(1)} / 100`} (${(modules.growth.confidence * 100).toFixed(0)}% input confidence).`,
       `Forward-looking: ${modules.forward_looking.score === null ? "unavailable" : `${modules.forward_looking.score.toFixed(1)} / 100`} (${(modules.forward_looking.confidence * 100).toFixed(0)}% input confidence).`,
-      `Opportunity cost: ${modules.opportunity_cost.length ? `${modules.opportunity_cost.length} alternatives; top is ${modules.opportunity_cost[0].alternative_symbol}` : "no stronger alternatives supplied"}.`,
+      `Opportunity cost: ${!modules.opportunity_cost.available
+        ? modules.opportunity_cost.reasons.join(" ")
+        : modules.opportunity_cost.items.length
+          ? `${modules.opportunity_cost.items.length} alternatives; top is ${modules.opportunity_cost.items[0].alternative_symbol}`
+          : "no stronger alternatives supplied"}.`,
       `Replacement candidates: ${result.recommendation.replacement_candidates.length ? result.recommendation.replacement_candidates.map((candidate) => `${candidate.symbol} (${candidate.score.toFixed(1)})`).join(", ") : "none qualified from supplied inputs"}.`,
     ];
     const assessmentText = document.createElement("p");
@@ -412,8 +407,8 @@ if (typeof document !== "undefined") {
         }),
       });
       await refreshPortfolios();
+      if (portfolioSelect.value !== created.id) resetAnalysisInputs();
       portfolioSelect.value = created.id;
-      syncAnalysisContext();
       await loadRecommendations();
       updateImportEnabled();
       updateResearchEnabled();
@@ -446,30 +441,33 @@ if (typeof document !== "undefined") {
     updateScores();
   });
   document.querySelector("#analysisSymbol").addEventListener("input", () => {
-    syncAnalysisContext();
+    resetAnalysisInputs();
+    document.querySelector("#researchResult").hidden = true;
+    document.querySelector("#researchStatus").textContent = "Load research for this holding before analyzing it.";
+    updateResearchEnabled();
   });
   document.querySelector("#loadResearch").addEventListener("click", async (event) => {
     const button = event.currentTarget;
     const output = document.querySelector("#researchStatus");
-    let requestId = researchRequestId;
+    let requestId = null;
     try {
+      requestId = ++researchRequestId;
       const portfolioId = selectedPortfolio();
       const symbol = document.querySelector("#analysisSymbol").value.trim().toUpperCase();
       if (!/^[A-Z0-9][A-Z0-9.-]{0,29}$/.test(symbol)) throw new Error("Enter a valid holding symbol.");
-      requestId = ++researchRequestId;
       document.querySelector("#researchResult").hidden = true;
-      setBusy(button, true, "Loading research…");
       document.querySelector("#pipMarketPrice").value = "";
       document.querySelector("#pipTargetPrice").value = "";
       document.querySelector("#pipTargetUpside").value = "";
+      setBusy(button, true, "Loading research…");
       output.textContent = "Fetching available Yahoo research and the shared market-price snapshot…";
       const research = await apiRequest(
         `/api/pip/portfolios/${encodeURIComponent(portfolioId)}/research`,
         { method: "POST", body: JSON.stringify({ symbol }) },
       );
       if (requestId !== researchRequestId
-        || portfolioId !== portfolioSelect.value
-        || symbol !== document.querySelector("#analysisSymbol").value.trim().toUpperCase()) return;
+        || portfolioSelect.value !== portfolioId
+        || document.querySelector("#analysisSymbol").value.trim().toUpperCase() !== symbol) return;
       document.querySelector("#pipMarketPrice").value = research.price.price ?? "";
       document.querySelector("#pipTargetPrice").value = research.analyst.target_price ?? "";
       document.querySelector("#pipTargetUpside").value = research.analyst.target_upside_percent ?? "";
@@ -519,37 +517,31 @@ if (typeof document !== "undefined") {
     }
     try {
       const content = await file.text();
+      const records = portfolioImportPreviewFromCsv(content, document.querySelector("#missingCurrency").value);
       csvText = content;
-      const recordTypes = portfolioCsvRecordTypes(content);
-      if (recordTypes.length === 1 && recordTypes[0] === "positions") {
-        try {
-          const rows = portfolioRowsFromCsv(content, document.querySelector("#missingCurrency").value);
-          for (const holding of rows) {
-            const row = document.createElement("tr");
-            for (const value of [
-              holding.symbol,
-              Number(holding.quantity).toLocaleString(),
-              holding.buy_price === null ? "Not provided" : `${holding.currency} ${holding.buy_price}`,
-              holding.bought_on || "Not provided",
-              holding.currency,
-            ]) {
-              const cell = document.createElement("td");
-              cell.textContent = value;
-              row.append(cell);
-            }
-            tableBody.append(row);
-          }
-          preview.hidden = false;
-          output.textContent = `${rows.length} holding${rows.length === 1 ? "" : "s"} validated locally from ${file.name}. Select Import to save them to your PIP portfolio.`;
-        } catch (error) {
-          if (!/Missing required CSV column: buy_price/.test(error.message)) throw error;
-          output.textContent = `Detected ${recordTypes.join(", ")} in ${file.name}. Select Import to upload the CSV to your PIP portfolio.`;
+      for (const holding of records.positions) {
+        const row = document.createElement("tr");
+        for (const value of [
+          holding.symbol,
+          Number(holding.quantity).toLocaleString(),
+          holding.buy_price === null ? "Not provided" : `${holding.currency} ${holding.buy_price}`,
+          holding.bought_on || "Not provided",
+          holding.currency,
+        ]) {
+          const cell = document.createElement("td");
+          cell.textContent = value;
+          row.append(cell);
         }
-      } else {
-        output.textContent = `Detected ${recordTypes.join(", ")} in ${file.name}. Select Import to upload the CSV to your PIP portfolio.`;
+        tableBody.append(row);
       }
+      preview.hidden = !records.positions.length;
+      const counts = [
+        `${records.positions.length} position${records.positions.length === 1 ? "" : "s"}`,
+        `${records.transactions} transaction${records.transactions === 1 ? "" : "s"}`,
+        `${records.dividends} dividend${records.dividends === 1 ? "" : "s"}`,
+      ];
+      output.textContent = `${counts.join(", ")} validated locally from ${file.name}. Select Import to save them to your PIP portfolio.`;
     } catch (error) {
-      csvText = null;
       output.textContent = error.message || "The CSV could not be validated.";
     }
     updateImportEnabled();
@@ -579,7 +571,7 @@ if (typeof document !== "undefined") {
   });
 
   portfolioSelect.addEventListener("change", async () => {
-    syncAnalysisContext();
+    resetAnalysisInputs();
     updateImportEnabled();
     updateResearchEnabled();
     if (!apiConnected) return;

@@ -137,31 +137,47 @@ def collect_research_data(
         warnings.append("Yahoo history is insufficient to calculate the holding's return.")
     if benchmark_return is None:
         warnings.append("Yahoo history is insufficient to calculate SPY return.")
+    stock_by_date = dict(points)
+    benchmark_by_date = dict(benchmark_points)
+    common_dates = sorted(stock_by_date.keys() & benchmark_by_date.keys())
+    aligned_stock_return = _return_percent(
+        [(day, stock_by_date[day]) for day in common_dates]
+    )
+    aligned_benchmark_return = _return_percent(
+        [(day, benchmark_by_date[day]) for day in common_dates]
+    )
     relative_performance = (
-        round(stock_return - benchmark_return, 2)
-        if stock_return is not None and benchmark_return is not None
+        round(aligned_stock_return - aligned_benchmark_return, 2)
+        if aligned_stock_return is not None and aligned_benchmark_return is not None
         else None
     )
+    if relative_performance is None:
+        warnings.append("Yahoo history has no comparable common trading-date window for relative performance.")
 
     cutoff = current_day - timedelta(days=365)
     dividends = []
-    if history is not None and not getattr(history, "empty", True):
-        if "Dividends" in getattr(history, "columns", ()):
-            for timestamp, row in history.iterrows():
-                event_date = _date_value(timestamp)
-                amount = _number(row.get("Dividends"))
-                if (
-                    event_date is not None
-                    and cutoff < event_date <= current_day
-                    and amount is not None
-                    and amount > 0
-                ):
-                    dividends.append({
-                        "ex_date": event_date.isoformat(),
-                        "amount_per_share": round(amount, 6),
-                    })
+    has_dividend_column = (
+        history is not None
+        and not getattr(history, "empty", True)
+        and "Dividends" in getattr(history, "columns", ())
+    )
+    if has_dividend_column:
+        for timestamp, row in history.iterrows():
+            event_date = _date_value(timestamp)
+            amount = _number(row.get("Dividends"))
+            if (
+                event_date is not None
+                and cutoff < event_date <= current_day
+                and amount is not None
+                and amount > 0
+            ):
+                dividends.append({
+                    "ex_date": event_date.isoformat(),
+                    "amount_per_share": round(amount, 6),
+                })
     dividend_history_complete = bool(
-        points
+        has_dividend_column
+        and points
         and points[0][0] <= cutoff + timedelta(days=7)
         and points[-1][0] >= current_day - timedelta(days=7)
     )

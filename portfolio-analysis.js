@@ -148,6 +148,76 @@ export function portfolioRowsFromCsv(source, missingCurrency = "") {
   });
 }
 
+export function portfolioImportPreviewFromCsv(source, missingCurrency = "") {
+  const rows = parseCsv(source);
+  if (rows.length < 2) throw new Error("The CSV must contain a header and at least one record.");
+  if (rows.length > 1001) throw new Error("A CSV import is limited to 1000 rows.");
+  const normalizeHeader = (value) => value.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+  const headers = rows[0].map(normalizeHeader);
+  const column = (...aliases) => aliases.map((alias) => headers.indexOf(alias)).find((index) => index >= 0) ?? -1;
+  const columns = {
+    symbol: column("symbol", "ticker"),
+    quantity: column("quantity", "position"),
+    buyPrice: column("buyprice", "costbasisprice", "costbasis", "averagecost"),
+    buyDate: column("buydate", "opendatetime", "tradedate", "entrydate"),
+    currency: column("currency"),
+    transactionDate: column("tradedate", "date"),
+    transactionType: column("transactiontype", "type"),
+    dividendAmount: column("dividendamount", "amount"),
+    exDate: column("exdate"),
+    payDate: column("paydate"),
+  };
+  const get = (row, index) => index >= 0 ? String(row[index] || "").trim() : "";
+  const records = { positions: [], transactions: 0, dividends: 0 };
+  for (const [index, row] of rows.slice(1).entries()) {
+    const rowNumber = index + 2;
+    const symbolValue = get(row, columns.symbol);
+    const quantity = get(row, columns.quantity);
+    const transactionDate = get(row, columns.transactionDate);
+    const transactionType = get(row, columns.transactionType);
+    const dividendAmount = get(row, columns.dividendAmount);
+    const exDate = get(row, columns.exDate);
+    const payDate = get(row, columns.payDate);
+    const isPosition = Boolean(symbolValue && quantity);
+    const isTransaction = Boolean(symbolValue && transactionDate && transactionType);
+    const isDividend = Boolean(symbolValue && dividendAmount && (exDate || payDate));
+    const currency = (get(row, columns.currency) || String(missingCurrency || "")).toUpperCase();
+    if (!/^[A-Z]{3}$/.test(currency)) {
+      throw new Error(`Row ${rowNumber}: currency is missing or invalid.`);
+    }
+    if (!isPosition && !isTransaction && !isDividend) continue;
+
+    const symbol = symbolValue.toUpperCase().replace(/\s+/g, "-");
+    if (!/^[A-Z0-9][A-Z0-9.-]{0,29}$/.test(symbol)) {
+      throw new Error(`Row ${rowNumber}: invalid ticker symbol.`);
+    }
+    if (isPosition) {
+      const normalizedQuantity = numberValue(quantity, "quantity", rowNumber, { required: true, nonzero: true });
+      const buyDate = dateValue(get(row, columns.buyDate), rowNumber);
+      records.positions.push({
+        symbol,
+        quantity: normalizedQuantity,
+        buy_price: numberValue(get(row, columns.buyPrice), "buy_price", rowNumber),
+        bought_on: buyDate,
+        currency,
+      });
+    }
+    if (isTransaction) {
+      dateValue(transactionDate, rowNumber);
+      records.transactions += 1;
+    }
+    if (isDividend) {
+      numberValue(dividendAmount, "dividend amount", rowNumber, { required: true });
+      dateValue(payDate || exDate, rowNumber);
+      records.dividends += 1;
+    }
+  }
+  if (!records.positions.length && !records.transactions && !records.dividends) {
+    throw new Error("The CSV contains no supported position, transaction, or dividend records.");
+  }
+  return records;
+}
+
 export function portfolioCsvRecordTypes(source) {
   const rows = parseCsv(source);
   if (rows.length < 2) throw new Error("The CSV must contain a header and at least one supported record.");

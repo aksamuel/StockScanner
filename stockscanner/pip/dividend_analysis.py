@@ -68,6 +68,7 @@ class DividendAnalysisEngine:
         payout_ratio: float | None,
         dividend_growth_rate: float | None,
         consistency_score: float | None,
+        current_market_value: float | None = None,
     ) -> float | None:
         """Returns a single dividend-quality metric between 0 and 100.
 
@@ -75,7 +76,10 @@ class DividendAnalysisEngine:
         more complete portfolio decision scoring rather than an independent buy/sell verdict.
         """
 
-        yield_pct = self.current_yield(trailing_twelve_month_income, current_price)
+        yield_pct = self.current_yield(
+            trailing_twelve_month_income,
+            current_market_value if current_market_value is not None else current_price,
+        )
         yield_score = min(100.0, yield_pct * 10.0) if yield_pct is not None else None
         growth_component = self.growth_score(dividend_growth_rate)
         consistency_component = (
@@ -104,10 +108,14 @@ class DividendAnalysisEngine:
         payout_ratio: float | None,
         dividend_growth_rate: float | None,
         consistency_score: float | None,
+        current_market_value: float | None = None,
     ) -> Dict[str, Any]:
         dividend_records = list(dividend_records)
         trailing_twelve_month_income = self.trailing_twelve_month_income(dividend_records)
-        yield_pct = self.current_yield(trailing_twelve_month_income, current_price)
+        yield_denominator = (
+            current_market_value if current_market_value is not None else current_price
+        )
+        yield_pct = self.current_yield(trailing_twelve_month_income, yield_denominator)
         inputs = (yield_pct, dividend_growth_rate, consistency_score, payout_ratio)
         weights = (0.30, 0.30, 0.25, 0.15)
         available_weight = sum(
@@ -128,6 +136,7 @@ class DividendAnalysisEngine:
             payout_ratio=payout_ratio,
             dividend_growth_rate=dividend_growth_rate,
             consistency_score=consistency_score,
+            current_market_value=yield_denominator,
         )
         return {
             "trailing_twelve_month_income": trailing_twelve_month_income,

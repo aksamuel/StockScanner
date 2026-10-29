@@ -121,16 +121,16 @@ def test_csv_import_accepts_workbench_day_month_year_buy_date():
     assert records["positions"][0].entry_date == datetime(2025, 1, 2, tzinfo=timezone.utc)
 
 
-def test_csv_import_accepts_cost_basis_and_trade_date_aliases():
+def test_csv_import_accepts_cost_basis_and_trade_date_position_aliases():
     from io import StringIO
 
     source = CSVPortfolioDataSource(
-        StringIO("Symbol,Quantity,CostBasis,TradeDate,Currency\nAAPL,2,100,2025-01-02,USD\n")
+        StringIO("Symbol,Quantity,CostBasis,TradeDate,Currency\nAAPL,2,120,2025-01-02,USD")
     )
     position = IBKRPortfolioSyncService().sync(source, "portfolio-id")["positions"][0]
 
-    assert position.average_cost == 100
-    assert position.cost_basis == 200
+    assert position.average_cost == 120
+    assert position.cost_basis == 240
     assert position.entry_date == datetime(2025, 1, 2, tzinfo=timezone.utc)
 
 
@@ -170,6 +170,40 @@ def test_csv_import_keeps_duplicate_symbol_lots_distinct_in_supabase():
     assert len(rows) == 2
     assert {row["symbol"] for row in rows} == {"AAPL"}
     assert len({row["source_key"] for row in rows}) == 2
+
+
+def test_csv_position_source_keys_are_stable_when_rows_are_reordered():
+    from io import StringIO
+
+    class Response:
+        error = None
+        data = []
+
+        def execute(self):
+            return self
+
+    class Query:
+        def __init__(self, client, table):
+            self.client, self.table = client, table
+
+        def upsert(self, rows, on_conflict):
+            self.client.position_rows = rows
+            return Response()
+
+    class Client:
+        def table(self, table):
+            return Query(self, table)
+
+    def imported_keys(csv):
+        client = Client()
+        source = CSVPortfolioDataSource(StringIO(csv))
+        IBKRPortfolioSyncService(SupabasePortfolioRepository(client)).sync(source, "portfolio-id")
+        return {row["symbol"]: row["source_key"] for row in client.position_rows}
+
+    header = "Symbol,Quantity,CostBasisPrice,BuyDate,Currency\n"
+    first = imported_keys(header + "AAPL,2,100,2025-01-02,USD\nMSFT,3,200,2025-02-02,USD\n")
+    reordered = imported_keys(header + "MSFT,3,200,2025-02-02,USD\nAAPL,2,100,2025-01-02,USD\n")
+    assert reordered == first
 
 
 def test_csv_import_applies_explicit_default_currency_to_positions():

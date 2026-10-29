@@ -506,17 +506,18 @@ def create_app(
             )
         dividend = DividendAnalysisEngine().analyze(
             dividend_records=dividend_records,
-            current_price=market_value,
+            current_price=current_price,
             payout_ratio=body.dividends.payout_ratio,
             dividend_growth_rate=body.dividends.dividend_growth_rate,
             consistency_score=body.dividends.consistency_score,
+            current_market_value=abs(market_value) if market_value is not None else None,
         )
         forward_target_upside = body.forward.target_upside_percent
         if forward_target_upside is None:
-            forward_target_upside = latest_signal.get("target_upside")
-        if forward_target_upside is None:
             target_price = body.forward.target_price or latest_signal.get("target_price")
-            if target_price is not None and current_price is not None:
+            if target_price is None:
+                forward_target_upside = latest_signal.get("target_upside")
+            elif current_price is not None:
                 forward_target_upside = (float(target_price) / float(current_price) - 1) * 100
         forward_revision_score = body.forward.analyst_revisions_score
         if forward_revision_score is None:
@@ -547,7 +548,6 @@ def create_app(
 
         entry_date = body.position.entry_date or stored_entry_date
         cost_basis = body.position.cost_basis if body.position.cost_basis is not None else stored_cost_basis
-
         cps_result = calculate_cps_result(components)
         lifecycle = PositionLifecycleAnalyzer().summarize_position(
             body.symbol,
@@ -570,7 +570,7 @@ def create_app(
             )
             for peer in body.peer_scores
         ]
-        opportunity_cost = (
+        opportunity_cost_items = (
             OpportunityCostEngine().compare(
                 body.symbol,
                 market_value or 0.0,
@@ -586,8 +586,35 @@ def create_app(
             "dividends": dividend,
             "growth": asdict(growth),
             "forward_looking": asdict(forward),
-            "opportunity_cost": [asdict(item) for item in opportunity_cost],
+            "opportunity_cost": {
+                "available": cps_result.score is not None,
+                "items": [asdict(item) for item in opportunity_cost_items],
+                "reasons": (
+                    []
+                    if cps_result.score is not None
+                    else ["Current holding CPS is unavailable."]
+                ),
+            },
         }
+
+        held_result = user.client.table("positions").select(
+            "symbol,quantity"
+        ).eq("portfolio_id", str(body.portfolio_id)).execute()
+        held_rows = _response_data(held_result, "Unable to load current portfolio holdings.") or []
+        held_symbols = set()
+        for row in held_rows:
+            try:
+                quantity = float(row.get("quantity") or 0)
+            except (TypeError, ValueError):
+                continue
+            held_symbol = str(row.get("symbol") or "").strip().upper()
+            if quantity != 0 and SYMBOL_PATTERN.fullmatch(held_symbol):
+                held_symbols.add(held_symbol)
+        held_symbols.update(
+            symbol.strip().upper()
+            for symbol in body.held_symbols
+            if SYMBOL_PATTERN.fullmatch(symbol.strip().upper())
+        )
 
         repository = SupabasePortfolioRepository(user.client)
         engine = DecisionEngine(repository=repository)
@@ -597,7 +624,7 @@ def create_app(
             **components,
             peer_scores=[(peer.symbol, peer.score) for peer in body.peer_scores],
             candidate_cps=body.candidate_cps,
-            held_symbols=body.held_symbols,
+            held_symbols=held_symbols,
             additional_metadata={"modules": module_assessments},
         )
         recommendation = engine.last_recommendation

@@ -66,11 +66,13 @@ class PipelineQuery:
         self.table_name = table
         self.rows = None
         self.single_result = False
+        self.filters = {}
 
     def select(self, columns):
         return self
 
     def eq(self, key, value):
+        self.filters[key] = value
         return self
 
     def gte(self, key, value):
@@ -109,15 +111,13 @@ class PipelineQuery:
         elif self.table_name == "portfolios":
             data = {"id": self.client.portfolio_id}
         elif self.table_name == "positions":
-            data = [{
-                "quantity": "2",
-                "average_cost": "100",
-                "market_price": "120",
-                "market_value": "240",
-                "cost_basis": "200",
-                "entry_date": "2025-01-01T00:00:00+00:00",
-                "currency": "USD",
-            }]
+            data = self.client.position_rows
+            if self.filters.get("symbol"):
+                data = [row for row in data if row["symbol"] == self.filters["symbol"]]
+        elif self.table_name == "analyst_signals":
+            data = [self.client.latest_signal] if self.client.latest_signal else []
+        elif self.table_name == "dividends":
+            data = []
         elif self.table_name == "sell_recommendations":
             data = {
                 "id": self.client.recommendation_id,
@@ -143,6 +143,20 @@ class PipelineClient(FakeClient):
         super().__init__("approved")
         self.writes = []
         self.rpc_calls = []
+        self.latest_signal = None
+        self.position_rows = [
+            {
+                "symbol": "AAPL",
+                "quantity": "2",
+                "average_cost": "100",
+                "market_price": "120",
+                "market_value": "240",
+                "cost_basis": "200",
+                "entry_date": "2025-01-01T00:00:00+00:00",
+                "currency": "USD",
+            },
+            {"symbol": "MSFT", "quantity": "1", "currency": "USD"},
+        ]
         self.market_snapshot = {
             "generated_at": "2026-01-01T15:00:00Z",
             "prices": {"AAPL": 150.0},
@@ -293,8 +307,12 @@ def test_analysis_api_runs_modules_and_persists_score_and_proposed_recommendatio
             "position": {"market_price": 130, "dividends_received": 12},
             "dividends": {
                 "records": [
-                    {"symbol": "AAPL", "amount": 40, "pay_date": date.today().isoformat()},
-                ],
+                    {
+                        "symbol": "AAPL",
+                        "amount": 8,
+                        "pay_date": date.today().isoformat(),
+                    }
+                ]
             },
             "scores": {
                 "tsr": 70,
@@ -312,7 +330,12 @@ def test_analysis_api_runs_modules_and_persists_score_and_proposed_recommendatio
                 "revenue_growth_percent": 8,
             },
             "forward": {"target_price": 143, "analyst_revisions_score": 80},
-            "peer_scores": [{"symbol": "MSFT", "score": 90}],
+            "peer_scores": [
+                {"symbol": "MSFT", "score": 90},
+                {"symbol": "NVDA", "score": 88},
+                {"symbol": "AMD", "score": 85},
+            ],
+            "held_symbols": ["NVDA"],
         },
     )
 
@@ -332,15 +355,20 @@ def test_analysis_api_runs_modules_and_persists_score_and_proposed_recommendatio
     }
     assert "analyst_signals" in {table for table, _ in fake.writes}
     assert result["modules"]["growth"]["confidence"] == 1
-    assert abs(result["modules"]["dividends"]["current_yield_pct"] - (40 / 260 * 100)) < 1e-9
     assert abs(result["modules"]["lifecycle"]["total_return_percent"] - 36) < 1e-9
+    assert abs(result["modules"]["dividends"]["current_yield_pct"] - (8 / 260 * 100)) < 1e-9
     assert result["modules"]["forward_looking"]["score"] == 68
-    assert result["recommendation"]["replacement_candidates"][0]["symbol"] == "MSFT"
+    assert result["modules"]["opportunity_cost"]["available"] is True
+    assert result["recommendation"]["replacement_candidates"][0]["symbol"] == "AMD"
+    assert all(
+        candidate["symbol"] not in {"MSFT", "NVDA"}
+        for candidate in result["recommendation"]["replacement_candidates"]
+    )
     assert fake.rpc_calls[0][0] == "pip_transition_sell_recommendation"
     assert fake.rpc_calls[0][1]["p_expected_status"] is None
 
 
-def test_analysis_api_skips_opportunity_cost_without_current_cps():
+def test_analysis_keeps_opportunity_cost_unavailable_when_current_cps_is_missing():
     fake = PipelineClient()
     app = create_app(
         client_factory=lambda url, key: fake,
@@ -351,19 +379,74 @@ def test_analysis_api_skips_opportunity_cost_without_current_cps():
     )
     response = TestClient(app).post(
         "/api/pip/analysis",
-        headers={"Authorization": "******"},
+        headers={"Authorization": "Bearer " + "user-access-token"},
         json={
             "portfolio_id": fake.portfolio_id,
             "symbol": "AAPL",
-            "position": {"market_price": 130},
-            "peer_scores": [{"symbol": "MSFT", "score": 90}],
+            "peer_scores": [{"symbol": "NVDA", "score": 90}],
         },
     )
 
     assert response.status_code == 200, response.text
     result = response.json()
-    assert result["modules"]["opportunity_cost"] == []
+    assert result["modules"]["opportunity_cost"] == {
+        "available": False,
+        "items": [],
+        "reasons": ["Current holding CPS is unavailable."],
+    }
     assert result["recommendation"]["replacement_candidates"] == []
+
+
+def test_analysis_recomputes_stored_target_upside_from_current_price():
+    fake = PipelineClient()
+    fake.latest_signal = {"target_price": 150, "target_upside": 50, "revisions": None}
+    app = create_app(
+        client_factory=lambda url, key: fake,
+        environ={
+            "SUPABASE_URL": "https://project.example.test",
+            "SUPABASE_PUBLISHABLE_KEY": "public-test-key",
+        },
+    )
+    response = TestClient(app).post(
+        "/api/pip/analysis",
+        headers={"Authorization": "Bearer " + "user-access-token"},
+        json={
+            "portfolio_id": fake.portfolio_id,
+            "symbol": "AAPL",
+            "position": {"market_price": 125},
+            "forward": {"target_price": 160},
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    signals = [rows for table, rows in fake.writes if table == "analyst_signals"]
+    assert abs(signals[0][0]["target_upside"] - 28) < 1e-9
+
+
+def test_analysis_does_not_use_saved_upside_when_target_price_has_no_current_quote():
+    fake = PipelineClient()
+    fake.latest_signal = {"target_price": 150, "target_upside": 50, "revisions": None}
+    for row in fake.position_rows:
+        row["market_price"] = None
+        row["market_value"] = None
+    app = create_app(
+        client_factory=lambda url, key: fake,
+        environ={
+            "SUPABASE_URL": "https://project.example.test",
+            "SUPABASE_PUBLISHABLE_KEY": "public-test-key",
+        },
+    )
+    response = TestClient(app).post(
+        "/api/pip/analysis",
+        headers={"Authorization": "Bearer " + "user-access-token"},
+        json={
+            "portfolio_id": fake.portfolio_id,
+            "symbol": "AAPL",
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["modules"]["forward_looking"]["score"] is None
 
 
 def test_approval_api_persists_authenticated_human_transition_through_atomic_rpc():

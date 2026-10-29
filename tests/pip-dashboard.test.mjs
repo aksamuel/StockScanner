@@ -3,6 +3,7 @@ import {
   calculatePipScore,
   PIP_CPS_WEIGHTS,
   PIP_SELL_SCORE_WEIGHTS,
+  portfolioImportPreviewFromCsv,
   portfolioRowsFromCsv,
 } from "../pip-dashboard.js";
 
@@ -36,4 +37,20 @@ assert.equal(positions[0].symbol, "AAPL");
 assert.equal(positions[0].bought_on, "2025-01-02");
 assert.equal(positions[0].currency, "USD");
 
-console.log("PIP browser score previews passed");
+const dividendImport = portfolioImportPreviewFromCsv(
+  "Symbol,DividendAmount,PayDate,Currency\nAAPL,4,2026-01-01,USD",
+);
+assert.equal(dividendImport.dividends, 1);
+assert.equal(dividendImport.positions.length, 0);
+const transactionImport = portfolioImportPreviewFromCsv(
+  "Symbol,TradeDate,TransactionType,Shares,Price,Currency\nAAPL,2026-01-01,buy,2,120,USD",
+);
+assert.equal(transactionImport.transactions, 1);
+assert.equal(transactionImport.positions.length, 0);
+const costBasisPosition = portfolioImportPreviewFromCsv(
+  "Symbol,Quantity,CostBasis,TradeDate,Currency\nAAPL,2,240,2025-01-02,USD",
+).positions[0];
+assert.equal(costBasisPosition.buy_price, 240);
+assert.equal(costBasisPosition.bought_on, "2025-01-02");
+
+console.log("PIP browser score and import previews passed");

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import csv
+import hashlib
+import json
 import re
 from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
@@ -118,7 +120,7 @@ class CSVPortfolioDataSource:
         transactions: list[dict[str, Any]] = []
         dividends: list[dict[str, Any]] = []
         accounts: dict[str, dict[str, Any]] = {}
-        for row_number, row in enumerate(rows, start=1):
+        for row in rows:
             currency = str(_field(row, "currency", default=self.default_currency) or "").strip().upper()
             if not re.fullmatch(r"[A-Z]{3}", currency):
                 raise ValueError("Currency is missing or invalid in portfolio input")
@@ -155,16 +157,29 @@ class CSVPortfolioDataSource:
                 })
             quantity = _field(row, "quantity", "position")
             if symbol and quantity is not None:
+                broker_lot_id = _field(row, "lotId", "lot_id", "brokerLotId", "positionId", "position_id")
+                entry_date = _field(row, "openDateTime", "entry_date", "buy_date", "tradeDate")
+                average_cost = _field(
+                    row, "averageCost", "average_cost", "costBasisPrice", "costBasis", "buy_price"
+                )
+                identity = (
+                    ["broker-lot", str(broker_lot_id)]
+                    if broker_lot_id is not None
+                    else ["position", str(entry_date or ""), str(average_cost or "")]
+                )
+                stable_key = hashlib.sha256(
+                    json.dumps(identity, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
+                ).hexdigest()
                 positions.append({
                     "symbol": symbol,
                     "account_id": account,
-                    "source_key": f"csv-row:{row_number}",
+                    "source_key": f"csv:{stable_key}",
                     "quantity": quantity,
-                    "average_cost": _field(row, "averageCost", "average_cost", "costBasisPrice", "costBasis", "buy_price"),
+                    "average_cost": average_cost,
                     "market_price": _field(row, "marketPrice", "market_price", "current_price"),
                     "market_value": _field(row, "marketValue", "market_value"),
                     "currency": currency,
-                    "entry_date": _field(row, "openDateTime", "entry_date", "buy_date", "tradeDate"),
+                    "entry_date": entry_date,
                 })
         return PortfolioData(accounts=list(accounts.values()), positions=positions, transactions=transactions, dividends=dividends)
 

@@ -96,6 +96,64 @@ def test_research_falls_back_to_yahoo_history_when_shared_quote_is_missing():
     assert result["analyst"]["rating"] is None
 
 
+def test_relative_performance_uses_common_trading_dates():
+    stock = pd.DataFrame(
+        {"Close": [110.0, 121.0]},
+        index=pd.to_datetime(["2025-07-01", "2025-12-31"]),
+    )
+    benchmark = pd.DataFrame(
+        {"Close": [100.0, 200.0, 220.0]},
+        index=pd.to_datetime(["2025-01-01", "2025-07-01", "2025-12-31"]),
+    )
+    result = collect_research_data(
+        "ABC",
+        market_snapshot={"prices": {"ABC": 121.0}},
+        history_loader=lambda symbol: stock if symbol == "ABC" else benchmark,
+        analyst_loader=lambda *_args, **_kwargs: {},
+        today=date(2025, 12, 31),
+    )
+
+    assert result["returns"]["price_return_percent"] == 10.0
+    assert result["returns"]["spy_return_percent"] == 120.0
+    assert result["returns"]["relative_performance_percentage_points"] == 0.0
+
+
+def test_dividend_history_requires_dividend_data_column():
+    history = pd.DataFrame(
+        {"Close": [10.0, 11.0]},
+        index=pd.to_datetime(["2025-01-01", "2025-12-31"]),
+    )
+    result = collect_research_data(
+        "ABC",
+        history_loader=lambda _symbol: history,
+        analyst_loader=lambda *_args, **_kwargs: {},
+        today=date(2025, 12, 31),
+    )
+
+    assert result["dividends"]["history_complete"] is False
+    assert result["dividends"]["trailing_365_days_per_share"] is None
+
+
+def test_relative_performance_is_unavailable_without_shared_trading_dates():
+    stock = pd.DataFrame(
+        {"Close": [10.0, 11.0]},
+        index=pd.to_datetime(["2025-01-01", "2025-12-30"]),
+    )
+    benchmark = pd.DataFrame(
+        {"Close": [100.0, 110.0]},
+        index=pd.to_datetime(["2025-01-02", "2025-12-31"]),
+    )
+    result = collect_research_data(
+        "ABC",
+        market_snapshot={"prices": {"ABC": 11.0}},
+        history_loader=lambda symbol: stock if symbol == "ABC" else benchmark,
+        analyst_loader=lambda *_args, **_kwargs: {},
+        today=date(2025, 12, 31),
+    )
+
+    assert result["returns"]["relative_performance_percentage_points"] is None
+
+
 def test_research_reports_provider_failure_instead_of_fabricating_scores():
     def unavailable_history(_symbol):
         raise RuntimeError("provider unavailable")
