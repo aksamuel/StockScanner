@@ -206,6 +206,37 @@ def test_csv_position_source_keys_are_stable_when_rows_are_reordered():
     assert reordered == first
 
 
+def test_csv_records_from_accounts_with_the_same_masked_id_remain_distinct():
+    from io import StringIO
+
+    source = CSVPortfolioDataSource(
+        StringIO(
+            "Account,Symbol,Quantity,AverageCost,TransactionType,TradeDate,Price,"
+            "DividendAmount,PayDate,Currency\n"
+            "U12340000,AAPL,1,100,BUY,2025-01-02,100,2,2025-01-15,USD\n"
+            "U99990000,AAPL,1,100,BUY,2025-01-02,100,2,2025-01-15,USD\n"
+        )
+    )
+    records = IBKRPortfolioSyncService().sync(source, "portfolio-id")
+
+    assert len(records["accounts"]) == 2
+    assert len(records["positions"]) == 2
+    assert len({position.notes["source_key"] for position in records["positions"]}) == 2
+    assert len(records["transactions"]) == 2
+    assert len({
+        transaction["metadata"]["source_key"]
+        for transaction in records["transactions"]
+    }) == 2
+    assert len(records["dividends"]) == 2
+    assert len({
+        dividend["metadata"]["source_key"]
+        for dividend in records["dividends"]
+    }) == 2
+    assert {position.account_id for position in records["positions"]} == {"***0000"}
+    assert "U12340000" not in repr(records)
+    assert "U99990000" not in repr(records)
+
+
 def test_csv_import_applies_explicit_default_currency_to_positions():
     from io import StringIO
 
@@ -484,3 +515,17 @@ def test_pip_migration_has_rls_and_append_only_audit_logs():
     assert "pip_transition_sell_recommendation" in approval_sql
     assert "revoke insert on public.audit_logs from anon, authenticated" in approval_sql
     assert "approved_by is null" in approval_sql
+
+
+def test_flex_rate_limit_is_shared_by_ibkr_token_across_users():
+    migration = Path(__file__).parents[1] / "supabase/migrations/20261027000000_pip_ibkr_flex_vault.sql"
+    sql = migration.read_text(encoding="utf-8").lower()
+    table_match = re.search(
+        r"create table if not exists public\.pip_ibkr_flex_rate_limits\s*\((.*?)\n\);",
+        sql,
+        re.DOTALL,
+    )
+
+    assert table_match
+    assert "primary key (token_fingerprint)" in table_match.group(1)
+    assert "user_id" not in table_match.group(1)

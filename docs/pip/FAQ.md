@@ -26,18 +26,24 @@ raw returns as 0–100 component scores or per-share dividend events as portfoli
 cash income. The shared snapshot can report Yahoo, Alpaca, or Twelve Data as the
 latest-quote source; Alpaca may also supply a previous close. PIP reads this
 shared snapshot instead of calling Alpaca or Twelve Data directly. Those current
-adapters provide price data, not analyst consensus, earnings/revenue growth, or
-historical estimate revisions, so unavailable factors remain missing and reduce
-score confidence. The research request sends only the ticker symbol to Yahoo;
-portfolio details and Supabase tokens stay out of provider requests.
+adapters provide price data only. Yahoo Finance can also provide earnings and
+revenue growth percentages and raw EPS revision counts for some symbols; PIP
+displays the revision counts without converting them into a score. Missing
+provider fields remain unavailable and reduce score confidence. The research
+request sends only the ticker symbol to Yahoo; portfolio details and Supabase
+tokens stay out of provider requests.
 
 ## Does sync connect to my IBKR account?
 
-No. The current sync is read-only and accepts local CSV/Flex export files or
-recorded fixtures. There is no live IBKR connection and no network call in the
-sync tests. Account identifiers are masked before they enter normalized PIP
-records. Never place a broker token or unmasked account identifier in a fixture,
-log, audit event, or source-controlled file.
+The API supports optional read-only IBKR Flex Web Service sync. It is available
+only after applying the PIP migrations, deploying the `pip-ibkr-flex` Supabase
+Edge Function, and configuring the same server-only internal key in the API and
+the function. Each approved user can save multiple named Flex connections for
+their own portfolios; credentials are kept in Supabase Vault and are never
+returned to the browser. Configure the Flex Query to return XML. Local CSV
+imports remain available. Account identifiers are masked before persistence;
+never place broker tokens or unmasked account identifiers in fixtures, logs,
+audit events, or source-controlled files.
 
 ## Will PIP place a trade or transmit an order?
 
@@ -82,8 +88,8 @@ tests at a live brokerage or a production database.
 
 ## What must happen before production use?
 
-Review the open maintainer questions, decide the score and concentration policy,
-apply and verify the PIP migration in the intended Supabase project, and add a
-reviewed server-side integration for any real-data persistence. Live IBKR
-retrieval and order execution are out of scope. GitHub Pages deployment alone
-does not apply database migrations or enable PIP.
+Apply and verify the PIP migrations, configure approved-user access, deploy the
+API and `pip-ibkr-flex` function, set their matching internal key, and verify a
+read-only sync using a test Flex Query. GitHub Pages deployment alone does not
+apply database migrations or configure server secrets. Order execution remains
+out of scope; approval records a human decision only.

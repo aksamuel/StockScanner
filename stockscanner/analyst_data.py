@@ -144,3 +144,104 @@ def get_analyst_data(
         current_price,
         include_target_price=include_target_price,
     )
+
+
+def _fraction_to_percent(value):
+    if isinstance(value, bool):
+        return None
+    try:
+        numeric_value = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(numeric_value):
+        return None
+    return round(numeric_value * 100, 2)
+
+
+def _revision_periods(frame):
+    if frame is None or getattr(frame, "empty", True):
+        return {}
+    columns = {
+        str(column).casefold().replace("_", ""): column
+        for column in getattr(frame, "columns", ())
+    }
+    count_columns = {
+        "up_last_7_days": "uplast7days",
+        "up_last_30_days": "uplast30days",
+        "down_last_7_days": "downlast7days",
+        "down_last_30_days": "downlast30days",
+    }
+    periods = {}
+    for label, row in frame.iterrows():
+        period = str(label).strip()
+        if period not in {"0q", "+1q", "0y", "+1y"}:
+            continue
+        counts = {}
+        for name, normalized_column in count_columns.items():
+            column = columns.get(normalized_column)
+            value = row.get(column) if column is not None else None
+            if isinstance(value, bool):
+                counts[name] = None
+                continue
+            try:
+                numeric_value = float(value)
+            except (TypeError, ValueError):
+                counts[name] = None
+                continue
+            counts[name] = (
+                int(numeric_value)
+                if math.isfinite(numeric_value)
+                and numeric_value >= 0
+                and numeric_value.is_integer()
+                else None
+            )
+        if any(value is not None for value in counts.values()):
+            periods[period] = counts
+    return periods
+
+
+def get_pip_research_metrics(symbol, cache_directory=None, cache_hours=24):
+    """Return Yahoo growth percentages and raw EPS revision counts for PIP."""
+    if cache_directory is None:
+        cache_directory = os.path.abspath(
+            os.path.join(os.path.dirname(__file__), "..", "data", "analyst")
+        )
+    cache_path = os.path.splitext(_cache_path(symbol, cache_directory))[0] + ".pip.json"
+    cached = _read_cache(cache_path, cache_hours)
+    if isinstance(cached, dict) and cached.get("schema_version") == 1:
+        return {key: value for key, value in cached.items() if key != "schema_version"}
+
+    ticker = yf.Ticker(str(symbol).strip().upper())
+    warnings = []
+    try:
+        info = ticker.get_info() or {}
+    except Exception:
+        info = {}
+        warnings.append("Yahoo company growth fields are unavailable.")
+    earnings_growth = _fraction_to_percent(info.get("earningsGrowth"))
+    revenue_growth = _fraction_to_percent(info.get("revenueGrowth"))
+    if earnings_growth is None:
+        warnings.append("Yahoo did not provide earnings growth for this symbol.")
+    if revenue_growth is None:
+        warnings.append("Yahoo did not provide revenue growth for this symbol.")
+
+    try:
+        revision_periods = _revision_periods(ticker.get_eps_revisions())
+    except Exception:
+        revision_periods = {}
+        warnings.append("Yahoo EPS revision counts are unavailable.")
+    if not revision_periods and not any("EPS revision" in warning for warning in warnings):
+        warnings.append("Yahoo did not provide EPS revision counts for this symbol.")
+
+    result = {
+        "source": "Yahoo Finance",
+        "earnings_growth_percent": earnings_growth,
+        "revenue_growth_percent": revenue_growth,
+        "revision_periods": revision_periods,
+        "warnings": warnings,
+    }
+    try:
+        _write_cache(cache_path, {"schema_version": 1, **result})
+    except OSError:
+        pass
+    return result

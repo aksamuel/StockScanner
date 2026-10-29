@@ -5,11 +5,14 @@ from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 
+import stockscanner.pip.api as pip_api
 from stockscanner.pip.api import create_app
 from stockscanner.pip.research import ResearchDataUnavailable
 
 
 USER_ID = "33333333-3333-4333-8333-333333333333"
+PORTFOLIO_ID = "22222222-2222-4222-8222-222222222222"
+CONNECTION_ID = "55555555-5555-4555-8555-555555555555"
 
 
 class FakeQuery:
@@ -67,8 +70,11 @@ class PipelineQuery:
         self.rows = None
         self.single_result = False
         self.filters = {}
+        self.operation = "select"
+        self.selected_columns = None
 
     def select(self, columns):
+        self.selected_columns = columns
         return self
 
     def eq(self, key, value):
@@ -96,18 +102,39 @@ class PipelineQuery:
         return self
 
     def insert(self, rows):
+        self.operation = "insert"
         self.rows = rows if isinstance(rows, list) else [rows]
         self.client.writes.append((self.table_name, self.rows))
         return self
 
     def upsert(self, rows, on_conflict):
+        self.operation = "upsert"
         self.rows = rows if isinstance(rows, list) else [rows]
         self.client.writes.append((self.table_name, self.rows))
         return self
 
+    def update(self, row):
+        self.operation = "update"
+        self.rows = row
+        self.client.updates.append((self.table_name, row, dict(self.filters)))
+        return self
+
     def execute(self):
-        if self.rows is not None:
-            data = self.rows
+        if self.operation == "update":
+            data = [{"id": self.client.connection_id}]
+        elif self.operation in {"insert", "upsert"}:
+            if self.table_name == "ibkr_accounts":
+                data = [
+                    {"id": f"account-{index}", "masked_account_id": row.get("masked_account_id")}
+                    for index, row in enumerate(self.rows)
+                ]
+            else:
+                data = self.rows
+        elif self.table_name == "pip_ibkr_connections":
+            data = [
+                row for row in self.client.flex_connections
+                if all(row.get(key) == value for key, value in self.filters.items())
+            ]
         elif self.table_name == "portfolios":
             data = {"id": self.client.portfolio_id}
         elif self.table_name == "positions":
@@ -130,18 +157,22 @@ class PipelineQuery:
             data = {"status": "approved"}
         else:
             data = []
-        if self.single_result and isinstance(data, list):
+        if self.table_name == "pip_ibkr_connections" and self.single_result:
+            data = data[0] if data else None
+        elif self.single_result and isinstance(data, list):
             data = data[0] if data else None
         return SimpleNamespace(data=data, error=None)
 
 
 class PipelineClient(FakeClient):
-    portfolio_id = "22222222-2222-4222-8222-222222222222"
+    portfolio_id = PORTFOLIO_ID
     recommendation_id = "44444444-4444-4444-8444-444444444444"
+    connection_id = CONNECTION_ID
 
     def __init__(self):
         super().__init__("approved")
         self.writes = []
+        self.updates = []
         self.rpc_calls = []
         self.latest_signal = None
         self.position_rows = [
@@ -157,6 +188,14 @@ class PipelineClient(FakeClient):
             },
             {"symbol": "MSFT", "quantity": "1", "currency": "USD"},
         ]
+        self.flex_connections = [{
+            "id": self.connection_id,
+            "portfolio_id": self.portfolio_id,
+            "user_id": USER_ID,
+            "connection_name": "Main IBKR",
+            "last_synced_at": None,
+            "created_at": "2026-01-01T00:00:00Z",
+        }]
         self.market_snapshot = {
             "generated_at": "2026-01-01T15:00:00Z",
             "prices": {"AAPL": 150.0},
@@ -234,6 +273,48 @@ def test_pip_api_cors_is_restricted_to_configured_browser_origin():
 
     assert response.status_code == 200
     assert response.headers["access-control-allow-origin"] == "https://app.example.test"
+
+
+def test_csv_sync_keeps_same_masked_accounts_distinct_and_hides_internal_keys():
+    fake = PipelineClient()
+    app = create_app(
+        client_factory=lambda url, key: fake,
+        environ={
+            "SUPABASE_URL": "https://project.example.test",
+            "SUPABASE_PUBLISHABLE_KEY": "public-test-key",
+        },
+    )
+    csv_content = (
+        "Account,Symbol,Quantity,AverageCost,TransactionType,TradeDate,Price,"
+        "DividendAmount,PayDate,Currency\n"
+        "U12340000,AAPL,1,100,BUY,2025-01-02,100,2,2025-01-15,USD\n"
+        "U99990000,AAPL,1,100,BUY,2025-01-02,100,2,2025-01-15,USD\n"
+    )
+
+    response = TestClient(app).post(
+        f"/api/pip/portfolios/{fake.portfolio_id}/sync/csv",
+        headers={"Authorization": "Bearer user-access-token", "Content-Type": "text/csv"},
+        content=csv_content,
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["counts"] == {
+        "accounts": 2,
+        "positions": 2,
+        "transactions": 2,
+        "dividends": 2,
+    }
+    assert "U12340000" not in response.text
+    assert "U99990000" not in response.text
+    assert "account_fingerprint" not in response.text
+    assert "source_key" not in response.text
+    transaction_rows = next(rows for table, rows in fake.writes if table == "transactions")
+    dividend_rows = next(rows for table, rows in fake.writes if table == "dividends")
+    assert len({row["source_key"] for row in transaction_rows}) == 2
+    assert len({row["source_key"] for row in dividend_rows}) == 2
+    assert "U12340000" not in repr(transaction_rows + dividend_rows)
+    assert "U99990000" not in repr(transaction_rows + dividend_rows)
 
 
 def test_research_api_requires_an_imported_holding_and_uses_shared_price_snapshot():
@@ -478,3 +559,347 @@ def test_approval_api_persists_authenticated_human_transition_through_atomic_rpc
             },
         )
     ]
+
+
+def test_flex_connection_api_keeps_credentials_out_of_response_and_uses_verified_user():
+    fake = PipelineClient()
+    calls = []
+
+    def invoke(user, payload):
+        calls.append((user.user_id, user.access_token, payload))
+        return {
+            "connection": {
+                "id": fake.connection_id,
+                "portfolio_id": fake.portfolio_id,
+                "connection_name": payload["connection_name"],
+                "last_synced_at": None,
+                "created_at": "2026-01-01T00:00:00Z",
+            }
+        }
+
+    app = create_app(
+        client_factory=lambda url, key: fake,
+        environ={
+            "SUPABASE_URL": "https://project.example.test",
+            "SUPABASE_PUBLISHABLE_KEY": "public-test-key",
+        },
+        flex_edge_invoker=invoke,
+    )
+    token = "flex-token-value-1234567890"
+    response = TestClient(app).post(
+        f"/api/pip/portfolios/{fake.portfolio_id}/ibkr-flex-connections",
+        headers={"Authorization": "Bearer test-access-token"},
+        json={
+            "connection_name": "  Main IBKR  ",
+            "token": token,
+            "query_id": "123456789",
+        },
+    )
+
+    assert response.status_code == 201, response.text
+    assert response.json()["connection_name"] == "Main IBKR"
+    assert token not in response.text
+    assert "123456789" not in response.text
+    assert calls == [
+        (
+            USER_ID,
+            "test-access-token",
+            {
+                "action": "connect",
+                "portfolio_id": fake.portfolio_id,
+                "connection_name": "Main IBKR",
+                "token": token,
+                "query_id": "123456789",
+            },
+        )
+    ]
+
+
+def test_flex_connection_api_uses_caller_jwt_and_waits_for_bounded_statement_generation(monkeypatch):
+    fake = PipelineClient()
+    calls = []
+
+    def post(url, *, headers, json, timeout):
+        calls.append((url, headers, json, timeout))
+        return SimpleNamespace(
+            is_success=True,
+            json=lambda: {
+                "connection": {
+                    "id": fake.connection_id,
+                    "portfolio_id": fake.portfolio_id,
+                    "connection_name": "Main IBKR",
+                }
+            },
+        )
+
+    monkeypatch.setattr(pip_api.httpx, "post", post)
+    app = create_app(
+        client_factory=lambda url, key: fake,
+        environ={
+            "SUPABASE_URL": "https://project.example.test",
+            "SUPABASE_PUBLISHABLE_KEY": "public-test-key",
+            "PIP_FLEX_INTERNAL_KEY": "test-internal-key-with-at-least-thirty-two-characters",
+        },
+    )
+    response = TestClient(app).post(
+        f"/api/pip/portfolios/{fake.portfolio_id}/ibkr-flex-connections",
+        headers={"Authorization": "Bearer user-access-token"},
+        json={
+            "connection_name": "Main IBKR",
+            "token": "flex-token-value",
+            "query_id": "123456789",
+        },
+    )
+
+    assert response.status_code == 201, response.text
+    assert calls[0][0] == "https://project.example.test/functions/v1/pip-ibkr-flex"
+    assert calls[0][1]["Authorization"] == "Bearer user-access-token"
+    assert calls[0][1]["x-pip-internal-key"] == (
+        "test-internal-key-with-at-least-thirty-two-characters"
+    )
+    assert calls[0][2]["token"] == "flex-token-value"
+    assert calls[0][3].connect == 5.0
+    assert calls[0][3].read == 110.0
+    assert "flex-token-value" not in response.text
+
+
+def test_flex_connection_list_is_scoped_to_the_authenticated_owner():
+    fake = PipelineClient()
+    fake.flex_connections.append({
+        **fake.flex_connections[0],
+        "id": "66666666-6666-4666-8666-666666666666",
+        "user_id": "77777777-7777-4777-8777-777777777777",
+        "connection_name": "Another user's connection",
+    })
+    app = create_app(
+        client_factory=lambda url, key: fake,
+        environ={
+            "SUPABASE_URL": "https://project.example.test",
+            "SUPABASE_PUBLISHABLE_KEY": "public-test-key",
+        },
+    )
+    response = TestClient(app).get(
+        f"/api/pip/portfolios/{fake.portfolio_id}/ibkr-flex-connections",
+        headers={"Authorization": "Bearer test-access-token"},
+    )
+
+    assert response.status_code == 200
+    assert [row["connection_name"] for row in response.json()] == ["Main IBKR"]
+    assert "Another user's connection" not in response.text
+
+
+def test_flex_connection_delete_is_owner_scoped_and_returns_no_secret():
+    fake = PipelineClient()
+    calls = []
+    app = create_app(
+        client_factory=lambda url, key: fake,
+        environ={
+            "SUPABASE_URL": "https://project.example.test",
+            "SUPABASE_PUBLISHABLE_KEY": "public-test-key",
+        },
+        flex_edge_invoker=lambda user, payload: calls.append(
+            (user.user_id, payload)
+        ) or {"removed": True},
+    )
+    response = TestClient(app).delete(
+        f"/api/pip/portfolios/{fake.portfolio_id}/ibkr-flex-connections/{fake.connection_id}",
+        headers={"Authorization": "Bearer test-access-token"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"removed": True}
+    assert calls == [
+        (
+            USER_ID,
+            {
+                "action": "disconnect",
+                "portfolio_id": fake.portfolio_id,
+                "connection_id": fake.connection_id,
+            },
+        )
+    ]
+
+
+def test_flex_connection_api_uses_internal_key_only_for_server_to_server_call(monkeypatch):
+    fake = PipelineClient()
+    calls = []
+    internal_key = "test-only-internal-key-with-at-least-thirty-two-characters"
+
+    def post(url, *, headers, json, timeout):
+        calls.append((url, headers, json, timeout))
+        return SimpleNamespace(
+            status_code=201,
+            is_success=True,
+            json=lambda: {
+                "connection": {
+                    "id": fake.connection_id,
+                    "portfolio_id": fake.portfolio_id,
+                    "connection_name": "Main IBKR",
+                }
+            },
+        )
+
+    monkeypatch.setattr(pip_api.httpx, "post", post)
+    app = create_app(
+        client_factory=lambda url, key: fake,
+        environ={
+            "SUPABASE_URL": "https://project.example.test",
+            "SUPABASE_PUBLISHABLE_KEY": "public-test-key",
+            "PIP_FLEX_INTERNAL_KEY": internal_key,
+        },
+    )
+    token = "server-forwarded-flex-token"
+    response = TestClient(app).post(
+        f"/api/pip/portfolios/{fake.portfolio_id}/ibkr-flex-connections",
+        headers={"Authorization": "Bearer test-access-token"},
+        json={
+            "connection_name": "Main IBKR",
+            "token": token,
+            "query_id": "123456789",
+        },
+    )
+
+    assert response.status_code == 201, response.text
+    assert token not in response.text
+    url, headers, payload, timeout = calls[0]
+    assert url == "https://project.example.test/functions/v1/pip-ibkr-flex"
+    assert headers["Authorization"] == "Bearer test-access-token"
+    assert headers["apikey"] == "public-test-key"
+    assert headers["x-pip-internal-key"] == internal_key
+    assert payload["token"] == token
+    assert payload["query_id"] == "123456789"
+    assert timeout.connect == 5.0
+
+
+def test_flex_connection_api_fails_closed_when_internal_key_is_missing(monkeypatch):
+    fake = PipelineClient()
+    calls = []
+    monkeypatch.setattr(pip_api.httpx, "post", lambda *args, **kwargs: calls.append(args))
+    app = create_app(
+        client_factory=lambda url, key: fake,
+        environ={
+            "SUPABASE_URL": "https://project.example.test",
+            "SUPABASE_PUBLISHABLE_KEY": "public-test-key",
+        },
+    )
+    response = TestClient(app).post(
+        f"/api/pip/portfolios/{fake.portfolio_id}/ibkr-flex-connections",
+        headers={"Authorization": "Bearer test-access-token"},
+        json={
+            "connection_name": "Main IBKR",
+            "token": "flex-token-value",
+            "query_id": "123456789",
+        },
+    )
+
+    assert response.status_code == 503
+    assert "not configured" in response.json()["detail"].lower()
+    assert calls == []
+
+
+def test_flex_connection_api_rejects_invalid_credentials_without_echoing_them():
+    fake = PipelineClient()
+    calls = []
+    app = create_app(
+        client_factory=lambda url, key: fake,
+        environ={
+            "SUPABASE_URL": "https://project.example.test",
+            "SUPABASE_PUBLISHABLE_KEY": "public-test-key",
+        },
+        flex_edge_invoker=lambda user, payload: calls.append(payload) or {},
+    )
+    invalid_token = "contains spaces and should not echo"
+    response = TestClient(app).post(
+        f"/api/pip/portfolios/{fake.portfolio_id}/ibkr-flex-connections",
+        headers={"Authorization": "Bearer test-access-token"},
+        json={
+            "connection_name": "Main IBKR",
+            "token": invalid_token,
+            "query_id": "not-numeric",
+        },
+    )
+
+    assert response.status_code == 422
+    assert invalid_token not in response.text
+    assert calls == []
+
+
+def test_flex_sync_persists_masked_records_and_returns_counts_not_raw_statement():
+    fake = PipelineClient()
+    statement_xml = """<FlexQueryResponse>
+      <FlexStatements><FlexStatement accountId="U1234567" currency="USD">
+        <OpenPositions><OpenPosition assetCategory="STK" accountId="U1234567"
+          currency="USD" symbol="AAPL" conid="265598" position="5"
+          costBasisPrice="100" markPrice="120" positionValue="600"
+          openDateTime="20250102" /></OpenPositions>
+      </FlexStatement></FlexStatements>
+    </FlexQueryResponse>"""
+    calls = []
+
+    def invoke(user, payload):
+        calls.append((user.user_id, user.access_token, payload))
+        return {"statement_xml": statement_xml}
+
+    app = create_app(
+        client_factory=lambda url, key: fake,
+        environ={
+            "SUPABASE_URL": "https://project.example.test",
+            "SUPABASE_PUBLISHABLE_KEY": "public-test-key",
+        },
+        flex_edge_invoker=invoke,
+    )
+    response = TestClient(app).post(
+        f"/api/pip/portfolios/{fake.portfolio_id}/ibkr-flex-connections/{fake.connection_id}/sync",
+        headers={"Authorization": "Bearer test-access-token"},
+    )
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    assert payload["counts"] == {
+        "accounts": 1,
+        "positions": 1,
+        "transactions": 0,
+        "dividends": 0,
+    }
+    assert payload["accounts"][0]["masked_account_id"] == "***4567"
+    assert "account_fingerprint" not in payload["accounts"][0]
+    assert payload["positions"][0]["account_id"] == "***4567"
+    assert "account_fingerprint" not in payload["positions"][0]["notes"]
+    assert "source_key" not in payload["positions"][0]["notes"]
+    assert "U1234567" not in response.text
+    assert "<FlexQueryResponse>" not in response.text
+    assert any(table == "ibkr_accounts" for table, rows in fake.writes)
+    assert any(table == "positions" for table, rows in fake.writes)
+    assert fake.updates[0][0] == "pip_ibkr_connections"
+    assert calls == [
+        (
+            USER_ID,
+            "test-access-token",
+            {
+                "action": "sync",
+                "portfolio_id": fake.portfolio_id,
+                "connection_id": fake.connection_id,
+            },
+        )
+    ]
+
+
+def test_flex_connection_api_returns_not_found_for_another_users_connection():
+    fake = PipelineClient()
+    calls = []
+    app = create_app(
+        client_factory=lambda url, key: fake,
+        environ={
+            "SUPABASE_URL": "https://project.example.test",
+            "SUPABASE_PUBLISHABLE_KEY": "public-test-key",
+        },
+        flex_edge_invoker=lambda user, payload: calls.append(payload) or {"removed": True},
+    )
+    another_connection_id = "66666666-6666-4666-8666-666666666666"
+    response = TestClient(app).delete(
+        f"/api/pip/portfolios/{fake.portfolio_id}/ibkr-flex-connections/{another_connection_id}",
+        headers={"Authorization": "Bearer test-access-token"},
+    )
+
+    assert response.status_code == 404
+    assert calls == []

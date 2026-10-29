@@ -4,7 +4,7 @@ from datetime import date, datetime, timedelta, timezone
 import math
 from typing import Any, Callable
 
-from ..analyst_data import get_analyst_data
+from ..analyst_data import get_analyst_data, get_pip_research_metrics
 from ..market_data import download_data
 
 
@@ -94,6 +94,7 @@ def collect_research_data(
     market_snapshot: dict[str, Any] | None = None,
     history_loader: Callable[..., Any] = download_data,
     analyst_loader: Callable[..., dict[str, Any]] = get_analyst_data,
+    fundamental_loader: Callable[..., dict[str, Any]] = get_pip_research_metrics,
     today: date | None = None,
 ) -> dict[str, Any]:
     """Collect Yahoo research facts and the shared Yahoo/Alpaca/Twelve Data quote.
@@ -205,17 +206,47 @@ def collect_research_data(
     if not dividend_history_complete:
         warnings.append("Yahoo history does not cover the full trailing 365 days of dividends.")
     warnings.extend([
-        "Earnings and revenue growth are not exposed by the current provider adapters.",
-        "Analyst estimate revision history is not exposed by the current provider adapters.",
         "Raw return percentages are shown as evidence; no 0–100 score conversion is assumed.",
     ])
+    fundamentals: dict[str, Any] = {}
+    try:
+        fundamentals = fundamental_loader(symbol)
+    except Exception:
+        warnings.append("Yahoo growth and EPS revision data are unavailable.")
+    growth = {
+        "earnings_growth_percent": _number(fundamentals.get("earnings_growth_percent")),
+        "revenue_growth_percent": _number(fundamentals.get("revenue_growth_percent")),
+        "source": fundamentals.get("source") or "Yahoo Finance",
+    }
+    raw_revision_periods = fundamentals.get("revision_periods")
+    revision_periods = (
+        {
+            str(period): values
+            for period, values in raw_revision_periods.items()
+            if isinstance(values, dict)
+        }
+        if isinstance(raw_revision_periods, dict)
+        else {}
+    )
+    provider_warnings = fundamentals.get("warnings")
+    if isinstance(provider_warnings, list):
+        warnings.extend(value for value in provider_warnings if isinstance(value, str))
+    if not revision_periods and not any("EPS revision" in warning for warning in warnings):
+        warnings.append("Yahoo EPS revision counts are unavailable for this symbol.")
+
     has_analyst_data = any(value is not None for value in analyst.values())
+    has_fundamental_data = (
+        growth["earnings_growth_percent"] is not None
+        or growth["revenue_growth_percent"] is not None
+        or bool(revision_periods)
+    )
     if (
         quote["price"] is None
         and stock_return is None
         and benchmark_return is None
         and not dividends
         and not has_analyst_data
+        and not has_fundamental_data
     ):
         raise ResearchDataUnavailable(
             "No market research data was returned by Yahoo or the shared price snapshot."
@@ -251,10 +282,22 @@ def collect_research_data(
             "note": "Yahoo dividend amounts are per share, not portfolio cash income.",
         },
         "analyst": analyst,
+        "growth": growth,
+        "analyst_revisions": {
+            "source": fundamentals.get("source") or "Yahoo Finance",
+            "periods": revision_periods,
+            "note": "Raw EPS estimate revision counts are shown without converting them to a 0–100 score.",
+        },
         "unavailable_metrics": {
-            "earnings_growth_percent": "Not exposed by the current provider adapters.",
-            "revenue_growth_percent": "Not exposed by the current provider adapters.",
-            "analyst_revisions_score": "Historical analyst estimate revisions are not exposed by the current provider adapters.",
+            "earnings_growth_percent": (
+                None if growth["earnings_growth_percent"] is not None
+                else "Yahoo Finance did not expose earnings growth for this symbol."
+            ),
+            "revenue_growth_percent": (
+                None if growth["revenue_growth_percent"] is not None
+                else "Yahoo Finance did not expose revenue growth for this symbol."
+            ),
+            "analyst_revisions_score": "Raw analyst revisions are shown, but no approved 0–100 score mapping exists.",
             "normalized_return_scores": "No approved 0–100 score mapping exists for raw return percentages.",
         },
         "warnings": warnings,

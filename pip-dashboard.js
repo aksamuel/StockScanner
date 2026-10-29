@@ -18,6 +18,8 @@ export const PIP_SELL_SCORE_WEIGHTS = Object.freeze({
   opportunity_cost: 15,
 });
 
+export const PIP_DEFAULT_API_URL = "https://stockscanner-pip-api.onrender.com";
+
 export const PIP_APPROVAL_TRANSITIONS = Object.freeze({
   draft: ["under_review", "cancelled", "expired"],
   proposed: ["under_review", "cancelled", "expired"],
@@ -29,6 +31,27 @@ export const PIP_APPROVAL_TRANSITIONS = Object.freeze({
   cancelled: [],
   escalated: ["under_review", "approved", "rejected", "cancelled", "expired"],
 });
+
+export function transitionPipApproval(currentStatus, nextStatus, actor, reason, now = new Date()) {
+  if (!PIP_APPROVAL_TRANSITIONS[currentStatus]?.includes(nextStatus)) {
+    throw new Error(`Cannot transition PIP approval from ${currentStatus} to ${nextStatus}.`);
+  }
+  const normalizedActor = String(actor || "").trim();
+  const normalizedReason = String(reason || "").trim();
+  if (!normalizedActor || !normalizedReason) {
+    throw new Error("PIP approval transition requires an actor and a reason.");
+  }
+  return {
+    status: nextStatus,
+    event: {
+      from_status: currentStatus,
+      to_status: nextStatus,
+      actor: normalizedActor,
+      reason: normalizedReason,
+      created_at: new Date(now).toISOString(),
+    },
+  };
+}
 
 export function calculatePipScore(components, weights) {
   const entries = Object.entries(weights);
@@ -91,6 +114,8 @@ if (typeof document !== "undefined") {
   const portfolioSelect = document.querySelector("#portfolioSelect");
   const recommendationSelect = document.querySelector("#recommendationSelect");
   const apiStatus = document.querySelector("#pipApiStatus");
+  const flexStatus = document.querySelector("#flexStatus");
+  const flexConnectionList = document.querySelector("#flexConnectionList");
   let csvText = null;
   let portfolios = [];
   let apiConnected = false;
@@ -247,6 +272,122 @@ if (typeof document !== "undefined") {
     updateScores();
   }
 
+  function updateFlexControls() {
+    const ready = apiConnected && Boolean(portfolioSelect.value);
+    document.querySelector("#saveFlexConnection").disabled = !ready;
+    flexConnectionList.querySelectorAll("button").forEach((button) => {
+      button.disabled = !ready || Boolean(button.dataset.originalText);
+    });
+  }
+
+  function renderFlexConnections(rows) {
+    flexConnectionList.replaceChildren();
+    if (!rows.length) {
+      const empty = document.createElement("p");
+      empty.className = "empty-state";
+      empty.textContent = "No saved Flex connections for this portfolio.";
+      flexConnectionList.append(empty);
+      updateFlexControls();
+      return;
+    }
+
+    for (const connection of rows) {
+      const item = document.createElement("article");
+      item.className = "flex-connection-item";
+      const name = document.createElement("strong");
+      name.textContent = connection.connection_name || "IBKR Flex connection";
+      const lastSync = document.createElement("p");
+      lastSync.className = "subtle";
+      const syncDate = connection.last_synced_at
+        ? new Date(connection.last_synced_at)
+        : null;
+      lastSync.textContent = syncDate && Number.isFinite(syncDate.getTime())
+        ? `Last synced ${syncDate.toLocaleString()}.`
+        : "Never synced.";
+      const actions = document.createElement("div");
+      actions.className = "button-row";
+
+      const syncButton = document.createElement("button");
+      syncButton.type = "button";
+      syncButton.textContent = "Sync statement";
+      syncButton.addEventListener("click", async () => {
+        setBusy(syncButton, true, "Syncing…");
+        flexStatus.textContent = `Requesting a read-only Flex statement for ${name.textContent}…`;
+        try {
+          const result = await apiRequest(
+            `/api/pip/portfolios/${encodeURIComponent(portfolioSelect.value)}/ibkr-flex-connections/${encodeURIComponent(connection.id)}/sync`,
+            { method: "POST" },
+          );
+          await loadFlexConnections();
+          const counts = result.counts || {};
+          const accountSummary = (result.accounts || [])
+            .map((account) => `${account.masked_account_id || "masked account"} (${account.currency || "currency unavailable"})`)
+            .join(", ");
+          const warning = result.warnings?.length ? ` ${result.warnings.join(" ")}` : "";
+          flexStatus.textContent = `Synced ${counts.positions || 0} positions, ${counts.transactions || 0} transactions, ${counts.dividends || 0} dividends, and ${counts.accounts || 0} masked accounts${accountSummary ? `: ${accountSummary}` : ""}.${warning}`;
+        } catch (error) {
+          flexStatus.textContent = error.message || "IBKR Flex sync failed.";
+        } finally {
+          setBusy(syncButton, false);
+          updateFlexControls();
+        }
+      });
+
+      const disconnectButton = document.createElement("button");
+      disconnectButton.type = "button";
+      disconnectButton.className = "secondary";
+      disconnectButton.textContent = "Remove connection";
+      disconnectButton.addEventListener("click", async () => {
+        if (!window.confirm(`Remove "${connection.connection_name}" and delete its saved Vault credentials?`)) return;
+        setBusy(disconnectButton, true, "Removing…");
+        flexStatus.textContent = `Removing ${name.textContent}…`;
+        try {
+          await apiRequest(
+            `/api/pip/portfolios/${encodeURIComponent(portfolioSelect.value)}/ibkr-flex-connections/${encodeURIComponent(connection.id)}`,
+            { method: "DELETE" },
+          );
+          await loadFlexConnections();
+          flexStatus.textContent = `Removed ${name.textContent} and deleted its saved credentials.`;
+        } catch (error) {
+          flexStatus.textContent = error.message || "Could not remove the Flex connection.";
+        } finally {
+          setBusy(disconnectButton, false);
+          updateFlexControls();
+        }
+      });
+
+      actions.append(syncButton, disconnectButton);
+      item.append(name, lastSync, actions);
+      flexConnectionList.append(item);
+    }
+    updateFlexControls();
+  }
+
+  async function loadFlexConnections() {
+    const portfolioId = portfolioSelect.value;
+    if (!portfolioId) {
+      renderFlexConnections([]);
+      flexStatus.textContent = "Select a portfolio to manage Flex connections.";
+      return;
+    }
+    flexStatus.textContent = "Loading saved Flex connections…";
+    try {
+      const rows = await apiRequest(
+        `/api/pip/portfolios/${encodeURIComponent(portfolioId)}/ibkr-flex-connections`,
+      );
+      if (portfolioSelect.value !== portfolioId) return;
+      if (!Array.isArray(rows)) throw new Error("The PIP API returned an invalid Flex connection list.");
+      renderFlexConnections(rows);
+      flexStatus.textContent = rows.length
+        ? `Loaded ${rows.length} Flex connection${rows.length === 1 ? "" : "s"}.`
+        : "No saved Flex connections. Add one after the Vault migration and Edge Function are configured.";
+    } catch (error) {
+      if (portfolioSelect.value !== portfolioId) return;
+      renderFlexConnections([]);
+      flexStatus.textContent = error.message || "Could not load Flex connections.";
+    }
+  }
+
   function renderRecommendations(rows, selectId = null) {
     recommendationSelect.replaceChildren();
     const placeholder = document.createElement("option");
@@ -337,7 +478,8 @@ if (typeof document !== "undefined") {
     document.querySelector("#portfolioControls").hidden = false;
     updateImportEnabled();
     updateResearchEnabled();
-    await loadRecommendations();
+    updateFlexControls();
+    await Promise.all([loadRecommendations(), loadFlexConnections()]);
   }
 
   function showAnalysis(result) {
@@ -387,13 +529,15 @@ if (typeof document !== "undefined") {
       updateImportEnabled();
       updateResearchEnabled();
       updateTransitionButtons();
+      updateFlexControls();
     } finally {
       setBusy(button, false);
       updateImportEnabled();
+      updateFlexControls();
     }
   }
 
-  apiUrlInput.value = localStorage.getItem("stockscanner-pip-api-url") || "";
+  apiUrlInput.value = localStorage.getItem("stockscanner-pip-api-url") || PIP_DEFAULT_API_URL;
   document.querySelector("#connectApi").addEventListener("click", connect);
   document.querySelector("#createPortfolio").addEventListener("click", async (event) => {
     const button = event.currentTarget;
@@ -409,14 +553,51 @@ if (typeof document !== "undefined") {
       await refreshPortfolios();
       if (portfolioSelect.value !== created.id) resetAnalysisInputs();
       portfolioSelect.value = created.id;
-      await loadRecommendations();
+      await Promise.all([loadRecommendations(), loadFlexConnections()]);
       updateImportEnabled();
       updateResearchEnabled();
+      updateFlexControls();
       apiStatus.textContent = `Created portfolio ${created.name}.`;
     } catch (error) {
       apiStatus.textContent = error.message || "Portfolio creation failed.";
     } finally {
       setBusy(button, false);
+    }
+  });
+
+  document.querySelector("#saveFlexConnection").addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    const tokenInput = document.querySelector("#flexToken");
+    const queryIdInput = document.querySelector("#flexQueryId");
+    const name = document.querySelector("#flexConnectionName").value.trim();
+    const token = tokenInput.value;
+    const queryId = queryIdInput.value.trim();
+    try {
+      const portfolioId = selectedPortfolio();
+      if (!name) throw new Error("Enter a name for this Flex connection.");
+      if (!token || !queryId) throw new Error("Enter the IBKR Flex token and Query ID.");
+      setBusy(button, true, "Saving encrypted credentials…");
+      flexStatus.textContent = "Sending credentials to the authenticated API for encrypted Vault storage…";
+      const connection = await apiRequest(
+        `/api/pip/portfolios/${encodeURIComponent(portfolioId)}/ibkr-flex-connections`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            connection_name: name,
+            token,
+            query_id: queryId,
+          }),
+        },
+      );
+      await loadFlexConnections();
+      flexStatus.textContent = `Saved ${connection.connection_name}. Sync is read-only and requires an XML Flex Query.`;
+    } catch (error) {
+      flexStatus.textContent = error.message || "Could not save the Flex connection.";
+    } finally {
+      tokenInput.value = "";
+      queryIdInput.value = "";
+      setBusy(button, false);
+      updateFlexControls();
     }
   });
 
@@ -471,19 +652,34 @@ if (typeof document !== "undefined") {
       document.querySelector("#pipMarketPrice").value = research.price.price ?? "";
       document.querySelector("#pipTargetPrice").value = research.analyst.target_price ?? "";
       document.querySelector("#pipTargetUpside").value = research.analyst.target_upside_percent ?? "";
+      const earningsGrowth = research.growth?.earnings_growth_percent;
+      if (earningsGrowth !== null && earningsGrowth !== undefined) {
+        document.querySelector("#pipEarningsGrowth").value = earningsGrowth;
+      }
+      const revenueGrowth = research.growth?.revenue_growth_percent;
+      if (revenueGrowth !== null && revenueGrowth !== undefined) {
+        document.querySelector("#pipRevenueGrowth").value = revenueGrowth;
+      }
 
       const returned = research.returns;
       const dividendTotal = research.dividends.trailing_365_days_per_share;
+      const revisionSummary = Object.entries(research.analyst_revisions?.periods || {})
+        .map(([period, counts]) => (
+          `${period}: ${counts.up_last_30_days ?? "unavailable"} up, ${counts.down_last_30_days ?? "unavailable"} down (30 days)`
+        ))
+        .join("; ") || "unavailable";
       const details = [
         `Price: ${research.price.price === null ? "unavailable" : research.price.price} (${research.price.source || "source unavailable"}${research.price.as_of ? `, as of ${research.price.as_of}` : ""}${research.price.stale ? ", marked stale" : ""}).`,
         `Yahoo history (${returned.start_date || "?"} to ${returned.end_date || "?"}, ${returned.basis || "basis unavailable"}): return ${returned.price_return_percent === null ? "unavailable" : `${returned.price_return_percent}%`}; SPY ${returned.spy_return_percent === null ? "unavailable" : `${returned.spy_return_percent}%`}; relative performance ${returned.relative_performance_percentage_points === null ? "unavailable" : `${returned.relative_performance_percentage_points} percentage points`}.`,
         `Analyst consensus: ${research.analyst.rating || "unavailable"}; target upside ${research.analyst.target_upside_percent === null ? "unavailable" : `${research.analyst.target_upside_percent}%`}.`,
+        `Yahoo growth: earnings ${research.growth?.earnings_growth_percent ?? "unavailable"}%; revenue ${research.growth?.revenue_growth_percent ?? "unavailable"}%.`,
+        `Yahoo EPS revision counts (raw, not converted to a score): ${revisionSummary}.`,
         `Yahoo trailing dividends: ${dividendTotal === null ? "unavailable" : `${dividendTotal} per share`} (not portfolio cash income).`,
       ];
       const result = document.querySelector("#researchResult");
       result.textContent = `${details.join(" ")} ${research.warnings.join(" ")}`;
       result.hidden = false;
-      output.textContent = "Available research loaded. Market price and analyst target inputs were filled where available; score fields are unchanged.";
+      output.textContent = "Available research loaded. Market price, analyst target, and growth inputs were filled where available. Revision counts remain raw; no score conversion was applied.";
     } catch (error) {
       if (requestId === researchRequestId) {
         output.textContent = error.message || "Could not load market research.";
@@ -574,9 +770,10 @@ if (typeof document !== "undefined") {
     resetAnalysisInputs();
     updateImportEnabled();
     updateResearchEnabled();
+    updateFlexControls();
     if (!apiConnected) return;
     try {
-      await loadRecommendations();
+      await Promise.all([loadRecommendations(), loadFlexConnections()]);
     } catch (error) {
       apiStatus.textContent = error.message || "Could not load recommendations.";
     }

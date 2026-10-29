@@ -7,8 +7,9 @@ analyst signals, sizes positions, and produces Excel and GitHub Pages reports.
 
 **Stable release: v2.22.0** — adds an isolated Portfolio Intelligence Platform
 (PIP) Python layer and a separately deployable, authenticated FastAPI service for
-CSV/Flex imports, analytics, and auditable human approval. PIP does not connect
-live to IBKR or place orders, and existing scanner workflows remain unchanged.
+CSV imports, analytics, and auditable human approval, with optional server-side,
+read-only IBKR Flex sync when its Vault-backed integration is configured. PIP
+does not transmit orders, and existing scanner workflows remain unchanged.
 The existing portfolio review continues to use an annualized return objective,
 and recovery estimates show the shortfall and estimated time to catch up using
 the stock's trailing one-year daily-return trend. The recovery graph compares

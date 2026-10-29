@@ -6,6 +6,15 @@ import pytest
 from stockscanner.pip.research import ResearchDataUnavailable, collect_research_data
 
 
+def no_fundamentals(_symbol):
+    return {
+        "earnings_growth_percent": None,
+        "revenue_growth_percent": None,
+        "revision_periods": {},
+        "warnings": [],
+    }
+
+
 @pytest.mark.parametrize("provider", ["Alpaca", "Twelve Data"])
 def test_research_uses_shared_quote_yahoo_history_and_analyst_data(provider):
     stock = pd.DataFrame(
@@ -45,6 +54,7 @@ def test_research_uses_shared_quote_yahoo_history_and_analyst_data(provider):
         },
         history_loader=load_history,
         analyst_loader=load_analyst,
+        fundamental_loader=no_fundamentals,
         today=date(2025, 12, 31),
     )
 
@@ -68,6 +78,44 @@ def test_research_uses_shared_quote_yahoo_history_and_analyst_data(provider):
     assert "not portfolio cash income" in result["dividends"]["note"]
 
 
+def test_research_includes_growth_and_raw_revision_counts_without_scoring_them():
+    history = pd.DataFrame(
+        {"Close": [10.0, 12.0], "Dividends": [0.0, 0.0]},
+        index=pd.to_datetime(["2025-01-01", "2025-12-31"]),
+    )
+    fundamentals = {
+        "source": "Yahoo Finance",
+        "earnings_growth_percent": 28.7,
+        "revenue_growth_percent": 16.4,
+        "revision_periods": {
+            "0q": {
+                "up_last_7_days": 1,
+                "up_last_30_days": 3,
+                "down_last_7_days": 0,
+                "down_last_30_days": 1,
+            },
+        },
+        "warnings": [],
+    }
+
+    result = collect_research_data(
+        "ABC",
+        history_loader=lambda symbol: history,
+        analyst_loader=lambda *_args, **_kwargs: {},
+        fundamental_loader=lambda _symbol: fundamentals,
+        today=date(2026, 1, 1),
+    )
+
+    assert result["growth"] == {
+        "earnings_growth_percent": 28.7,
+        "revenue_growth_percent": 16.4,
+        "source": "Yahoo Finance",
+    }
+    assert result["analyst_revisions"]["periods"] == fundamentals["revision_periods"]
+    assert "no approved 0–100 score mapping" in result["unavailable_metrics"]["analyst_revisions_score"]
+    assert result["warnings"]
+
+
 def test_research_falls_back_to_yahoo_history_when_shared_quote_is_missing():
     history = pd.DataFrame(
         {"Close": [20.0, 22.0], "Dividends": [0.0, 0.0]},
@@ -83,6 +131,7 @@ def test_research_falls_back_to_yahoo_history_when_shared_quote_is_missing():
         "ABC",
         history_loader=lambda _symbol: history,
         analyst_loader=analyst,
+        fundamental_loader=no_fundamentals,
         today=date(2026, 1, 1),
     )
 
@@ -166,5 +215,6 @@ def test_research_reports_provider_failure_instead_of_fabricating_scores():
             "ABC",
             history_loader=unavailable_history,
             analyst_loader=unavailable_analyst,
+            fundamental_loader=no_fundamentals,
             today=date(2026, 1, 1),
         )

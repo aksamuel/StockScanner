@@ -4,15 +4,17 @@ import csv
 import io
 import os
 import re
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Callable
 from uuid import UUID
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, status
 from fastapi.concurrency import run_in_threadpool
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 from fastapi.responses import JSONResponse
 import httpx
 from supabase import create_client
@@ -28,7 +30,11 @@ from .decision_engine import DecisionEngine
 from .dividend_analysis import DividendAnalysisEngine, DividendRecord
 from .forward_looking import ForwardLookingAnalyzer
 from .growth_analysis import GrowthAnalysisEngine
-from .ibkr_sync import CSVPortfolioDataSource, IBKRPortfolioSyncService
+from .ibkr_sync import (
+    CSVPortfolioDataSource,
+    FlexXMLPortfolioDataSource,
+    IBKRPortfolioSyncService,
+)
 from .opportunity_cost import OpportunityCostEngine
 from .position_lifecycle import PositionLifecycleAnalyzer
 from .repository import SupabaseAuditLogSink, SupabasePortfolioRepository
@@ -159,6 +165,36 @@ class ResearchRequest(StrictModel):
         return value
 
 
+class FlexConnectionCreate(StrictModel):
+    connection_name: str = Field(min_length=1, max_length=80)
+    token: SecretStr = Field(min_length=1, max_length=256)
+    query_id: str = Field(min_length=1, max_length=20)
+
+    @field_validator("connection_name")
+    @classmethod
+    def clean_connection_name(cls, value: str) -> str:
+        value = value.strip()
+        if not value or re.search(r"[\x00-\x1f\x7f]", value):
+            raise ValueError("Connection name must contain 1 to 80 printable characters")
+        return value
+
+    @field_validator("token")
+    @classmethod
+    def validate_token(cls, value: SecretStr) -> SecretStr:
+        token = value.get_secret_value().strip()
+        if not re.fullmatch(r"[-A-Za-z0-9._~]{1,256}", token):
+            raise ValueError("Flex token contains unsupported characters")
+        return SecretStr(token)
+
+    @field_validator("query_id")
+    @classmethod
+    def validate_query_id(cls, value: str) -> str:
+        value = value.strip()
+        if not re.fullmatch(r"[0-9]{1,20}", value):
+            raise ValueError("Flex Query ID must be numeric")
+        return value
+
+
 class ApprovalTransitionRequest(StrictModel):
     status: ApprovalStatus
     actor: str | None = Field(default=None, max_length=80)
@@ -170,6 +206,7 @@ class AuthenticatedUser:
     client: Any
     user_id: str
     email: str | None
+    access_token: str = field(repr=False)
 
 
 def _response_data(response: Any, message: str) -> Any:
@@ -186,11 +223,36 @@ def _one_row(data: Any) -> dict[str, Any] | None:
     return None
 
 
+def _position_payload(position: Any) -> dict[str, Any]:
+    result = asdict(position)
+    notes = result.get("notes")
+    if isinstance(notes, dict):
+        result["notes"] = _public_metadata(notes)
+    return result
+
+
+def _record_payload(record: dict[str, Any]) -> dict[str, Any]:
+    result = dict(record)
+    metadata = result.get("metadata")
+    if isinstance(metadata, dict):
+        result["metadata"] = _public_metadata(metadata)
+    return result
+
+
+def _public_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: value
+        for key, value in metadata.items()
+        if key not in {"account_fingerprint", "source_key"}
+    }
+
+
 def create_app(
     *,
     client_factory: Callable[[str, str], Any] = create_client,
     environ: dict[str, str] | None = None,
     research_fetcher: Callable[..., dict[str, Any]] | None = None,
+    flex_edge_invoker: Callable[[AuthenticatedUser, dict[str, Any]], dict[str, Any]] | None = None,
 ) -> FastAPI:
     settings = os.environ if environ is None else environ
     fetch_research = research_fetcher or collect_research_data
@@ -211,7 +273,7 @@ def create_app(
         CORSMiddleware,
         allow_origins=origins,
         allow_credentials=False,
-        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
         allow_headers=["Authorization", "Content-Type"],
     )
 
@@ -222,6 +284,19 @@ def create_app(
             status_code=502,
             content={"detail": "The PIP data service request failed."},
         )
+
+    @app.exception_handler(RequestValidationError)
+    def request_validation_error_handler(
+        request: Request,
+        exc: RequestValidationError,
+    ) -> JSONResponse:
+        errors = exc.errors()
+        if request.url.path.endswith("/ibkr-flex-connections"):
+            errors = [
+                {key: value for key, value in error.items() if key != "input"}
+                for error in errors
+            ]
+        return JSONResponse(status_code=422, content={"detail": jsonable_encoder(errors)})
 
     def require_user(authorization: str | None = Header(default=None)) -> AuthenticatedUser:
         if not authorization or not authorization.startswith("Bearer "):
@@ -252,7 +327,12 @@ def create_app(
         access = _one_row(_response_data(access_response, "Unable to verify PIP account access."))
         if not access or access.get("status") != "approved":
             raise HTTPException(status_code=403, detail="An approved StockScanner account is required.")
-        return AuthenticatedUser(client, str(user.id), getattr(user, "email", None))
+        return AuthenticatedUser(
+            client,
+            str(user.id),
+            getattr(user, "email", None),
+            token,
+        )
 
     def owned_portfolio(user: AuthenticatedUser, portfolio_id: UUID) -> None:
         result = user.client.table("portfolios").select("id").eq(
@@ -260,6 +340,74 @@ def create_app(
         ).eq("user_id", user.user_id).maybe_single().execute()
         if not _one_row(_response_data(result, "Unable to load the requested portfolio.")):
             raise HTTPException(status_code=404, detail="Portfolio not found.")
+
+    def invoke_flex_edge(
+        user: AuthenticatedUser,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        if flex_edge_invoker is not None:
+            return flex_edge_invoker(user, payload)
+
+        supabase_url = settings.get("SUPABASE_URL", "").strip().rstrip("/")
+        publishable_key = settings.get("SUPABASE_PUBLISHABLE_KEY", "").strip()
+        internal_key = settings.get("PIP_FLEX_INTERNAL_KEY", "").strip()
+        if not supabase_url or not publishable_key or len(internal_key) < 32:
+            raise HTTPException(
+                status_code=503,
+                detail="Live IBKR Flex sync is not configured.",
+            )
+        try:
+            response = httpx.post(
+                f"{supabase_url}/functions/v1/pip-ibkr-flex",
+                headers={
+                    "Authorization": f"Bearer {user.access_token}",
+                    "apikey": publishable_key,
+                    "x-pip-internal-key": internal_key,
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+                timeout=httpx.Timeout(110.0, connect=5.0),
+            )
+        except httpx.HTTPError as exc:
+            raise HTTPException(
+                status_code=502,
+                detail="The IBKR Flex service could not be reached.",
+            ) from exc
+
+        try:
+            response_payload = response.json()
+        except ValueError:
+            response_payload = {}
+        if not isinstance(response_payload, dict):
+            response_payload = {}
+        if not response.is_success:
+            safe_errors = {
+                400: "The Flex connection request is invalid.",
+                401: "The Flex service could not authenticate this request.",
+                403: "Approved access is required for this Flex connection.",
+                404: "The portfolio or Flex connection was not found.",
+                413: "The Flex connection request is too large.",
+                422: "IBKR rejected the Flex request. Verify the saved token and Query ID.",
+                429: "IBKR Flex is rate-limited. Wait before syncing again.",
+                502: "IBKR Flex is temporarily unavailable.",
+                503: "Live IBKR Flex storage is not available.",
+                504: "The IBKR Flex statement is still being generated. Retry shortly.",
+            }
+            message = response_payload.get("error")
+            allowed_messages = {
+                "Enter a valid connection name, Flex token, and numeric Query ID.",
+                "Portfolio not found.",
+                "Flex connection not found.",
+                "IBKR rejected the Flex request. Verify the saved token and Query ID.",
+                "IBKR Flex is rate-limited. Wait before syncing again.",
+                "The IBKR Flex statement is still being generated. Retry shortly.",
+            }
+            detail = message if isinstance(message, str) and message in allowed_messages else safe_errors.get(
+                response.status_code,
+                "The IBKR Flex service request failed.",
+            )
+            raise HTTPException(status_code=response.status_code, detail=detail)
+        return response_payload
 
     @app.get("/healthz")
     def health() -> dict[str, str]:
@@ -330,10 +478,13 @@ def create_app(
                 str(portfolio_id),
             )
             return {
-                "accounts": result["accounts"],
-                "positions": [asdict(position) for position in result["positions"]],
-                "transactions": result["transactions"],
-                "dividends": result["dividends"],
+                "accounts": [
+                    {key: value for key, value in account.items() if key != "account_fingerprint"}
+                    for account in result["accounts"]
+                ],
+                "positions": [_position_payload(position) for position in result["positions"]],
+                "transactions": [_record_payload(row) for row in result["transactions"]],
+                "dividends": [_record_payload(row) for row in result["dividends"]],
                 "counts": {
                     "accounts": len(result["accounts"]),
                     "positions": len(result["positions"]),
@@ -346,6 +497,145 @@ def create_app(
             return await run_in_threadpool(persist_import)
         except (ValueError, csv.Error) as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @app.get("/api/pip/portfolios/{portfolio_id}/ibkr-flex-connections")
+    def list_flex_connections(
+        portfolio_id: UUID,
+        user: AuthenticatedUser = Depends(require_user),
+    ) -> list[dict[str, Any]]:
+        owned_portfolio(user, portfolio_id)
+        result = user.client.table("pip_ibkr_connections").select(
+            "id,portfolio_id,connection_name,last_synced_at,created_at"
+        ).eq("portfolio_id", str(portfolio_id)).eq(
+            "user_id", user.user_id
+        ).order("created_at", desc=True).execute()
+        return _response_data(result, "Unable to load Flex connections.") or []
+
+    @app.post(
+        "/api/pip/portfolios/{portfolio_id}/ibkr-flex-connections",
+        status_code=status.HTTP_201_CREATED,
+    )
+    def save_flex_connection(
+        portfolio_id: UUID,
+        body: FlexConnectionCreate,
+        user: AuthenticatedUser = Depends(require_user),
+    ) -> dict[str, Any]:
+        owned_portfolio(user, portfolio_id)
+        result = invoke_flex_edge(user, {
+            "action": "connect",
+            "portfolio_id": str(portfolio_id),
+            "connection_name": body.connection_name,
+            "token": body.token.get_secret_value(),
+            "query_id": body.query_id,
+        })
+        connection = result.get("connection")
+        if not isinstance(connection, dict) or not connection.get("id"):
+            raise HTTPException(status_code=502, detail="The Flex connection could not be saved.")
+        return connection
+
+    @app.post(
+        "/api/pip/portfolios/{portfolio_id}/ibkr-flex-connections/{connection_id}/sync"
+    )
+    def sync_flex_connection(
+        portfolio_id: UUID,
+        connection_id: UUID,
+        user: AuthenticatedUser = Depends(require_user),
+    ) -> dict[str, Any]:
+        owned_portfolio(user, portfolio_id)
+        connection_result = user.client.table("pip_ibkr_connections").select(
+            "id,connection_name"
+        ).eq("id", str(connection_id)).eq(
+            "portfolio_id", str(portfolio_id)
+        ).eq("user_id", user.user_id).maybe_single().execute()
+        connection = _one_row(
+            _response_data(connection_result, "Unable to verify Flex connection ownership.")
+        )
+        if connection is None:
+            raise HTTPException(status_code=404, detail="Flex connection not found.")
+
+        edge_result = invoke_flex_edge(user, {
+            "action": "sync",
+            "portfolio_id": str(portfolio_id),
+            "connection_id": str(connection_id),
+        })
+        statement_xml = edge_result.get("statement_xml")
+        if not isinstance(statement_xml, str):
+            raise HTTPException(status_code=502, detail="IBKR Flex returned an invalid statement.")
+        try:
+            sync_result = IBKRPortfolioSyncService(
+                SupabasePortfolioRepository(user.client)
+            ).sync(
+                FlexXMLPortfolioDataSource(statement_xml),
+                str(portfolio_id),
+            )
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=502,
+                detail="IBKR Flex returned an invalid statement. Configure the Flex Query to provide XML stock positions, trades, and dividends.",
+            ) from exc
+
+        synced_at = datetime.now(timezone.utc).isoformat()
+        try:
+            timestamp_response = user.client.table("pip_ibkr_connections").update({
+                "last_synced_at": synced_at,
+            }).eq("id", str(connection_id)).eq(
+                "portfolio_id", str(portfolio_id)
+            ).eq("user_id", user.user_id).select("id").execute()
+            timestamp_saved = (
+                not getattr(timestamp_response, "error", None)
+                and bool(getattr(timestamp_response, "data", None))
+            )
+        except APIError:
+            timestamp_saved = False
+
+        return {
+            "connection_id": str(connection_id),
+            "connection_name": connection["connection_name"],
+            "last_synced_at": synced_at if timestamp_saved else None,
+            "counts": {
+                "accounts": len(sync_result["accounts"]),
+                "positions": len(sync_result["positions"]),
+                "transactions": len(sync_result["transactions"]),
+                "dividends": len(sync_result["dividends"]),
+            },
+            "accounts": [
+                {key: value for key, value in account.items() if key != "account_fingerprint"}
+                for account in sync_result["accounts"]
+            ],
+            "positions": [_position_payload(position) for position in sync_result["positions"]],
+            "warnings": (
+                []
+                if timestamp_saved
+                else ["Portfolio data was saved, but its last-sync timestamp could not be recorded."]
+            ),
+        }
+
+    @app.delete(
+        "/api/pip/portfolios/{portfolio_id}/ibkr-flex-connections/{connection_id}"
+    )
+    def delete_flex_connection(
+        portfolio_id: UUID,
+        connection_id: UUID,
+        user: AuthenticatedUser = Depends(require_user),
+    ) -> dict[str, bool]:
+        owned_portfolio(user, portfolio_id)
+        connection_result = user.client.table("pip_ibkr_connections").select(
+            "id"
+        ).eq("id", str(connection_id)).eq(
+            "portfolio_id", str(portfolio_id)
+        ).eq("user_id", user.user_id).maybe_single().execute()
+        if not _one_row(
+            _response_data(connection_result, "Unable to verify Flex connection ownership.")
+        ):
+            raise HTTPException(status_code=404, detail="Flex connection not found.")
+        result = invoke_flex_edge(user, {
+            "action": "disconnect",
+            "portfolio_id": str(portfolio_id),
+            "connection_id": str(connection_id),
+        })
+        if result.get("removed") is not True:
+            raise HTTPException(status_code=502, detail="The Flex connection could not be removed.")
+        return {"removed": True}
 
     @app.post("/api/pip/portfolios/{portfolio_id}/research")
     def research(
@@ -642,7 +932,6 @@ def create_app(
 
         if (
             body.forward.target_price is not None
-            or                         body.forward.target_price is not None
             or body.forward.target_upside_percent is not None
             or body.forward.analyst_revisions_score is not None
         ):

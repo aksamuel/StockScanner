@@ -6,6 +6,7 @@ import json
 from typing import Any, Dict, Iterable, List, Optional
 from uuid import UUID, uuid4
 
+from .ibkr_sync import account_fingerprint
 from .models import PositionRecord, SellRecommendation
 
 
@@ -83,6 +84,7 @@ class SupabasePortfolioRepository(PortfolioRepository):
     def __init__(self, client: Any):
         self.client = client
         self.account_ids: dict[str, str] = {}
+        self.account_ids_by_mask: dict[str, str] = {}
 
     @staticmethod
     def _json_safe(value: Any) -> Any:
@@ -106,17 +108,27 @@ class SupabasePortfolioRepository(PortfolioRepository):
         return list(getattr(response, "data", None) or [])
 
     def upsert_accounts(self, portfolio_id: str, accounts: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        rows = [
-            {**account, "portfolio_id": portfolio_id}
-            for account in accounts
-            if account.get("masked_account_id")
-        ]
+        rows = []
+        for account in accounts:
+            masked_id = account.get("masked_account_id")
+            if not masked_id:
+                continue
+            fingerprint = (
+                account.get("account_fingerprint")
+                or account_fingerprint(account.get("account_id"))
+                or account_fingerprint(masked_id)
+            )
+            rows.append({
+                **account,
+                "portfolio_id": portfolio_id,
+                "account_fingerprint": fingerprint,
+            })
         if not rows:
             return []
         response = (
             self.client.table("ibkr_accounts")
-            .upsert(rows, on_conflict="portfolio_id,masked_account_id")
-            .select("id,masked_account_id")
+            .upsert(rows, on_conflict="portfolio_id,account_fingerprint")
+            .select("id,masked_account_id,account_fingerprint")
             .execute()
         )
         if getattr(response, "error", None):
@@ -124,9 +136,12 @@ class SupabasePortfolioRepository(PortfolioRepository):
         saved = list(getattr(response, "data", None) or [])
         for account in saved:
             masked_id = account.get("masked_account_id")
+            fingerprint = account.get("account_fingerprint")
             account_id = account.get("id")
+            if fingerprint and account_id:
+                self.account_ids[str(fingerprint)] = str(account_id)
             if masked_id and account_id:
-                self.account_ids[str(masked_id)] = str(account_id)
+                self.account_ids_by_mask[str(masked_id)] = str(account_id)
         return saved
 
     def upsert_positions(self, portfolio_id: str, positions: Iterable[PositionRecord]) -> list[dict[str, Any]]:
@@ -134,6 +149,7 @@ class SupabasePortfolioRepository(PortfolioRepository):
         for position in positions:
             account_key = position.account_id or "unassigned"
             position_source_key = position.notes.get("source_key")
+            account_fingerprint_value = position.notes.get("account_fingerprint")
             source_key = (
                 f"{account_key}:{position.symbol}:{position_source_key}"
                 if position_source_key
@@ -141,7 +157,11 @@ class SupabasePortfolioRepository(PortfolioRepository):
             )
             rows.append({
                 "portfolio_id": portfolio_id,
-                "account_id": self.account_ids.get(account_key),
+                "account_id": (
+                    self.account_ids.get(str(account_fingerprint_value))
+                    or self.account_ids_by_mask.get(account_key)
+                    or self.account_ids.get(account_key)
+                ),
                 "symbol": position.symbol,
                 "quantity": position.quantity,
                 "average_cost": position.average_cost,
@@ -176,7 +196,11 @@ class SupabasePortfolioRepository(PortfolioRepository):
                 "dividend_amount": dividend["amount"],
                 "ex_date": dividend["ex_date"].isoformat() if dividend["ex_date"] else None,
                 "pay_date": dividend["pay_date"].isoformat() if dividend["pay_date"] else None,
-                "metadata": {"currency": dividend["currency"]},
+                "metadata": {
+                    "currency": dividend["currency"],
+                    **({"account_id": dividend["account_id"]} if dividend.get("account_id") else {}),
+                    **(dividend.get("metadata") or {}),
+                },
             }
             row["source_key"] = self._source_key(row)
             rows.append(row)

@@ -1,11 +1,14 @@
 import assert from "node:assert/strict";
 import {
   calculatePipScore,
+  PIP_DEFAULT_API_URL,
   PIP_CPS_WEIGHTS,
   PIP_SELL_SCORE_WEIGHTS,
   portfolioImportPreviewFromCsv,
   portfolioRowsFromCsv,
 } from "../pip-dashboard.js";
+
+assert.equal(PIP_DEFAULT_API_URL, "https://stockscanner-pip-api.onrender.com");
 
 assert.equal(calculatePipScore(
   Object.fromEntries(Object.keys(PIP_CPS_WEIGHTS).map((key) => [key, 100])),

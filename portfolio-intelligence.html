@@ -28,6 +28,9 @@
     #approvalEvents { padding-left: 22px; }
     #approvalEvents li { margin: 5px 0; }
     #approvalStatus { color: #81d4fa; font-weight: 700; }
+    #flexConnectionList { display: grid; gap: 10px; margin-top: 12px; }
+    .flex-connection-item { padding: 12px; border: 1px solid #334b5f; border-radius: 7px; background: #10212d; }
+    .flex-connection-item p { margin: 6px 0 10px; }
     .empty-state { color: #90a4ae; }
   </style>
 </head>
@@ -47,13 +50,13 @@
 
     <section class="intro" aria-labelledby="aboutPip">
       <h2 id="aboutPip">Portfolio analysis and human review</h2>
-      <p>Connect this page to a deployed PIP API to import CSV/Flex exports, load available Yahoo research and shared market prices, persist portfolio analysis, and review auditable recommendations. Market facts are displayed with their sources; PIP does not invent score conversions for raw returns.</p>
-      <p class="notice"><strong>No live IBKR connection or order transmitter is available.</strong> CSV imports and analysis are saved only after you connect an API and explicitly submit them. Approval records a human decision; it does not submit an order.</p>
+      <p>Connect this page to a deployed PIP API to import portfolio files, optionally sync a server-configured IBKR Flex Query, load available Yahoo research and shared market prices, persist portfolio analysis, and review auditable recommendations. Market facts are displayed with their sources; PIP does not invent score conversions for raw returns.</p>
+      <p class="notice"><strong>IBKR sync is read-only; order transmission is disabled.</strong> Live Flex sync works only after the API, Supabase Vault migration, Edge Function, and server-only shared secret are configured. Approval records a human decision; it does not submit an order.</p>
       <p><a class="source-link" href="https://github.com/aksamuel/StockScanner/blob/main/docs/pip/FAQ.md">PIP FAQ</a> · <a class="source-link" href="https://github.com/aksamuel/StockScanner/blob/main/docs/pip/ARCHITECTURE.md">Architecture</a> · <a class="source-link" href="https://github.com/aksamuel/StockScanner/blob/main/tests/test_pip_integration.py">PIP tests</a></p>
     </section>
 
     <section class="module-grid" aria-label="PIP modules">
-      <article class="module-card"><span class="pill">API · CSV/Flex</span><h3>IBKR portfolio sync</h3><p>Imports read-only CSV/Flex exports, masks account identifiers, and saves normalized records. No live IBKR connection.</p><a href="https://github.com/aksamuel/StockScanner/blob/main/stockscanner/pip/ibkr_sync.py">Review sync source</a></article>
+      <article class="module-card"><span class="pill">API · Vault-backed Flex</span><h3>IBKR portfolio sync</h3><p>Imports CSV files or retrieves read-only XML Flex statements through the server, masks account identifiers, and saves normalized records. No order transmitter.</p><a href="https://github.com/aksamuel/StockScanner/blob/main/stockscanner/pip/ibkr_sync.py">Review sync source</a></article>
       <article class="module-card"><span class="pill">Python analysis</span><h3>Position lifecycle</h3><p>Summarizes holding duration and total return when entry, market-value, and dividend inputs exist.</p><a href="https://github.com/aksamuel/StockScanner/blob/main/stockscanner/pip/position_lifecycle.py">Review lifecycle source</a></article>
       <article class="module-card"><span class="pill">Python analysis</span><h3>Dead money detector</h3><p>Flags weak productivity only when supporting return or opportunity-cost evidence is available; reports confidence and reasons.</p><a href="https://github.com/aksamuel/StockScanner/blob/main/stockscanner/pip/dead_money.py">Review detector source</a></article>
       <article class="module-card"><span class="pill">Python analysis</span><h3>Opportunity cost</h3><p>Ranks supplied alternatives against a holding and reports an estimated relative score benefit.</p><a href="https://github.com/aksamuel/StockScanner/blob/main/stockscanner/pip/opportunity_cost.py">Review opportunity-cost source</a></article>
@@ -69,9 +72,9 @@
 
     <section class="workbench" aria-labelledby="connectionTitle">
       <h2 id="connectionTitle">Connect to your PIP API</h2>
-      <p class="subtle">Use the HTTPS base URL of your deployed API. The URL is saved in this browser only; Supabase access tokens are sent directly to your API and are never stored here.</p>
+      <p class="subtle">The current PIP API URL is pre-filled. You can change it for another deployment; the URL is saved in this browser only. Supabase access tokens are sent directly to your API and are never stored here.</p>
       <label for="pipApiUrl">PIP API base URL
-        <input id="pipApiUrl" type="url" inputmode="url" placeholder="https://pip-api.example.com" autocomplete="url">
+        <input id="pipApiUrl" type="url" inputmode="url" placeholder="https://stockscanner-pip-api.onrender.com" autocomplete="url">
       </label>
       <div class="button-row">
         <button id="connectApi" type="button">Connect and load portfolios</button>
@@ -108,6 +111,25 @@
             <thead><tr><th>Symbol</th><th>Quantity</th><th>Cost basis/share</th><th>Buy date</th><th>Currency</th></tr></thead>
             <tbody id="csvRows"></tbody>
           </table>
+        </div>
+      </section>
+
+      <section class="workbench" aria-labelledby="flexTitle">
+        <h2 id="flexTitle">Live IBKR Flex sync · read-only</h2>
+        <p class="subtle">Save a Flex token and numeric Query ID to encrypted Supabase Vault storage through the PIP API. They are sent only for this request and cleared from the form afterward; they are never saved in browser storage. Configure the Flex Query to return XML.</p>
+        <label for="flexConnectionName">Connection name
+          <input id="flexConnectionName" type="text" maxlength="80" autocomplete="off" placeholder="e.g. Main account">
+        </label>
+        <label for="flexToken">IBKR Flex token
+          <input id="flexToken" type="password" maxlength="256" autocomplete="new-password" spellcheck="false">
+        </label>
+        <label for="flexQueryId">Flex Query ID
+          <input id="flexQueryId" type="text" maxlength="20" inputmode="numeric" pattern="[0-9]{1,20}" autocomplete="off">
+        </label>
+        <button id="saveFlexConnection" type="button" disabled>Save encrypted connection</button>
+        <p id="flexStatus" class="subtle" role="status" aria-live="polite">Connect the API and select a portfolio to manage Flex connections.</p>
+        <div id="flexConnectionList" aria-live="polite">
+          <p class="empty-state">No Flex connections loaded.</p>
         </div>
       </section>
 
