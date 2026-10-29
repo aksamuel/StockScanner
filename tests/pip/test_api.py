@@ -333,6 +333,32 @@ def test_analysis_api_runs_modules_and_persists_score_and_proposed_recommendatio
     assert fake.rpc_calls[0][1]["p_expected_status"] is None
 
 
+def test_analysis_api_skips_opportunity_cost_without_current_cps():
+    fake = PipelineClient()
+    app = create_app(
+        client_factory=lambda url, key: fake,
+        environ={
+            "SUPABASE_URL": "https://project.example.test",
+            "SUPABASE_PUBLISHABLE_KEY": "public-test-key",
+        },
+    )
+    response = TestClient(app).post(
+        "/api/pip/analysis",
+        headers={"Authorization": "******"},
+        json={
+            "portfolio_id": fake.portfolio_id,
+            "symbol": "AAPL",
+            "position": {"market_price": 130},
+            "peer_scores": [{"symbol": "MSFT", "score": 90}],
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["modules"]["opportunity_cost"] == []
+    assert result["recommendation"]["replacement_candidates"] == []
+
+
 def test_approval_api_persists_authenticated_human_transition_through_atomic_rpc():
     fake = PipelineClient()
     app = create_app(

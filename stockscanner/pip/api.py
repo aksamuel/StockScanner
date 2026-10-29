@@ -570,11 +570,15 @@ def create_app(
             )
             for peer in body.peer_scores
         ]
-        opportunity_cost = OpportunityCostEngine().compare(
-            body.symbol,
-            market_value or 0.0,
-            cps_result.score or 0.0,
-            alternatives,
+        opportunity_cost = (
+            OpportunityCostEngine().compare(
+                body.symbol,
+                market_value or 0.0,
+                cps_result.score,
+                alternatives,
+            )
+            if cps_result.score is not None
+            else []
         )
         module_assessments = {
             "lifecycle": asdict(lifecycle),
