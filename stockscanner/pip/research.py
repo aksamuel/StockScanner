@@ -96,11 +96,11 @@ def collect_research_data(
     analyst_loader: Callable[..., dict[str, Any]] = get_analyst_data,
     today: date | None = None,
 ) -> dict[str, Any]:
-    """Collect research facts from the existing Yahoo and shared price feeds.
+    """Collect Yahoo research facts and the shared Yahoo/Alpaca/Twelve Data quote.
 
     Only public ticker symbols are passed to those data providers. This function
-    does not convert raw returns into 0..100 PIP scores or treat per-share
-    dividend events as portfolio cash income.
+    does not call Alpaca or Twelve Data directly, convert raw returns into 0..100
+    PIP scores, or treat per-share dividend events as portfolio cash income.
     """
     symbol = symbol.strip().upper()
     current_day = today or datetime.now(timezone.utc).date()

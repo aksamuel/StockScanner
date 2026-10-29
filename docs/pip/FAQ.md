@@ -23,10 +23,13 @@ For an imported holding, PIP can show the latest shared price snapshot, Yahoo
 historical price return, relative performance to SPY, analyst consensus/target
 data when Yahoo provides it, and dividend events per share. It does not treat
 raw returns as 0–100 component scores or per-share dividend events as portfolio
-cash income. The current adapters do not expose earnings/revenue growth or
-historical analyst estimate revisions to PIP, so those factors remain missing
-and reduce score confidence. The research request sends only the ticker symbol
-to Yahoo; portfolio details and Supabase tokens stay out of provider requests.
+cash income. The shared snapshot can report Yahoo, Alpaca, or Twelve Data as the
+latest-quote source; Alpaca may also supply a previous close. PIP reads this
+shared snapshot instead of calling Alpaca or Twelve Data directly. Those current
+adapters provide price data, not analyst consensus, earnings/revenue growth, or
+historical estimate revisions, so unavailable factors remain missing and reduce
+score confidence. The research request sends only the ticker symbol to Yahoo;
+portfolio details and Supabase tokens stay out of provider requests.
 
 ## Does sync connect to my IBKR account?
 

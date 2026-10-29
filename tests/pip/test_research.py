@@ -6,7 +6,8 @@ import pytest
 from stockscanner.pip.research import ResearchDataUnavailable, collect_research_data
 
 
-def test_research_uses_shared_quote_yahoo_history_and_analyst_data():
+@pytest.mark.parametrize("provider", ["Alpaca", "Twelve Data"])
+def test_research_uses_shared_quote_yahoo_history_and_analyst_data(provider):
     stock = pd.DataFrame(
         {
             "Close": [10.0, 12.0],
@@ -39,7 +40,7 @@ def test_research_uses_shared_quote_yahoo_history_and_analyst_data():
             "generated_at": "2026-01-01T15:00:00Z",
             "prices": {"ABC": 13.0},
             "price_timestamps": {"ABC": "2026-01-01T14:59:00Z"},
-            "provider_by_symbol": {"ABC": "Alpaca"},
+            "provider_by_symbol": {"ABC": provider},
             "stale_symbols": ["ABC"],
         },
         history_loader=load_history,
@@ -51,7 +52,7 @@ def test_research_uses_shared_quote_yahoo_history_and_analyst_data():
     assert analyst_calls == [("ABC", 13.0, True)]
     assert result["price"] == {
         "price": 13.0,
-        "source": "Alpaca",
+        "source": provider,
         "as_of": "2026-01-01T14:59:00Z",
         "stale": True,
     }
@@ -61,6 +62,8 @@ def test_research_uses_shared_quote_yahoo_history_and_analyst_data():
     assert result["dividends"]["trailing_365_days_per_share"] == 1.0
     assert result["analyst"]["rating"] == "Buy"
     assert result["analyst"]["target_price"] == 15.0
+    assert result["unavailable_metrics"]["earnings_growth_percent"]
+    assert result["unavailable_metrics"]["revenue_growth_percent"]
     assert result["unavailable_metrics"]["analyst_revisions_score"]
     assert "not portfolio cash income" in result["dividends"]["note"]
 
