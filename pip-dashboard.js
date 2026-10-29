@@ -95,6 +95,27 @@ if (typeof document !== "undefined") {
   let portfolios = [];
   let apiConnected = false;
   let selectedRecommendation = null;
+  let researchRequestId = 0;
+  let analysisContext = JSON.stringify([
+    portfolioSelect.value,
+    document.querySelector("#analysisSymbol").value.trim().toUpperCase(),
+  ]);
+  const holdingInputIds = [
+    "#pipEntryDate",
+    "#pipCostBasis",
+    "#pipMarketValue",
+    "#pipMarketPrice",
+    "#pipDividendsReceived",
+    "#pipPayoutRatio",
+    "#pipDividendGrowth",
+    "#pipDividendConsistency",
+    "#pipEarningsGrowth",
+    "#pipRevenueGrowth",
+    "#pipTargetPrice",
+    "#pipTargetUpside",
+    "#pipForwardRevisions",
+    "#pipPeerScores",
+  ];
 
   function renderScore(result, valueId, confidenceId, reasonsId) {
     document.querySelector(valueId).textContent = result.score === null ? "Unavailable" : `${result.score.toFixed(1)} / 100`;
@@ -218,6 +239,23 @@ if (typeof document !== "undefined") {
       || !/^[A-Z0-9][A-Z0-9.-]{0,29}$/i.test(symbol);
   }
 
+  function syncAnalysisContext() {
+    const symbol = document.querySelector("#analysisSymbol").value.trim().toUpperCase();
+    const context = JSON.stringify([portfolioSelect.value, symbol]);
+    if (context === analysisContext) return;
+    analysisContext = context;
+    researchRequestId += 1;
+    for (const id of holdingInputIds) document.querySelector(id).value = "";
+    for (const input of inputElements.values()) input.value = "";
+    document.querySelector("#researchResult").hidden = true;
+    document.querySelector("#analysisResult").hidden = true;
+    document.querySelector("#analysisStatus").textContent = "";
+    document.querySelector("#researchStatus").textContent = "Load research for this holding before analyzing it.";
+    setBusy(document.querySelector("#loadResearch"), false);
+    updateScores();
+    updateResearchEnabled();
+  }
+
   function renderRecommendations(rows, selectId = null) {
     recommendationSelect.replaceChildren();
     const placeholder = document.createElement("option");
@@ -304,6 +342,7 @@ if (typeof document !== "undefined") {
       portfolioSelect.append(option);
     });
     if (portfolios.some((portfolio) => portfolio.id === previous)) portfolioSelect.value = previous;
+    syncAnalysisContext();
     document.querySelector("#portfolioControls").hidden = false;
     updateImportEnabled();
     updateResearchEnabled();
@@ -374,6 +413,7 @@ if (typeof document !== "undefined") {
       });
       await refreshPortfolios();
       portfolioSelect.value = created.id;
+      syncAnalysisContext();
       await loadRecommendations();
       updateImportEnabled();
       updateResearchEnabled();
@@ -406,33 +446,33 @@ if (typeof document !== "undefined") {
     updateScores();
   });
   document.querySelector("#analysisSymbol").addEventListener("input", () => {
-    document.querySelector("#researchResult").hidden = true;
-    document.querySelector("#researchStatus").textContent = "Load research for this holding before analyzing it.";
-    updateResearchEnabled();
+    syncAnalysisContext();
   });
   document.querySelector("#loadResearch").addEventListener("click", async (event) => {
     const button = event.currentTarget;
     const output = document.querySelector("#researchStatus");
+    let requestId = researchRequestId;
     try {
       const portfolioId = selectedPortfolio();
       const symbol = document.querySelector("#analysisSymbol").value.trim().toUpperCase();
       if (!/^[A-Z0-9][A-Z0-9.-]{0,29}$/.test(symbol)) throw new Error("Enter a valid holding symbol.");
+      requestId = ++researchRequestId;
       document.querySelector("#researchResult").hidden = true;
       setBusy(button, true, "Loading research…");
+      document.querySelector("#pipMarketPrice").value = "";
+      document.querySelector("#pipTargetPrice").value = "";
+      document.querySelector("#pipTargetUpside").value = "";
       output.textContent = "Fetching available Yahoo research and the shared market-price snapshot…";
       const research = await apiRequest(
         `/api/pip/portfolios/${encodeURIComponent(portfolioId)}/research`,
         { method: "POST", body: JSON.stringify({ symbol }) },
       );
-      if (research.price.price !== null) {
-        document.querySelector("#pipMarketPrice").value = research.price.price;
-      }
-      if (research.analyst.target_price !== null) {
-        document.querySelector("#pipTargetPrice").value = research.analyst.target_price;
-      }
-      if (research.analyst.target_upside_percent !== null) {
-        document.querySelector("#pipTargetUpside").value = research.analyst.target_upside_percent;
-      }
+      if (requestId !== researchRequestId
+        || portfolioId !== portfolioSelect.value
+        || symbol !== document.querySelector("#analysisSymbol").value.trim().toUpperCase()) return;
+      document.querySelector("#pipMarketPrice").value = research.price.price ?? "";
+      document.querySelector("#pipTargetPrice").value = research.analyst.target_price ?? "";
+      document.querySelector("#pipTargetUpside").value = research.analyst.target_upside_percent ?? "";
 
       const returned = research.returns;
       const dividendTotal = research.dividends.trailing_365_days_per_share;
@@ -447,10 +487,14 @@ if (typeof document !== "undefined") {
       result.hidden = false;
       output.textContent = "Available research loaded. Market price and analyst target inputs were filled where available; score fields are unchanged.";
     } catch (error) {
-      output.textContent = error.message || "Could not load market research.";
+      if (requestId === researchRequestId) {
+        output.textContent = error.message || "Could not load market research.";
+      }
     } finally {
-      setBusy(button, false);
-      updateResearchEnabled();
+      if (requestId === researchRequestId) {
+        setBusy(button, false);
+        updateResearchEnabled();
+      }
     }
   });
   updateScores();
@@ -524,6 +568,7 @@ if (typeof document !== "undefined") {
   });
 
   portfolioSelect.addEventListener("change", async () => {
+    syncAnalysisContext();
     updateImportEnabled();
     updateResearchEnabled();
     if (!apiConnected) return;
