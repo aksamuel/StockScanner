@@ -6,6 +6,7 @@ import json
 from typing import Any, Dict, Iterable, List, Optional
 from uuid import UUID, uuid4
 
+from .ibkr_sync import account_fingerprint
 from .models import PositionRecord, SellRecommendation
 
 
@@ -61,27 +62,20 @@ class SupabaseAuditLogSink:
         recommendation_id = event.get("entity_id")
         if recommendation_id is not None:
             UUID(str(recommendation_id))
-        payload = {
-            "portfolio_id": str(UUID(self.portfolio_id)),
-            "user_id": str(UUID(self.user_id)),
-            "entity_type": event["entity_type"],
-            "entity_id": str(recommendation_id) if recommendation_id is not None else None,
-            "event_type": event["event_type"],
-            "event_details": {
-                key: value for key, value in event.items()
-                if key not in {"entity_type", "entity_id", "event_type", "created_at"}
+        UUID(self.portfolio_id)
+        UUID(self.user_id)
+        result = self.client.rpc(
+            "pip_transition_sell_recommendation",
+            {
+                "p_recommendation_id": str(recommendation_id),
+                "p_expected_status": event.get("from_status"),
+                "p_next_status": event["to_status"],
+                "p_actor": event.get("actor"),
+                "p_reason": event.get("reason"),
             },
-            "created_at": event["created_at"],
-        }
-        result = self.client.table("audit_logs").insert(payload).execute()
+        ).execute()
         if getattr(result, "error", None):
-            raise RuntimeError("Unable to persist PIP audit event")
-        update = {"status": event["to_status"]}
-        if event["to_status"] == "approved":
-            update["approved_by"] = event.get("actor")
-        state_result = self.client.table("sell_recommendations").update(update).eq("id", str(recommendation_id)).execute()
-        if getattr(state_result, "error", None):
-            raise RuntimeError("Unable to persist PIP approval state")
+            raise RuntimeError("Unable to persist PIP approval transition and audit event")
 
 
 class SupabasePortfolioRepository(PortfolioRepository):
@@ -90,6 +84,7 @@ class SupabasePortfolioRepository(PortfolioRepository):
     def __init__(self, client: Any):
         self.client = client
         self.account_ids: dict[str, str] = {}
+        self.account_ids_by_mask: dict[str, str] = {}
 
     @staticmethod
     def _json_safe(value: Any) -> Any:
@@ -113,17 +108,27 @@ class SupabasePortfolioRepository(PortfolioRepository):
         return list(getattr(response, "data", None) or [])
 
     def upsert_accounts(self, portfolio_id: str, accounts: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        rows = [
-            {**account, "portfolio_id": portfolio_id}
-            for account in accounts
-            if account.get("masked_account_id")
-        ]
+        rows = []
+        for account in accounts:
+            masked_id = account.get("masked_account_id")
+            if not masked_id:
+                continue
+            fingerprint = (
+                account.get("account_fingerprint")
+                or account_fingerprint(account.get("account_id"))
+                or account_fingerprint(masked_id)
+            )
+            rows.append({
+                **account,
+                "portfolio_id": portfolio_id,
+                "account_fingerprint": fingerprint,
+            })
         if not rows:
             return []
         response = (
             self.client.table("ibkr_accounts")
-            .upsert(rows, on_conflict="portfolio_id,masked_account_id")
-            .select("id,masked_account_id")
+            .upsert(rows, on_conflict="portfolio_id,account_fingerprint")
+            .select("id,masked_account_id,account_fingerprint")
             .execute()
         )
         if getattr(response, "error", None):
@@ -131,18 +136,32 @@ class SupabasePortfolioRepository(PortfolioRepository):
         saved = list(getattr(response, "data", None) or [])
         for account in saved:
             masked_id = account.get("masked_account_id")
+            fingerprint = account.get("account_fingerprint")
             account_id = account.get("id")
+            if fingerprint and account_id:
+                self.account_ids[str(fingerprint)] = str(account_id)
             if masked_id and account_id:
-                self.account_ids[str(masked_id)] = str(account_id)
+                self.account_ids_by_mask[str(masked_id)] = str(account_id)
         return saved
 
     def upsert_positions(self, portfolio_id: str, positions: Iterable[PositionRecord]) -> list[dict[str, Any]]:
         rows = []
         for position in positions:
             account_key = position.account_id or "unassigned"
+            position_source_key = position.notes.get("source_key")
+            account_fingerprint_value = position.notes.get("account_fingerprint")
+            source_key = (
+                f"{account_key}:{position.symbol}:{position_source_key}"
+                if position_source_key
+                else f"{account_key}:{position.symbol}"
+            )
             rows.append({
                 "portfolio_id": portfolio_id,
-                "account_id": self.account_ids.get(account_key),
+                "account_id": (
+                    self.account_ids.get(str(account_fingerprint_value))
+                    or self.account_ids_by_mask.get(account_key)
+                    or self.account_ids.get(account_key)
+                ),
                 "symbol": position.symbol,
                 "quantity": position.quantity,
                 "average_cost": position.average_cost,
@@ -152,7 +171,7 @@ class SupabasePortfolioRepository(PortfolioRepository):
                 "currency": position.currency,
                 "entry_date": position.entry_date.isoformat() if position.entry_date else None,
                 "last_updated": position.last_updated.isoformat() if position.last_updated else None,
-                "source_key": f"{account_key}:{position.symbol}",
+                "source_key": source_key,
                 "metadata": position.notes,
             })
         return self._upsert("positions", rows, "portfolio_id,source_key")
@@ -177,7 +196,11 @@ class SupabasePortfolioRepository(PortfolioRepository):
                 "dividend_amount": dividend["amount"],
                 "ex_date": dividend["ex_date"].isoformat() if dividend["ex_date"] else None,
                 "pay_date": dividend["pay_date"].isoformat() if dividend["pay_date"] else None,
-                "metadata": {"currency": dividend["currency"]},
+                "metadata": {
+                    "currency": dividend["currency"],
+                    **({"account_id": dividend["account_id"]} if dividend.get("account_id") else {}),
+                    **(dividend.get("metadata") or {}),
+                },
             }
             row["source_key"] = self._source_key(row)
             rows.append(row)
@@ -214,8 +237,6 @@ class SupabasePortfolioRepository(PortfolioRepository):
             "rationale": recommendation.rationale,
             "confidence": recommendation.confidence,
             "status": recommendation.status,
-            "created_at": recommendation.created_at.isoformat() if recommendation.created_at else None,
-            "approved_by": recommendation.approved_by,
             "metadata": {
                 "replacement_candidates": [
                     {
@@ -229,6 +250,10 @@ class SupabasePortfolioRepository(PortfolioRepository):
                 ],
             },
         }
+        if recommendation.created_at is not None:
+            row["created_at"] = recommendation.created_at.isoformat()
+        if recommendation.approved_by is not None:
+            row["approved_by"] = str(UUID(recommendation.approved_by))
         row = self._json_safe(row)
         response = self.client.table("sell_recommendations").insert(row).execute()
         if getattr(response, "error", None):

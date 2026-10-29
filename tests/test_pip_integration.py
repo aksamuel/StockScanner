@@ -104,6 +104,148 @@ def test_csv_flex_source_reads_existing_export_without_network(tmp_path: Path):
     assert records["accounts"][0]["masked_account_id"] == "***0000"
     assert records["positions"][0].symbol == "MSFT"
     assert records["positions"][0].market_value == 375
+    assert records["positions"][0].account_id == "***0000"
+    assert "U99990000" not in repr(records)
+
+
+def test_csv_import_accepts_workbench_day_month_year_buy_date():
+    from io import StringIO
+
+    source = CSVPortfolioDataSource(
+        StringIO(
+            "Account,Symbol,Quantity,CostBasisPrice,BuyDate,Currency\n"
+            "U12345678,AAPL,2,100,02/Jan/2025,USD\n"
+        )
+    )
+    records = IBKRPortfolioSyncService().sync(source, "portfolio-id")
+    assert records["positions"][0].entry_date == datetime(2025, 1, 2, tzinfo=timezone.utc)
+
+
+def test_csv_import_accepts_cost_basis_and_trade_date_position_aliases():
+    from io import StringIO
+
+    source = CSVPortfolioDataSource(
+        StringIO("Symbol,Quantity,CostBasis,TradeDate,Currency\nAAPL,2,120,2025-01-02,USD")
+    )
+    position = IBKRPortfolioSyncService().sync(source, "portfolio-id")["positions"][0]
+
+    assert position.average_cost == 120
+    assert position.cost_basis == 240
+    assert position.entry_date == datetime(2025, 1, 2, tzinfo=timezone.utc)
+
+
+def test_csv_import_keeps_duplicate_symbol_lots_distinct_in_supabase():
+    from io import StringIO
+
+    class Response:
+        error = None
+        data = []
+
+        def execute(self):
+            return self
+
+    class Query:
+        def __init__(self, client, table):
+            self.client, self.table = client, table
+
+        def upsert(self, rows, on_conflict):
+            self.client.position_rows = rows
+            return Response()
+
+    class Client:
+        def table(self, table):
+            return Query(self, table)
+
+    source = CSVPortfolioDataSource(
+        StringIO(
+            "Symbol,Quantity,CostBasisPrice,BuyDate,Currency\n"
+            "AAPL,2,100,02/Jan/2025,USD\n"
+            "AAPL,1,110,15/Jan/2025,USD\n"
+        )
+    )
+    client = Client()
+    IBKRPortfolioSyncService(SupabasePortfolioRepository(client)).sync(source, "portfolio-id")
+
+    rows = client.position_rows
+    assert len(rows) == 2
+    assert {row["symbol"] for row in rows} == {"AAPL"}
+    assert len({row["source_key"] for row in rows}) == 2
+
+
+def test_csv_position_source_keys_are_stable_when_rows_are_reordered():
+    from io import StringIO
+
+    class Response:
+        error = None
+        data = []
+
+        def execute(self):
+            return self
+
+    class Query:
+        def __init__(self, client, table):
+            self.client, self.table = client, table
+
+        def upsert(self, rows, on_conflict):
+            self.client.position_rows = rows
+            return Response()
+
+    class Client:
+        def table(self, table):
+            return Query(self, table)
+
+    def imported_keys(csv):
+        client = Client()
+        source = CSVPortfolioDataSource(StringIO(csv))
+        IBKRPortfolioSyncService(SupabasePortfolioRepository(client)).sync(source, "portfolio-id")
+        return {row["symbol"]: row["source_key"] for row in client.position_rows}
+
+    header = "Symbol,Quantity,CostBasisPrice,BuyDate,Currency\n"
+    first = imported_keys(header + "AAPL,2,100,2025-01-02,USD\nMSFT,3,200,2025-02-02,USD\n")
+    reordered = imported_keys(header + "MSFT,3,200,2025-02-02,USD\nAAPL,2,100,2025-01-02,USD\n")
+    assert reordered == first
+
+
+def test_csv_records_from_accounts_with_the_same_masked_id_remain_distinct():
+    from io import StringIO
+
+    source = CSVPortfolioDataSource(
+        StringIO(
+            "Account,Symbol,Quantity,AverageCost,TransactionType,TradeDate,Price,"
+            "DividendAmount,PayDate,Currency\n"
+            "U12340000,AAPL,1,100,BUY,2025-01-02,100,2,2025-01-15,USD\n"
+            "U99990000,AAPL,1,100,BUY,2025-01-02,100,2,2025-01-15,USD\n"
+        )
+    )
+    records = IBKRPortfolioSyncService().sync(source, "portfolio-id")
+
+    assert len(records["accounts"]) == 2
+    assert len(records["positions"]) == 2
+    assert len({position.notes["source_key"] for position in records["positions"]}) == 2
+    assert len(records["transactions"]) == 2
+    assert len({
+        transaction["metadata"]["source_key"]
+        for transaction in records["transactions"]
+    }) == 2
+    assert len(records["dividends"]) == 2
+    assert len({
+        dividend["metadata"]["source_key"]
+        for dividend in records["dividends"]
+    }) == 2
+    assert {position.account_id for position in records["positions"]} == {"***0000"}
+    assert "U12340000" not in repr(records)
+    assert "U99990000" not in repr(records)
+
+
+def test_csv_import_applies_explicit_default_currency_to_positions():
+    from io import StringIO
+
+    source = CSVPortfolioDataSource(
+        StringIO("Account,Symbol,Quantity,AverageCost\nU12345678,AAPL,2,100\n"),
+        default_currency="GBP",
+    )
+    records = IBKRPortfolioSyncService().sync(source, "portfolio-id")
+    assert records["positions"][0].currency == "GBP"
 
 
 def test_sync_rejects_invalid_position_rows():
@@ -236,6 +378,9 @@ def test_supabase_audit_sink_records_transition_and_state_without_raw_ids():
         error = None
         data = []
 
+        def execute(self):
+            return self
+
     class Query:
         def __init__(self, client, table):
             self.client, self.table_name = client, table
@@ -256,10 +401,15 @@ def test_supabase_audit_sink_records_transition_and_state_without_raw_ids():
             return Response()
 
     class Client:
-        calls = []
+        def __init__(self):
+            self.calls = []
 
         def table(self, table):
             return Query(self, table)
+
+        def rpc(self, name, params):
+            self.calls.append((name, params))
+            return Response()
 
     client = Client()
     recommendation_id = "11111111-1111-4111-8111-111111111111"
@@ -272,8 +422,11 @@ def test_supabase_audit_sink_records_transition_and_state_without_raw_ids():
     workflow.propose(recommendation_id)
     workflow.begin_review(recommendation_id, "reviewer")
     workflow.approve(recommendation_id, "reviewer", "Reviewed.")
-    assert any(call[0] == "audit_logs" and call[1] == "insert" for call in client.calls)
-    assert any(call[0] == "sell_recommendations" and call[1] == "update" for call in client.calls)
+    transition_calls = [call for call in client.calls if call[0] == "pip_transition_sell_recommendation"]
+    assert len(transition_calls) == 3
+    assert transition_calls[-1][1]["p_expected_status"] == "under_review"
+    assert transition_calls[-1][1]["p_next_status"] == "approved"
+    assert transition_calls[-1][1]["p_actor"] == "reviewer"
 
 
 def test_sell_advisor_can_recommend_partial_review():
@@ -331,7 +484,9 @@ def test_order_transmission_is_disabled_by_default_and_in_ci():
 
 def test_pip_migration_has_rls_and_append_only_audit_logs():
     migration = Path(__file__).parents[1] / "supabase/migrations/20261023_pip_core_schema.sql"
+    approval_migration = Path(__file__).parents[1] / "supabase/migrations/20261024_pip_approval_rpc.sql"
     sql = migration.read_text(encoding="utf-8").lower()
+    approval_sql = approval_migration.read_text(encoding="utf-8").lower()
     tables = (
         "pip_profiles", "portfolios", "ibkr_accounts", "positions", "transactions",
         "dividends", "daily_snapshots", "analyst_signals", "stock_scores",
@@ -354,3 +509,23 @@ def test_pip_migration_has_rls_and_append_only_audit_logs():
     assert "grant select, insert on public.audit_logs to authenticated" in sql
     assert "for update to authenticated" not in sql.split("create policy \"pip owners read audit logs\"", 1)[1]
     assert "for delete to authenticated" not in sql.split("create policy \"pip owners read audit logs\"", 1)[1]
+    assert "security definer" in approval_sql
+    assert "auth.uid()" in approval_sql
+    assert "revoke update, delete on public.sell_recommendations from anon, authenticated" in approval_sql
+    assert "pip_transition_sell_recommendation" in approval_sql
+    assert "revoke insert on public.audit_logs from anon, authenticated" in approval_sql
+    assert "approved_by is null" in approval_sql
+
+
+def test_flex_rate_limit_is_shared_by_ibkr_token_across_users():
+    migration = Path(__file__).parents[1] / "supabase/migrations/20261027000000_pip_ibkr_flex_vault.sql"
+    sql = migration.read_text(encoding="utf-8").lower()
+    table_match = re.search(
+        r"create table if not exists public\.pip_ibkr_flex_rate_limits\s*\((.*?)\n\);",
+        sql,
+        re.DOTALL,
+    )
+
+    assert table_match
+    assert "primary key (token_fingerprint)" in table_match.group(1)
+    assert "user_id" not in table_match.group(1)

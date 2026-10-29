@@ -47,6 +47,6 @@ def test_decision_engine_sell_recommendation():
         recommendation_threshold=60,
     )
 
-    assert result.recommendation in {"sell", "watch", "hold"}
+    assert result.recommendation in {"sell", "partial-sell", "watch", "hold"}
     assert result.sell_score >= 0
     assert isinstance(result.rationale, list)

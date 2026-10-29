@@ -75,7 +75,7 @@ class SellAdvisor:
             score=float(sell_score) if sell_score is not None else None,
             recommendation=recommendation,
             rationale=reasons,
-            confidence=min(confidence, max(0.0, min(1.0, sell_score / 100.0)) if sell_score is not None else 0.0),
+            confidence=confidence,
             created_at=datetime.now(timezone.utc),
             status="draft",
             replacement_candidates=replacement_candidates or [],

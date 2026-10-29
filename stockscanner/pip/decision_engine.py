@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Mapping, Optional
 from uuid import uuid4
 
 from .models import PositionRecord, ReplacementCandidate, SellRecommendation
 from .replacement_engine import ReplacementCandidateEngine
 from .scoring import calculate_cps_result, calculate_sell_score_result
+from .sell_advisor import SellAdvisor
 
 
 @dataclass
@@ -65,6 +66,7 @@ class DecisionEngine:
 
     def __init__(self, repository: Optional[PortfolioRepository] = None):
         self.repository = repository or InMemoryPortfolioRepository()
+        self.last_recommendation: SellRecommendation | None = None
 
     def analyze_position(
         self,
@@ -86,6 +88,7 @@ class DecisionEngine:
         held_symbols: Optional[Iterable[str]] = None,
         concentrations: Optional[Dict[str, float]] = None,
         max_concentration_percent: float = 100.0,
+        additional_metadata: Optional[Mapping[str, Any]] = None,
     ) -> PortfolioAnalysisResult:
         cps_result = calculate_cps_result(
             {
@@ -111,10 +114,10 @@ class DecisionEngine:
         sell_score = sell_result.score
 
         replacement_candidates: List[ReplacementCandidate] = []
-        if peer_scores is not None and sell_score is not None:
+        if peer_scores is not None and cps is not None:
             replacement_candidates = ReplacementCandidateEngine().generate_candidates(
                 symbol=symbol,
-                current_score=sell_score,
+                current_score=cps,
                 peer_scores=peer_scores,
                 max_candidates=replacement_limit,
                 candidate_cps=candidate_cps,
@@ -123,32 +126,22 @@ class DecisionEngine:
                 max_concentration_percent=max_concentration_percent,
             )
 
-        missing_data_reasons = list(dict.fromkeys(cps_result.reasons + sell_result.reasons))
         confidence = min(cps_result.confidence, sell_result.confidence)
-        if sell_score is None or confidence < 0.5:
-            recommendation = "watch"
-            rationale = [
-                "Available data is insufficient for a confident sell recommendation.",
-                *missing_data_reasons,
-            ]
-        elif sell_score >= recommendation_threshold:
-            recommendation = "sell"
-            rationale = [
-                "Sell score is above the review threshold.",
-                "Weak relative performance and weak opportunity usage justify a review.",
-            ]
-        elif cps is not None and cps < 45:
-            recommendation = "watch"
-            rationale = [
-                "CPS is below the minimum quality bar.",
-                "The position may be dragging portfolio productivity.",
-            ]
-        else:
-            recommendation = "hold"
-            rationale = [
-                "The current evidence does not justify exit action.",
-                "Continue monitoring with a normal review cadence.",
-            ]
+        missing_data_reasons = list(dict.fromkeys(cps_result.reasons + sell_result.reasons))
+        advice = SellAdvisor(minimum_sell_confidence=recommendation_threshold).build_recommendation(
+            portfolio_id=portfolio_id,
+            symbol=symbol,
+            sell_score=sell_score,
+            cps=cps,
+            opportunity_cost=opportunity_cost,
+            technical_health=technical_health,
+            relative_performance=relative_performance,
+            replacement_candidates=replacement_candidates,
+            confidence=confidence,
+            missing_data_reasons=missing_data_reasons,
+        )
+        recommendation = advice.recommendation
+        rationale = advice.rationale
 
         score_record = {
             "portfolio_id": portfolio_id,
@@ -168,6 +161,7 @@ class DecisionEngine:
             "cps_confidence": cps_result.confidence,
             "sell_score_confidence": sell_result.confidence,
             "missing_data_reasons": missing_data_reasons,
+            **(additional_metadata or {}),
         }
 
         self.repository.upsert_score(portfolio_id, symbol, score_record)
@@ -179,11 +173,11 @@ class DecisionEngine:
             score=sell_score,
             recommendation=recommendation,
             rationale=rationale,
-            confidence=min(confidence, max(0.0, min(1.0, sell_score / 100.0)) if sell_score is not None else 0.0),
+            confidence=confidence,
             status="draft",
             replacement_candidates=replacement_candidates,
         )
-        self.repository.create_recommendation(recommendation_record)
+        self.last_recommendation = self.repository.create_recommendation(recommendation_record)
 
         return PortfolioAnalysisResult(
             symbol=symbol,

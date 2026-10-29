@@ -140,6 +140,7 @@ To run just the offline PIP tests:
 
 ```cmd
 .venv\Scripts\python.exe -m pytest -q tests\pip tests\test_pip_integration.py
+node --test tests\pip-dashboard.test.mjs tests\pip-ibkr-flex.test.mjs
 ```
 
 ## Apply the Supabase migrations
@@ -160,16 +161,42 @@ Apply the migrations in timestamp order:
 12. `20261002110000_add_failed_symbol_scan_history.sql`
 13. `20261002114954_add_catalyst_research_beta.sql`
 14. `20261023_pip_core_schema.sql`
+15. `20261024_pip_approval_rpc.sql`
+16. `20261026000000_pip_account_fingerprints.sql`
+17. `20261027000000_pip_ibkr_flex_vault.sql`
 
 The 20260831 migrations add backend-only leases and price telemetry. The two
 20261002 migrations add owner-gated portfolio Technical-strength storage,
 failed-symbol queue/history, and per-symbol price timestamps. Apply both and
 deploy `portfolio-signals` before publishing v2.19.0.
 
-The PIP migration is additive and reuses `auth.users` and the approved-user
-records in `public.user_access`. GitHub Pages deployment does not apply SQL
-migrations. Review the [PIP migration plan](docs/pip/MIGRATION_PLAN.md) and
-[PIP FAQ](docs/pip/FAQ.md) before applying it to a Supabase project.
+The PIP migrations are additive and reuse `auth.users` and the approved-user
+records in `public.user_access`. Supabase Vault must be enabled for the final
+Flex migration. GitHub Pages deployment does not apply SQL migrations. Review
+the [PIP migration plan](docs/pip/MIGRATION_PLAN.md) and [PIP FAQ](docs/pip/FAQ.md)
+before applying them to a Supabase project.
+PIP research reads the authenticated `price_snapshots` table populated by the
+existing Yahoo-first collection job with Alpaca and Twelve Data fallbacks; keep
+that job and its Supabase snapshot migration configured for shared quotes.
+
+## Run the Portfolio Intelligence API
+
+Configure `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, and an exact
+`PIP_CORS_ORIGINS` allowlist in the API host environment. For live Flex sync,
+also set a random `PIP_FLEX_INTERNAL_KEY` (at least 32 characters) in both the
+API host and Supabase Function secrets, then deploy `pip-ibkr-flex`. Never
+provide a service-role key to this API; only the Supabase Edge Function uses its
+server-side key for restricted Vault RPCs. After installing `requirements.txt`, run
+`stockscanner-pip-api` (or `python -m uvicorn stockscanner.pip.api:app`) behind
+HTTPS. Then open the Portfolio Intelligence page; its API URL defaults to
+`https://stockscanner-pip-api.onrender.com` and can be changed for another
+deployment. Sign in, select **Connect and load portfolios**, and verify the
+authenticated connection. Details and routes are in
+[docs/portfolio-intelligence-pip.md](docs/portfolio-intelligence-pip.md).
+The page's **Load available research** action uses Yahoo history, company growth
+fields, raw EPS revision counts, analyst consensus/targets, and the shared price
+snapshot. It sends only the imported holding's symbol to Yahoo. Raw revision
+counts are not converted into a score because no mapping has been approved.
 
 ## Activate invite-only Supabase authentication
 
@@ -273,9 +300,10 @@ The signed-in user pages serve different purposes:
   resistance, and analyst target proxy. Each import atomically replaces only
   the signed-in user's older rows for that broker before the page recalculates
   the analysis; it never truncates another user or broker.
-- `portfolio-intelligence.html`: authenticated PIP module catalog, local-only CSV
-  preflight, illustrative score calculator, and in-memory approval workflow demo.
-  The Python PIP services remain a separate package and are not executed by Pages.
+- `portfolio-intelligence.html`: authenticated PIP API client for CSV imports,
+  optional read-only live IBKR Flex sync, Python analysis, recommendations, and
+  persisted human approval. Configure and deploy the FastAPI API and Vault-backed
+  Supabase Edge Function separately; PIP never transmits orders.
 - `help.html`: the current user guide and FAQ, available from the shared Menu,
   portfolio navigation, and report Help links.
 

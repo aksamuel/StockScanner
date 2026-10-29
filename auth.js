@@ -832,6 +832,20 @@ async function protectPage() {
     return;
   }
 
+  if (document.querySelector("script[data-stockscanner-pip-api]")) {
+    window.stockscannerPipAuth = {
+      getAccessToken: async () => {
+        const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+        if (sessionError) throw sessionError;
+        if (!sessionData.session?.access_token) {
+          throw new Error("Your Supabase session has expired. Sign in again.");
+        }
+        return sessionData.session.access_token;
+      },
+    };
+    window.dispatchEvent(new Event("stockscanner-pip-auth-ready"));
+  }
+
   const isAdmin = (data.user.email || "").toLowerCase() === ADMIN_EMAIL;
   if (document.documentElement.hasAttribute("data-admin-only") && !isAdmin) {
     window.location.replace(`${APP_ROOT}index.html`);

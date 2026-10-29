@@ -13,7 +13,7 @@ remain unchanged.
 | --- | --- | --- |
 | `users` | Reuse `auth.users`; optional `pip_profiles` references it | No duplicate credentials, auth identity, or approval state |
 | `portfolios` | Create | `user_id` references `auth.users`; owner must be approved |
-| `ibkr_accounts` | Create | Portfolio-owned, masked account identifier only |
+| `ibkr_accounts` | Create/extend | Portfolio-owned masked display ID plus stable one-way fingerprint for multi-account identity |
 | `positions`, `transactions`, `dividends`, `daily_snapshots` | Create | Portfolio-owned and indexed by portfolio/symbol/date |
 | `analyst_signals` | Create | Portfolio/user-owned; no cross-user client reads |
 | `stock_scores`, `sell_recommendations`, `replacement_candidates` | Create | Portfolio-owned, RLS checked through the portfolio owner |
@@ -28,11 +28,13 @@ Authenticated policies must check both `auth.uid()` ownership and an approved
 `public.user_access` row. Service-role ingestion remains server-side; no service
 role key belongs in browser code or fixtures.
 
-Credentials and tokens must never be stored in PIP columns. Keep connection
-configuration in environment variables or Supabase secrets. Account identifiers
-must be masked in any persisted metadata, logs, and audit events. Audit history is
-append-only: permit owner-scoped inserts and reads but define no update/delete
-policy for authenticated users.
+Flex credentials are stored only in Supabase Vault through restricted server-side
+RPCs; internal API/function keys stay in server secrets. Never store credentials
+or raw account identifiers in PIP columns, logs, or audit events. Account
+fingerprints are non-display one-way keys used only to distinguish accounts that
+share a masked suffix. Audit history is append-only: authenticated owners can read events but cannot
+insert, update, or delete them directly. The narrowly scoped approval RPC writes
+each event atomically with the corresponding recommendation transition.
 
 ## Rollout order
 
@@ -40,15 +42,19 @@ policy for authenticated users.
    migrations are deployed.
 2. Apply the additive PIP core schema migration; verify all requested tables,
    keys, timestamps, and indexes.
-3. Apply/verify RLS policies as the authenticated owner, another approved user,
+3. Apply/verify RLS policies and approval RPC grants as the authenticated owner, another approved user,
    a pending user, and an anonymous user. Confirm cross-owner operations fail.
-4. Deploy the PIP code with fixture-backed sync only. Keep any IBKR live transport
-   and order transmission absent.
-5. Validate imported CSV/Flex records and reconcile PIP snapshots against the
-   existing holdings import before enabling scheduled/manual ingestion.
-6. Enable analytics and advisory recommendations after verifying missing-data
+4. Apply the account-fingerprint and Vault-backed Flex migrations; verify the
+   owner policies and restricted service-role RPC grants.
+5. Deploy the authenticated FastAPI service and the `pip-ibkr-flex` Edge
+   Function. Keep the service-role key inside Supabase and set a matching,
+   server-only internal key on both hosts.
+6. Validate CSV imports and test read-only XML Flex sync with multiple accounts
+   and approved users. Reconcile PIP snapshots against the existing holdings
+   import before enabling routine/manual ingestion.
+7. Enable analytics and advisory recommendations after verifying missing-data
    confidence and audit records.
-7. Retain the existing portfolio UI and scanner behavior throughout rollout; do
+8. Retain the existing portfolio UI and scanner behavior throughout rollout; do
    not migrate or delete existing holdings/import rows as part of this release.
 
 ## Risks and rollback
@@ -62,4 +68,3 @@ policy for authenticated users.
   before enabling client reads; default to no access when approval is absent.
 - Roll back by disabling PIP entry points and stopping new ingestion. Preserve
   append-only audit evidence and all existing scanner/import tables.
-

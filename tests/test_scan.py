@@ -1258,6 +1258,47 @@ def test_analyst_data_calculates_target_upside_and_uses_cache(tmp_path, monkeypa
     assert calls == ["requested"]
 
 
+def test_analyst_data_recalculates_cached_upside_for_current_price(tmp_path, monkeypatch):
+    calls = []
+
+    class FakeTicker:
+        def get_info(self):
+            calls.append("requested")
+            return {
+                "recommendationKey": "buy",
+                "targetMeanPrice": 125,
+            }
+
+    monkeypatch.setattr(
+        "stockscanner.analyst_data.yf.Ticker", lambda symbol: FakeTicker()
+    )
+
+    first = get_analyst_data(
+        "ABC",
+        100,
+        cache_directory=str(tmp_path),
+        include_target_price=True,
+    )
+    second = get_analyst_data(
+        "ABC",
+        125,
+        cache_directory=str(tmp_path),
+        include_target_price=True,
+    )
+
+    assert first == {
+        "Analyst Rating": "Buy",
+        "Target Upside": 25.0,
+        "Target Price": 125.0,
+    }
+    assert second == {
+        "Analyst Rating": "Buy",
+        "Target Upside": 0.0,
+        "Target Price": 125.0,
+    }
+    assert calls == ["requested"]
+
+
 def test_analyst_data_only_breaks_complete_technical_ties(monkeypatch):
     monkeypatch.setattr("stockscanner.ranking.load_exceptions", lambda: set())
     results = [

@@ -1,11 +1,14 @@
 import assert from "node:assert/strict";
 import {
   calculatePipScore,
+  PIP_DEFAULT_API_URL,
   PIP_CPS_WEIGHTS,
   PIP_SELL_SCORE_WEIGHTS,
+  portfolioImportPreviewFromCsv,
   portfolioRowsFromCsv,
-  transitionPipApproval,
 } from "../pip-dashboard.js";
+
+assert.equal(PIP_DEFAULT_API_URL, "https://stockscanner-pip-api.onrender.com");
 
 assert.equal(calculatePipScore(
   Object.fromEntries(Object.keys(PIP_CPS_WEIGHTS).map((key) => [key, 100])),
@@ -30,24 +33,6 @@ assert.equal(normalized.score, 100);
 assert.equal(normalized.confidence, 0.4);
 assert.equal(normalized.reasons.length, 1);
 
-const transition = transitionPipApproval(
-  "under_review",
-  "approved",
-  "reviewer",
-  "Reviewed evidence",
-  new Date("2026-01-01T00:00:00.000Z"),
-);
-assert.equal(transition.status, "approved");
-assert.equal(transition.event.created_at, "2026-01-01T00:00:00.000Z");
-assert.throws(
-  () => transitionPipApproval("under_review", "approved", "", "", new Date()),
-  /requires an actor and a reason/,
-);
-assert.throws(
-  () => transitionPipApproval("proposed", "approved", "reviewer", "reason", new Date()),
-  /Cannot transition/,
-);
-
 const positions = portfolioRowsFromCsv(
   "ClientAccountID, Symbol, Quantity, Cost Basis Price, Open Date Time, Currency\nU12345678,AAPL,2,120.50,20250102,USD",
 );
@@ -55,4 +40,20 @@ assert.equal(positions[0].symbol, "AAPL");
 assert.equal(positions[0].bought_on, "2025-01-02");
 assert.equal(positions[0].currency, "USD");
 
-console.log("PIP browser score previews and approval transitions passed");
+const dividendImport = portfolioImportPreviewFromCsv(
+  "Symbol,DividendAmount,PayDate,Currency\nAAPL,4,2026-01-01,USD",
+);
+assert.equal(dividendImport.dividends, 1);
+assert.equal(dividendImport.positions.length, 0);
+const transactionImport = portfolioImportPreviewFromCsv(
+  "Symbol,TradeDate,TransactionType,Shares,Price,Currency\nAAPL,2026-01-01,buy,2,120,USD",
+);
+assert.equal(transactionImport.transactions, 1);
+assert.equal(transactionImport.positions.length, 0);
+const costBasisPosition = portfolioImportPreviewFromCsv(
+  "Symbol,Quantity,CostBasis,TradeDate,Currency\nAAPL,2,240,2025-01-02,USD",
+).positions[0];
+assert.equal(costBasisPosition.buy_price, 240);
+assert.equal(costBasisPosition.bought_on, "2025-01-02");
+
+console.log("PIP browser score and import previews passed");

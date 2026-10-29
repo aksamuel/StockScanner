@@ -2,10 +2,10 @@
 
 Recommendations are screening prompts, not financial advice. The workflow
 requires a human actor and a reason to approve a recommendation. It validates each
-transition and emits a redacted audit event for every state change.
-Bind `ApprovalWorkflow` to `SupabaseAuditLogSink` in a server-side integration to
-persist each transition event and update its recommendation status; tests use the
-default in-memory audit list or a fixture sink.
+transition and emits a redacted audit event for every state change. The
+`stockscanner.pip.api` integration persists state changes and audit events in a
+single owner-checked Supabase function. `approved_by` is the authenticated
+`auth.uid()` UUID; reviewer-entered display text is audit detail only.
 
 Supported transitions:
 
