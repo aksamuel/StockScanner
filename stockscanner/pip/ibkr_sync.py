@@ -160,11 +160,11 @@ class CSVPortfolioDataSource:
                     "account_id": account,
                     "source_key": f"csv-row:{row_number}",
                     "quantity": quantity,
-                    "average_cost": _field(row, "averageCost", "average_cost", "costBasisPrice", "buy_price"),
+                    "average_cost": _field(row, "averageCost", "average_cost", "costBasisPrice", "costBasis", "buy_price"),
                     "market_price": _field(row, "marketPrice", "market_price", "current_price"),
                     "market_value": _field(row, "marketValue", "market_value"),
                     "currency": currency,
-                    "entry_date": _field(row, "openDateTime", "entry_date", "buy_date"),
+                    "entry_date": _field(row, "openDateTime", "entry_date", "buy_date", "tradeDate"),
                 })
         return PortfolioData(accounts=list(accounts.values()), positions=positions, transactions=transactions, dividends=dividends)
 

@@ -121,6 +121,19 @@ def test_csv_import_accepts_workbench_day_month_year_buy_date():
     assert records["positions"][0].entry_date == datetime(2025, 1, 2, tzinfo=timezone.utc)
 
 
+def test_csv_import_accepts_cost_basis_and_trade_date_aliases():
+    from io import StringIO
+
+    source = CSVPortfolioDataSource(
+        StringIO("Symbol,Quantity,CostBasis,TradeDate,Currency\nAAPL,2,100,2025-01-02,USD\n")
+    )
+    position = IBKRPortfolioSyncService().sync(source, "portfolio-id")["positions"][0]
+
+    assert position.average_cost == 100
+    assert position.cost_basis == 200
+    assert position.entry_date == datetime(2025, 1, 2, tzinfo=timezone.utc)
+
+
 def test_csv_import_keeps_duplicate_symbol_lots_distinct_in_supabase():
     from io import StringIO
 
