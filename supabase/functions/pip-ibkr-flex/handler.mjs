@@ -68,11 +68,11 @@ function xmlValue(xml, name) {
 
 function decodeXmlText(value) {
   return value
-    .replaceAll("&amp;", "&")
     .replaceAll("&quot;", '"')
     .replaceAll("&apos;", "'")
     .replaceAll("&lt;", "<")
-    .replaceAll("&gt;", ">");
+    .replaceAll("&gt;", ">")
+    .replaceAll("&amp;", "&");
 }
 
 function isFlexQueryResponse(xml) {

@@ -251,6 +251,27 @@ test("Flex sync rejects an unsafe statement URL without following it", async () 
   assert.equal((await response.text()).includes(FLEX_TOKEN), false);
 });
 
+test("Flex response URL entity decoding is single-pass", async () => {
+  const { handler, calls } = harness({
+    fetcher: async (url) => new URL(url).pathname.endsWith("/SendRequest")
+      ? new Response(
+        "<FlexStatementResponse><Status>Success</Status><ReferenceCode>87654321</ReferenceCode>"
+          + "<Url>https://ndcdyn.interactivebrokers.com/AccountManagement/FlexWebService/GetStatement#&amp;amp;quot;</Url>"
+          + "</FlexStatementResponse>",
+        { status: 200 },
+      )
+      : new Response(STATEMENT_XML, { status: 200 }),
+  });
+  const response = await handler(request({
+    action: "sync",
+    portfolio_id: PORTFOLIO_ID,
+    connection_id: CONNECTION_ID,
+  }));
+
+  assert.equal(response.status, 200);
+  assert.equal(calls.fetch[1].url.hash, "#&amp;quot;");
+});
+
 test("Flex handler does not access credentials for a connection owned by another user", async () => {
   const { handler, calls } = harness({ connectionOwned: false });
   const response = await handler(request({
