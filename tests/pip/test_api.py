@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
@@ -290,6 +291,11 @@ def test_analysis_api_runs_modules_and_persists_score_and_proposed_recommendatio
             "portfolio_id": fake.portfolio_id,
             "symbol": "aapl",
             "position": {"market_price": 130, "dividends_received": 12},
+            "dividends": {
+                "records": [
+                    {"symbol": "AAPL", "amount": 40, "pay_date": date.today().isoformat()},
+                ],
+            },
             "scores": {
                 "tsr": 70,
                 "relative_performance": 65,
@@ -326,6 +332,7 @@ def test_analysis_api_runs_modules_and_persists_score_and_proposed_recommendatio
     }
     assert "analyst_signals" in {table for table, _ in fake.writes}
     assert result["modules"]["growth"]["confidence"] == 1
+    assert abs(result["modules"]["dividends"]["current_yield_pct"] - (40 / 260 * 100)) < 1e-9
     assert abs(result["modules"]["lifecycle"]["total_return_percent"] - 36) < 1e-9
     assert result["modules"]["forward_looking"]["score"] == 68
     assert result["recommendation"]["replacement_candidates"][0]["symbol"] == "MSFT"

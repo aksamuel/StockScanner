@@ -445,6 +445,13 @@ def create_app(
             or body.position.market_price
             or stored_market_price
         )
+        market_value = body.position.market_value
+        if market_value is None:
+            market_value = (
+                current_price * total_quantity
+                if current_price is not None and total_quantity
+                else stored_market_value
+            )
 
         stored_score_result = user.client.table("stock_scores").select(
             "tsr,relative_performance,dividend_growth,earnings_growth,analyst_revisions,"
@@ -499,7 +506,7 @@ def create_app(
             )
         dividend = DividendAnalysisEngine().analyze(
             dividend_records=dividend_records,
-            current_price=current_price,
+            current_price=market_value,
             payout_ratio=body.dividends.payout_ratio,
             dividend_growth_rate=body.dividends.dividend_growth_rate,
             consistency_score=body.dividends.consistency_score,
@@ -540,13 +547,6 @@ def create_app(
 
         entry_date = body.position.entry_date or stored_entry_date
         cost_basis = body.position.cost_basis if body.position.cost_basis is not None else stored_cost_basis
-        market_value = body.position.market_value
-        if market_value is None:
-            market_value = (
-                current_price * total_quantity
-                if current_price is not None and total_quantity
-                else stored_market_value
-            )
 
         cps_result = calculate_cps_result(components)
         lifecycle = PositionLifecycleAnalyzer().summarize_position(
