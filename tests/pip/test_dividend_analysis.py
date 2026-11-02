@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 
 from stockscanner.pip.dividend_analysis import DividendAnalysisEngine
 
@@ -13,9 +13,10 @@ def test_dividend_analysis_basic():
             self.amount = amount
             self.pay_date = pay_date
 
+    pay_date = datetime.now(timezone.utc).date() - timedelta(days=1)
     dividends = [
-        DividendStub(1.40, date.today()),
-        DividendStub(1.50, date.today()),
+        DividendStub(1.40, pay_date),
+        DividendStub(1.50, pay_date),
     ]
 
     result = engine.analyze(

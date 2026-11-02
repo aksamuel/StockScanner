@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
@@ -401,7 +401,7 @@ def test_analysis_api_runs_modules_and_persists_score_and_proposed_recommendatio
                     {
                         "symbol": "AAPL",
                         "amount": 8,
-                        "pay_date": date.today().isoformat(),
+                        "pay_date": (datetime.now(timezone.utc).date() - timedelta(days=1)).isoformat(),
                     }
                 ]
             },
@@ -844,6 +844,43 @@ def test_flex_sync_exposes_only_known_retry_codes_from_edge_errors(monkeypatch):
         assert response.json()["detail"] == "The IBKR Flex statement is not ready. Retry shortly."
 
 
+def test_flex_sync_exposes_only_the_known_oversized_statement_error(monkeypatch):
+    fake = PipelineClient()
+    message = "The IBKR Flex statement exceeds 5 MB. Reduce selected fields or the report period."
+    edge_error = {"error": message}
+
+    def post(url, *, headers, json, timeout):
+        return SimpleNamespace(
+            status_code=413,
+            is_success=False,
+            json=lambda: edge_error,
+        )
+
+    monkeypatch.setattr(pip_api.httpx, "post", post)
+    app = create_app(
+        client_factory=lambda url, key: fake,
+        environ={
+            "SUPABASE_URL": "https://project.example.test",
+            "SUPABASE_PUBLISHABLE_KEY": "public-test-key",
+            "PIP_FLEX_INTERNAL_KEY": "test-internal-key-with-at-least-thirty-two-characters",
+        },
+    )
+    client = TestClient(app)
+    url = f"/api/pip/portfolios/{fake.portfolio_id}/ibkr-flex-connections/{fake.connection_id}/sync"
+    headers = {"Authorization": "Bearer " + "test-access-token"}
+
+    response = client.post(url, headers=headers, json={"confirm_unfiltered": True})
+    assert response.status_code == 413
+    assert response.json()["detail"] == message
+    assert fake.writes == []
+    assert fake.rpc_calls == []
+
+    edge_error["error"] = "unexpected-upstream-detail"
+    response = client.post(url, headers=headers, json={"confirm_unfiltered": True})
+    assert response.status_code == 413
+    assert response.json()["detail"] == "The Flex connection request is too large."
+
+
 def test_flex_connection_api_rejects_invalid_credentials_without_echoing_them():
     fake = PipelineClient()
     calls = []
@@ -915,6 +952,9 @@ def test_flex_sync_persists_masked_records_and_returns_counts_not_raw_statement(
     assert payload["positions"][0]["account_id"] == "***4567"
     assert "account_fingerprint" not in payload["positions"][0]["notes"]
     assert "source_key" not in payload["positions"][0]["notes"]
+    assert len(payload["warnings"]) == 2
+    assert "Trades section" in payload["warnings"][0]
+    assert "Cash Transactions section" in payload["warnings"][1]
     assert "U1234567" not in response.text
     assert "<FlexQueryResponse>" not in response.text
     assert any(table == "ibkr_accounts" for table, rows in fake.writes)
@@ -935,6 +975,46 @@ def test_flex_sync_persists_masked_records_and_returns_counts_not_raw_statement(
             },
         )
     ]
+
+
+def test_flex_sync_preserves_history_and_timestamp_warnings():
+    fake = PipelineClient()
+
+    class TimestampFailureQuery(PipelineQuery):
+        def execute(self):
+            if self.table_name == "pip_ibkr_connections" and self.operation == "update":
+                return SimpleNamespace(data=[], error=None)
+            return super().execute()
+
+    fake.table = lambda table: TimestampFailureQuery(fake, table)
+    app = create_app(
+        client_factory=lambda url, key: fake,
+        environ={
+            "SUPABASE_URL": "https://project.example.test",
+            "SUPABASE_PUBLISHABLE_KEY": "public-test-key",
+        },
+        flex_edge_invoker=lambda user, payload: {
+            "statement_xml": (
+                '<FlexQueryResponse><FlexStatement accountId="U1234567" '
+                'currency="USD" toDate="20250131"><OpenPositions />'
+                "</FlexStatement></FlexQueryResponse>"
+            )
+        },
+    )
+    response = TestClient(app).post(
+        f"/api/pip/portfolios/{fake.portfolio_id}/ibkr-flex-connections/{fake.connection_id}/sync",
+        headers={"Authorization": "Bearer " + "test-access-token"},
+        json={"confirm_unfiltered": True},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["last_synced_at"] is None
+    assert len(payload["warnings"]) == 3
+    assert "Trades section" in payload["warnings"][0]
+    assert "Cash Transactions section" in payload["warnings"][1]
+    assert "last-sync timestamp" in payload["warnings"][2]
+    assert "U1234567" not in response.text
 
 
 def test_flex_sync_requires_explicit_unfiltered_query_confirmation_before_contacting_ibkr():
@@ -1025,6 +1105,7 @@ def test_flex_sync_reports_an_older_snapshot_conflict():
 def test_health_advertises_safe_flex_snapshot_support():
     client, _, _ = _client()
     assert client.get("/healthz").json()["flex_position_snapshot_sync"] == 1
+    assert client.get("/healthz").json()["flex_history_section_warnings"] == 1
 
 
 def test_flex_connection_api_returns_not_found_for_another_users_connection():

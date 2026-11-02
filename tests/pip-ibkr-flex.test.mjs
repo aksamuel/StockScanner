@@ -177,6 +177,22 @@ test("Flex handler rejects oversized request bodies while streaming them", async
   assert.equal(calls.fetch.length, 0);
 });
 
+test("Flex handler rejects invalid request encoding as invalid JSON", async () => {
+  const { handler } = harness();
+  const response = await handler(new Request("https://project.supabase.co/functions/v1/pip-ibkr-flex", {
+    method: "POST",
+    headers: {
+      authorization: "Bearer " + "test-access-token",
+      "x-pip-internal-key": INTERNAL_KEY,
+      "content-type": "application/json",
+    },
+    body: new Uint8Array([0xc0, 0xaf]),
+  }));
+
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), { error: "Invalid JSON request." });
+});
+
 test("Flex handler denies unapproved users and portfolios they do not own", async () => {
   const unapproved = harness({ approved: false });
   const deniedAccess = await unapproved.handler(request({
@@ -259,6 +275,31 @@ test("Flex sync uses the fixed IBKR endpoints, bounded rate-limit RPC, and retur
   assert.equal(calls.fetch[1].url.searchParams.get("q"), "87654321");
   assert.equal(calls.fetch[0].options.headers["User-Agent"], "StockScanner-PIP/1.0");
   assert.equal(calls.rpc.filter(([name]) => name === "pip_flex_reserve_request").length, 2);
+});
+
+test("Flex sync reports an oversized generated statement without disclosing its contents", async () => {
+  for (const withContentLength of [true, false]) {
+    const { handler } = harness({
+      fetcher: async (url) => {
+        if (new URL(url).pathname.endsWith("/SendRequest")) {
+          return new Response(SEND_RESPONSE_XML);
+        }
+        return withContentLength
+          ? new Response("synthetic-content", { headers: { "content-length": "5000001" } })
+          : new Response(new Uint8Array(5_000_001).fill(120));
+      },
+    });
+    const response = await handler(request({
+      action: "sync",
+      portfolio_id: PORTFOLIO_ID,
+      connection_id: CONNECTION_ID,
+    }));
+
+    assert.equal(response.status, 413);
+    assert.deepEqual(await response.json(), {
+      error: "The IBKR Flex statement exceeds 5 MB. Reduce selected fields or the report period.",
+    });
+  }
 });
 
 test("Flex sync waits for a slow report without exceeding per-token request limits", async () => {

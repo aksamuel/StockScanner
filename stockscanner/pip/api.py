@@ -407,6 +407,7 @@ def create_app(
                 "Flex connection not found.",
                 "IBKR rejected the Flex request. Verify the saved token and Query ID.",
                 "IBKR Flex is rate-limited. Wait before syncing again.",
+                "The IBKR Flex statement exceeds 5 MB. Reduce selected fields or the report period.",
                 "The IBKR Flex statement is still being generated. Retry shortly.",
                 "The IBKR Flex statement is not ready. Retry shortly.",
             }
@@ -426,7 +427,12 @@ def create_app(
 
     @app.get("/healthz")
     def health() -> dict[str, str | int]:
-        return {"status": "ok", "service": "pip", "flex_position_snapshot_sync": 1}
+        return {
+            "status": "ok",
+            "service": "pip",
+            "flex_position_snapshot_sync": 1,
+            "flex_history_section_warnings": 1,
+        }
 
     @app.get("/api/pip/portfolios")
     def list_portfolios(user: AuthenticatedUser = Depends(require_user)) -> list[dict[str, Any]]:
@@ -618,6 +624,12 @@ def create_app(
         except APIError:
             timestamp_saved = False
 
+        warnings = list(sync_result["warnings"])
+        if not timestamp_saved:
+            warnings.append(
+                "Portfolio data was saved, but its last-sync timestamp could not be recorded."
+            )
+
         return {
             "connection_id": str(connection_id),
             "connection_name": connection["connection_name"],
@@ -633,11 +645,7 @@ def create_app(
                 for account in sync_result["accounts"]
             ],
             "positions": [_position_payload(position) for position in sync_result["positions"]],
-            "warnings": (
-                []
-                if timestamp_saved
-                else ["Portfolio data was saved, but its last-sync timestamp could not be recorded."]
-            ),
+            "warnings": warnings,
         }
 
     @app.delete(

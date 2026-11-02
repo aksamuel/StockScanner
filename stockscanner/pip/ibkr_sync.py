@@ -91,6 +91,7 @@ class PortfolioData:
     transactions: list[dict[str, Any]] = field(default_factory=list)
     dividends: list[dict[str, Any]] = field(default_factory=list)
     position_snapshot_accounts: dict[str, date] | None = None
+    warnings: list[str] = field(default_factory=list)
 
 
 class FixturePortfolioDataSource:
@@ -318,6 +319,7 @@ class FlexXMLPortfolioDataSource:
         snapshot_accounts: dict[str, date] = {}
         position_keys: dict[str, int] = {}
         position_levels: dict[tuple[str, str, str, str, str], set[str]] = {}
+        missing_history_sections: set[str] = set()
 
         for statement in statements:
             statement_account = _field(
@@ -332,8 +334,12 @@ class FlexXMLPortfolioDataSource:
                 "currency",
                 default="",
             )).strip().upper()
+            section_names: set[str] = set()
             for child in statement.iter():
-                if _xml_local_name(child.tag) == "AccountInformation":
+                child_name = _xml_local_name(child.tag)
+                if child_name in {"OpenPositions", "Trades", "CashTransactions"}:
+                    section_names.add(child_name)
+                if child_name == "AccountInformation":
                     account_info_id = _field(
                         child.attrib,
                         "accountId",
@@ -362,8 +368,9 @@ class FlexXMLPortfolioDataSource:
                 raise ValueError("Flex statements require an account base currency")
             if fingerprint in snapshot_accounts:
                 raise ValueError("Flex reports must contain one statement per account")
-            if not any(_xml_local_name(child.tag) == "OpenPositions" for child in statement.iter()):
+            if "OpenPositions" not in section_names:
                 raise ValueError("Flex statements must include Open Positions for every account")
+            missing_history_sections.update({"Trades", "CashTransactions"} - section_names)
             snapshot_accounts[fingerprint] = statement_date
             masked = mask_account_identifier(statement_account)
             accounts[fingerprint] = {
@@ -530,6 +537,22 @@ class FlexXMLPortfolioDataSource:
             transactions=transactions,
             dividends=dividends,
             position_snapshot_accounts=snapshot_accounts,
+            warnings=[
+                message
+                for section, message in (
+                    (
+                        "Trades",
+                        "No Trades section was returned for at least one account. "
+                        "Check the Flex Query and report period if you expected trade history.",
+                    ),
+                    (
+                        "CashTransactions",
+                        "No Cash Transactions section was returned for at least one account. "
+                        "Check the Flex Query and report period if you expected dividend history.",
+                    ),
+                )
+                if section in missing_history_sections
+            ],
         )
 
 
@@ -690,6 +713,7 @@ class IBKRPortfolioSyncService:
             "positions": positions,
             "transactions": transactions,
             "dividends": dividends,
+            "warnings": data.warnings,
         }
 
     def persist_positions(self, portfolio_id: str, positions: list[PositionRecord]) -> list[PositionRecord]:

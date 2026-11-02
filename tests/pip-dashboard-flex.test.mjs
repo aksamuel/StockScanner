@@ -62,6 +62,7 @@ test("Flex sync requires confirmation, a compatible API, and a stable portfolio 
   let healthRequested = null;
   let releaseHealth = null;
   let signalHealth = null;
+  let syncError = null;
   const response = (data) => ({ ok: true, status: 200, json: async () => data });
 
   globalThis.document = {
@@ -97,10 +98,13 @@ test("Flex sync requires confirmation, a compatible API, and a stable portfolio 
       return response([{ id: "connection-1", connection_name: "Test", last_synced_at: null }]);
     }
     if (path.endsWith("/sync")) {
+      if (syncError) {
+        return { ok: false, status: 413, json: async () => ({ detail: syncError }) };
+      }
       return response({
         counts: { accounts: 1, positions: 1, transactions: 0, dividends: 0 },
         accounts: [{ masked_account_id: "***4567", currency: "USD", statement_date: "2025-01-31" }],
-        warnings: [],
+        warnings: ["No Trades section was returned for at least one account."],
       });
     }
     throw new Error(`Unexpected request: ${path}`);
@@ -146,6 +150,13 @@ test("Flex sync requires confirmation, a compatible API, and a stable portfolio 
     assert.deepEqual(JSON.parse(syncRequests[0].options.body), { confirm_unfiltered: true });
     assert.match(get("#flexStatus").textContent, /Synced 1 positions/);
     assert.match(get("#flexStatus").textContent, /statement 2025-01-31/);
+    assert.match(get("#flexStatus").textContent, /No Trades section was returned/);
+
+    syncError = "The IBKR Flex statement exceeds 5 MB. Reduce selected fields or the report period.";
+    const refreshedSyncButton = get("#flexConnectionList").querySelectorAll("button")
+      .find((button) => button.textContent === "Sync statement");
+    await refreshedSyncButton.fire("click");
+    assert.equal(get("#flexStatus").textContent, syncError);
   } finally {
     delete globalThis.document;
     delete globalThis.window;

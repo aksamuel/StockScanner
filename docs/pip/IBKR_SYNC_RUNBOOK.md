@@ -35,6 +35,9 @@ imports and never sends an order.
      Buy/Sell, Quantity, and Trade Price.
    - **Cash Transactions:** Account ID, Currency, Symbol, Type, Amount, and
      Date/Time; this section contains dividend payments.
+   Save the field selections for each section, then continue to the review
+   screen and save the complete query. Use the Query ID of that same query in
+   the PIP connection.
    Use `yyyyMMdd` or `yyyy-MM-dd` dates. The statement must identify each
    account, its end date, and an Open Positions section, including an empty
    section for an account with no open positions. Obtain the numeric Query ID
@@ -52,7 +55,8 @@ Each user can manage multiple named Flex connections and each connection can
 return multiple IBKR accounts. Account IDs are masked for display and a
 non-display fingerprint distinguishes accounts that happen to share the same
 last four digits. Each Flex response is limited to 5 MB and 10,000 normalized
-records; the Edge Function enforces IBKR's per-token request limits. The live
+records; if the report exceeds 5 MB, reduce its selected fields first or shorten
+its period. The Edge Function enforces IBKR's per-token request limits. The live
 path accepts XML, not ZIP bundles. If IBKR provides only a ZIP bundle for
 multiple accounts, configure a separate XML query and named connection for
 each account instead.
@@ -65,6 +69,13 @@ and dividend history are retained; importing the same holdings via CSV and Flex
 therefore counts both copies. IBKR statements reflect their report date, not
 necessarily real-time prices; the sync result displays that date for each
 masked account.
+
+If a statement omits the Trades or Cash Transactions section for any account,
+the sync keeps the position update and shows a warning. A missing section alone
+cannot establish whether it was excluded from the query or no relevant
+activity was available for the report period. If history is expected, check
+the section selections and period in IBKR and confirm the PIP connection uses
+the edited query. Enter credentials only in the PIP workbench, never in chat.
 
 If sync fails, check that the user is approved, the portfolio and connection
 belong to that user, the matching internal keys are configured, and the Flex

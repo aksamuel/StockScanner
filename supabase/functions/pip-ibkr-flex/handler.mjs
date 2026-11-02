@@ -1,5 +1,6 @@
 const MAX_REQUEST_BYTES = 4_096;
 const MAX_FLEX_RESPONSE_BYTES = 5_000_000;
+const BODY_TOO_LARGE = Symbol("body too large");
 const FLEX_STATEMENT_DEADLINE_MS = 85_000;
 const FLEX_INITIAL_POLL_DELAY_MS = 3_000;
 const FLEX_POLL_INTERVAL_MS = 7_000;
@@ -113,7 +114,7 @@ async function boundedUtf8Text(value, maxBytes) {
   const declaredSize = Number(value.headers.get("content-length") || 0);
   if (Number.isFinite(declaredSize) && declaredSize > maxBytes) {
     await value.body?.cancel();
-    return null;
+    return BODY_TOO_LARGE;
   }
   if (!value.body) return "";
   const reader = value.body.getReader();
@@ -126,7 +127,7 @@ async function boundedUtf8Text(value, maxBytes) {
       length += value.byteLength;
       if (length > maxBytes) {
         await reader.cancel();
-        return null;
+        return BODY_TOO_LARGE;
       }
       chunks.push(value);
     }
@@ -220,9 +221,10 @@ export function createFlexHandler({
       }
 
       const text = await boundedUtf8Text(request, MAX_REQUEST_BYTES);
-      if (text === null) {
+      if (text === BODY_TOO_LARGE) {
         return json(request, { error: "Request is too large." }, 413);
       }
+      if (text === null) return json(request, { error: "Invalid JSON request." }, 400);
       let payload;
       try {
         payload = JSON.parse(text);
@@ -349,7 +351,7 @@ export function createFlexHandler({
         if (sendSignal.aborted && now() >= statementDeadline) return flexNotReady(request);
         throw error;
       }
-      if (!sendResponse.ok || sendXml === null) {
+      if (!sendResponse.ok || sendXml === null || sendXml === BODY_TOO_LARGE) {
         return json(request, { error: "IBKR Flex could not start the statement request." }, 502);
       }
       const sendStatus = xmlValue(sendXml, "Status");
@@ -400,6 +402,11 @@ export function createFlexHandler({
         }
         if (!statementResponse.ok || statementXml === null) {
           return json(request, { error: "IBKR Flex could not retrieve the generated statement." }, 502);
+        }
+        if (statementXml === BODY_TOO_LARGE) {
+          return json(request, {
+            error: "The IBKR Flex statement exceeds 5 MB. Reduce selected fields or the report period.",
+          }, 413);
         }
         if (isFlexQueryResponse(statementXml)) {
           return json(request, { statement_xml: statementXml });

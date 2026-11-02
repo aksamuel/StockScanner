@@ -162,6 +162,55 @@ def test_flex_xml_sync_masks_accounts_and_normalizes_stock_records():
 
 
 @pytest.mark.parametrize(
+    ("sections", "expected"),
+    [
+        ("<Trades /><CashTransactions />", []),
+        ("", ["Trades", "Cash Transactions"]),
+        ("<Trades />", ["Cash Transactions"]),
+        ("<CashTransactions />", ["Trades"]),
+    ],
+)
+def test_flex_xml_warns_about_missing_history_sections_without_rejecting_positions(sections, expected):
+    xml = (
+        f'<FlexQueryResponse><FlexStatement accountId="{ACCOUNT_ONE}" '
+        f'currency="USD" toDate="20250131"><OpenPositions />{sections}'
+        "</FlexStatement></FlexQueryResponse>"
+    )
+    repository = CapturingRepository()
+
+    result = IBKRPortfolioSyncService(repository).sync(
+        FlexXMLPortfolioDataSource(xml), PORTFOLIO_ID,
+    )
+
+    assert len(result["warnings"]) == len(expected)
+    for warning, section in zip(result["warnings"], expected):
+        assert f"No {section} section" in warning
+        assert "report period" in warning
+        assert ACCOUNT_ONE not in warning
+    assert repository.saved["snapshot_accounts"] == {
+        account_fingerprint(ACCOUNT_ONE): date(2025, 1, 31),
+    }
+
+
+def test_flex_xml_warns_once_if_any_account_lacks_a_history_section():
+    xml = (
+        "<FlexQueryResponse>"
+        f'<FlexStatement accountId="{ACCOUNT_ONE}" currency="USD" toDate="20250131">'
+        "<OpenPositions /><Trades /><CashTransactions /></FlexStatement>"
+        f'<FlexStatement accountId="{ACCOUNT_TWO}" currency="USD" toDate="20250131">'
+        "<OpenPositions /><Trades /></FlexStatement>"
+        "</FlexQueryResponse>"
+    )
+
+    data = FlexXMLPortfolioDataSource(xml).load_portfolio()
+
+    assert len(data.warnings) == 1
+    assert "Cash Transactions" in data.warnings[0]
+    assert ACCOUNT_ONE not in data.warnings[0]
+    assert ACCOUNT_TWO not in data.warnings[0]
+
+
+@pytest.mark.parametrize(
     ("content", "message"),
     [
         ("<FlexQueryResponse><FlexStatements /></FlexQueryResponse>", "no account statements"),
