@@ -164,6 +164,7 @@ Apply the migrations in timestamp order:
 15. `20261024_pip_approval_rpc.sql`
 16. `20261026000000_pip_account_fingerprints.sql`
 17. `20261027000000_pip_ibkr_flex_vault.sql`
+18. `20261102000000_pip_flex_position_snapshots.sql`
 
 The 20260831 migrations add backend-only leases and price telemetry. The two
 20261002 migrations add owner-gated portfolio Technical-strength storage,
@@ -171,8 +172,8 @@ failed-symbol queue/history, and per-symbol price timestamps. Apply both and
 deploy `portfolio-signals` before publishing v2.19.0.
 
 The PIP migrations are additive and reuse `auth.users` and the approved-user
-records in `public.user_access`. Supabase Vault must be enabled for the final
-Flex migration. GitHub Pages deployment does not apply SQL migrations. Review
+records in `public.user_access`. Supabase Vault must be enabled for the Flex
+Vault migration. GitHub Pages deployment does not apply SQL migrations. Review
 the [PIP migration plan](docs/pip/MIGRATION_PLAN.md) and [PIP FAQ](docs/pip/FAQ.md)
 before applying them to a Supabase project.
 PIP research reads the authenticated `price_snapshots` table populated by the

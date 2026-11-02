@@ -41,7 +41,11 @@ Edge Function, and configuring the same server-only internal key in the API and
 the function. Each approved user can save multiple named Flex connections for
 their own portfolios; credentials are kept in Supabase Vault and are never
 returned to the browser. Configure the Flex Query to return XML. Local CSV
-imports remain available. Account identifiers are masked before persistence;
+imports remain available. Each sync requires confirmation that the query
+includes all stock positions for each included account without symbol filters;
+it replaces only those accounts' earlier Flex positions. CSV/manual holdings
+and transaction/dividend history are retained. Avoid importing the same holdings
+from both CSV and Flex because both copies are counted. Account identifiers are masked before persistence;
 never place broker tokens or unmasked account identifiers in fixtures, logs,
 audit events, or source-controlled files.
 

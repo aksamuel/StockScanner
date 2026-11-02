@@ -117,6 +117,7 @@
       <section class="workbench" aria-labelledby="flexTitle">
         <h2 id="flexTitle">Live IBKR Flex sync · read-only</h2>
         <p class="subtle">Save a Flex token and numeric Query ID to encrypted Supabase Vault storage through the PIP API. They are sent only for this request and cleared from the form afterward; they are never saved in browser storage. Configure the Flex Query to return XML.</p>
+        <p class="subtle">Use an unfiltered Activity Flex Query containing all stock positions for each included account. Sync replaces earlier Flex positions for those accounts; CSV/manual imports and transaction history remain. Avoid importing the same holdings by both CSV and Flex, as both will be counted.</p>
         <label for="flexConnectionName">Connection name
           <input id="flexConnectionName" type="text" maxlength="80" autocomplete="off" placeholder="e.g. Main account">
         </label>

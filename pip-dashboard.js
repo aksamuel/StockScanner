@@ -311,17 +311,34 @@ if (typeof document !== "undefined") {
       syncButton.type = "button";
       syncButton.textContent = "Sync statement";
       syncButton.addEventListener("click", async () => {
+        const portfolioId = portfolioSelect.value;
+        if (!window.confirm(
+          "Does this unfiltered Flex Query include all stock positions for every included account? "
+          + "Sync replaces earlier Flex positions for those accounts. CSV/manual imports and history are retained.",
+        )) return;
         setBusy(syncButton, true, "Syncing…");
         flexStatus.textContent = `Requesting a read-only Flex statement for ${name.textContent}…`;
         try {
+          const health = await apiRequest("/healthz");
+          if (health?.flex_position_snapshot_sync !== 1) {
+            throw new Error("The PIP API must be updated before safe Flex position sync is available.");
+          }
+          if (portfolioSelect.value !== portfolioId) {
+            throw new Error("The selected portfolio changed. Start the Flex sync again.");
+          }
           const result = await apiRequest(
-            `/api/pip/portfolios/${encodeURIComponent(portfolioSelect.value)}/ibkr-flex-connections/${encodeURIComponent(connection.id)}/sync`,
-            { method: "POST" },
+            `/api/pip/portfolios/${encodeURIComponent(portfolioId)}/ibkr-flex-connections/${encodeURIComponent(connection.id)}/sync`,
+            { method: "POST", body: JSON.stringify({ confirm_unfiltered: true }) },
           );
+          if (portfolioSelect.value !== portfolioId) {
+            flexStatus.textContent = "Flex sync completed for the previously selected portfolio.";
+            return;
+          }
           await loadFlexConnections();
+          if (portfolioSelect.value !== portfolioId) return;
           const counts = result.counts || {};
           const accountSummary = (result.accounts || [])
-            .map((account) => `${account.masked_account_id || "masked account"} (${account.currency || "currency unavailable"})`)
+            .map((account) => `${account.masked_account_id || "masked account"} (${account.currency || "currency unavailable"}; statement ${account.statement_date || "date unavailable"})`)
             .join(", ");
           const warning = result.warnings?.length ? ` ${result.warnings.join(" ")}` : "";
           flexStatus.textContent = `Synced ${counts.positions || 0} positions, ${counts.transactions || 0} transactions, ${counts.dividends || 0} dividends, and ${counts.accounts || 0} masked accounts${accountSummary ? `: ${accountSummary}` : ""}.${warning}`;

@@ -90,6 +90,7 @@ class PortfolioData:
     positions: list[dict[str, Any]] = field(default_factory=list)
     transactions: list[dict[str, Any]] = field(default_factory=list)
     dividends: list[dict[str, Any]] = field(default_factory=list)
+    position_snapshot_accounts: dict[str, date] | None = None
 
 
 class FixturePortfolioDataSource:
@@ -314,6 +315,9 @@ class FlexXMLPortfolioDataSource:
         positions: list[dict[str, Any]] = []
         transactions: list[dict[str, Any]] = []
         dividends: list[dict[str, Any]] = []
+        snapshot_accounts: dict[str, date] = {}
+        position_keys: dict[str, int] = {}
+        position_levels: dict[tuple[str, str, str, str, str], set[str]] = {}
 
         for statement in statements:
             statement_account = _field(
@@ -330,13 +334,19 @@ class FlexXMLPortfolioDataSource:
             )).strip().upper()
             for child in statement.iter():
                 if _xml_local_name(child.tag) == "AccountInformation":
-                    statement_account = _field(
+                    account_info_id = _field(
                         child.attrib,
                         "accountId",
                         "clientAccountId",
                         "acctId",
-                        default=statement_account,
                     )
+                    if (
+                        statement_account
+                        and account_info_id
+                        and account_fingerprint(statement_account) != account_fingerprint(account_info_id)
+                    ):
+                        raise ValueError("Flex account information does not match its statement")
+                    statement_account = account_info_id or statement_account
                     account_currency = str(_field(
                         child.attrib,
                         "baseCurrency",
@@ -344,17 +354,29 @@ class FlexXMLPortfolioDataSource:
                         default=account_currency,
                     )).strip().upper()
 
-            if statement_account:
-                masked = mask_account_identifier(statement_account)
-                accounts[str(statement_account)] = {
-                    "account_name": "IBKR Flex",
-                    "masked_account_id": masked,
-                    "account_fingerprint": account_fingerprint(statement_account),
-                    "currency": account_currency if re.fullmatch(r"[A-Z]{3}", account_currency) else "USD",
-                }
+            fingerprint = account_fingerprint(statement_account)
+            statement_date = _date(_field(statement.attrib, "toDate", "reportDate", "statementDate"))
+            if not fingerprint or statement_date is None:
+                raise ValueError("Flex statements require an account ID and statement end date")
+            if not re.fullmatch(r"[A-Z]{3}", account_currency):
+                raise ValueError("Flex statements require an account base currency")
+            if fingerprint in snapshot_accounts:
+                raise ValueError("Flex reports must contain one statement per account")
+            if not any(_xml_local_name(child.tag) == "OpenPositions" for child in statement.iter()):
+                raise ValueError("Flex statements must include Open Positions for every account")
+            snapshot_accounts[fingerprint] = statement_date
+            masked = mask_account_identifier(statement_account)
+            accounts[fingerprint] = {
+                "account_name": "IBKR Flex",
+                "masked_account_id": masked,
+                "account_fingerprint": fingerprint,
+                "currency": account_currency,
+            }
 
             for element in statement.iter():
                 tag = _xml_local_name(element.tag)
+                if tag == "OpenPosition" and not _field(element.attrib, "assetCategory", "asset_class"):
+                    raise ValueError("Flex positions require an asset class")
                 if tag == "OpenPosition" and self._stock_row(element):
                     symbol = self._validated_symbol(element)
                     quantity = _field(element.attrib, "position", "quantity")
@@ -368,6 +390,8 @@ class FlexXMLPortfolioDataSource:
                         "acctId",
                         default=statement_account,
                     )
+                    if account_fingerprint(account_id) != fingerprint:
+                        raise ValueError("Flex positions must belong to their statement account")
                     average_cost = _field(
                         element.attrib,
                         "costBasisPrice",
@@ -382,16 +406,29 @@ class FlexXMLPortfolioDataSource:
                         quantity_number = _number(quantity, "quantity")
                         if cost_basis_money is not None and quantity_number:
                             average_cost = cost_basis_money / quantity_number
+                    contract = str(_field(element.attrib, "conid", "contractId", default=symbol))
+                    model = str(_field(element.attrib, "model", "modelId", default=""))
+                    side = str(_field(element.attrib, "side", default="")).strip().casefold()
+                    level = str(_field(element.attrib, "levelOfDetail", default="")).strip().casefold()
+                    levels = position_levels.setdefault((fingerprint, contract, currency, model, side), set())
+                    if levels and (level != "lot" or levels != {"lot"}):
+                        raise ValueError("Flex positions have ambiguous or mixed Summary and Lot detail")
+                    levels.add(level)
+                    source_key = _source_record_key(
+                        account_id,
+                        _field(element.attrib, "conid", "contractId"),
+                        symbol,
+                        _field(element.attrib, "openDateTime", "openDate"),
+                        quantity,
+                        average_cost,
+                    )
+                    occurrence = position_keys.get(source_key, 0)
+                    position_keys[source_key] = occurrence + 1
+                    if occurrence:
+                        source_key = f"{source_key}:{occurrence + 1}"
                     positions.append({
                         "source": "ibkr_flex",
-                        "source_key": _source_record_key(
-                            account_id,
-                            _field(element.attrib, "conid", "contractId"),
-                            symbol,
-                            _field(element.attrib, "openDateTime", "openDate"),
-                            quantity,
-                            average_cost,
-                        ),
+                        "source_key": source_key,
                         "account_id": account_id,
                         "symbol": symbol,
                         "quantity": quantity,
@@ -401,14 +438,6 @@ class FlexXMLPortfolioDataSource:
                         "currency": currency,
                         "entry_date": _field(element.attrib, "openDateTime", "openDate"),
                     })
-                    if account_id:
-                        masked = mask_account_identifier(account_id)
-                        accounts.setdefault(str(account_id), {
-                            "account_name": "IBKR Flex",
-                            "masked_account_id": masked,
-                            "account_fingerprint": account_fingerprint(account_id),
-                            "currency": account_currency if re.fullmatch(r"[A-Z]{3}", account_currency) else currency,
-                        })
                 elif tag == "Trade" and self._stock_row(element):
                     symbol = self._validated_symbol(element)
                     trade_date = _field(element.attrib, "tradeDate", "dateTime", "date")
@@ -428,6 +457,8 @@ class FlexXMLPortfolioDataSource:
                         "acctId",
                         default=statement_account,
                     )
+                    if account_fingerprint(account_id) != fingerprint:
+                        raise ValueError("Flex trades must belong to their statement account")
                     transactions.append({
                         "symbol": symbol,
                         "transaction_type": transaction_type,
@@ -445,14 +476,6 @@ class FlexXMLPortfolioDataSource:
                             _field(element.attrib, "tradePrice", "price"),
                         ),
                     })
-                    if account_id:
-                        masked = mask_account_identifier(account_id)
-                        accounts.setdefault(str(account_id), {
-                            "account_name": "IBKR Flex",
-                            "masked_account_id": masked,
-                            "account_fingerprint": account_fingerprint(account_id),
-                            "currency": account_currency if re.fullmatch(r"[A-Z]{3}", account_currency) else currency,
-                        })
                 elif tag == "CashTransaction":
                     transaction_type = str(_field(
                         element.attrib,
@@ -475,6 +498,8 @@ class FlexXMLPortfolioDataSource:
                         "acctId",
                         default=statement_account,
                     )
+                    if account_fingerprint(account_id) != fingerprint:
+                        raise ValueError("Flex dividends must belong to their statement account")
                     dividends.append({
                         "symbol": symbol,
                         "amount": amount,
@@ -496,15 +521,6 @@ class FlexXMLPortfolioDataSource:
                             amount,
                         ),
                     })
-                    if account_id:
-                        masked = mask_account_identifier(account_id)
-                        accounts.setdefault(str(account_id), {
-                            "account_name": "IBKR Flex",
-                            "masked_account_id": masked,
-                            "account_fingerprint": account_fingerprint(account_id),
-                            "currency": account_currency if re.fullmatch(r"[A-Z]{3}", account_currency) else currency,
-                        })
-
                 if len(positions) + len(transactions) + len(dividends) > MAX_FLEX_RECORDS:
                     raise ValueError("An IBKR Flex import is limited to 10,000 records")
 
@@ -513,6 +529,7 @@ class FlexXMLPortfolioDataSource:
             positions=positions,
             transactions=transactions,
             dividends=dividends,
+            position_snapshot_accounts=snapshot_accounts,
         )
 
 
@@ -609,7 +626,14 @@ class IBKRPortfolioSyncService:
     def sync_dividends(self, raw_dividends: list[dict[str, Any]]) -> list[dict[str, Any]]:
         return [self.normalize_dividend(dividend) for dividend in raw_dividends]
 
-    def sync(self, source: PortfolioDataSource, portfolio_id: str) -> dict[str, list[Any]]:
+    def sync(
+        self,
+        source: PortfolioDataSource,
+        portfolio_id: str,
+        *,
+        snapshot_started_at: datetime | None = None,
+    ) -> dict[str, list[Any]]:
+        started_at = snapshot_started_at or self.clock()
         data = source.load_portfolio()
         accounts = [
             {
@@ -634,15 +658,33 @@ class IBKRPortfolioSyncService:
             dividend["portfolio_id"] = portfolio_id
 
         if self.repository is not None:
+            replace_positions = None
+            if data.position_snapshot_accounts is not None:
+                replace_positions = getattr(self.repository, "replace_flex_positions", None)
+                if not callable(replace_positions):
+                    raise RuntimeError("The portfolio repository cannot safely replace Flex positions")
             for method_name, payload in (
                 ("upsert_accounts", accounts),
                 ("upsert_positions", positions),
                 ("upsert_transactions", transactions),
                 ("upsert_dividends", dividends),
             ):
+                if method_name == "upsert_positions" and replace_positions is not None:
+                    replace_positions(
+                        portfolio_id,
+                        positions,
+                        data.position_snapshot_accounts,
+                        started_at,
+                    )
+                    continue
                 method = getattr(self.repository, method_name, None)
                 if method is not None:
                     method(portfolio_id, payload)
+        if data.position_snapshot_accounts is not None:
+            for account in accounts:
+                statement_date = data.position_snapshot_accounts.get(account["account_fingerprint"])
+                if statement_date is not None:
+                    account["statement_date"] = statement_date.isoformat()
         return {
             "accounts": accounts,
             "positions": positions,

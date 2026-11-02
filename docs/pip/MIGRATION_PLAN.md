@@ -14,6 +14,7 @@ remain unchanged.
 | `users` | Reuse `auth.users`; optional `pip_profiles` references it | No duplicate credentials, auth identity, or approval state |
 | `portfolios` | Create | `user_id` references `auth.users`; owner must be approved |
 | `ibkr_accounts` | Create/extend | Portfolio-owned masked display ID plus stable one-way fingerprint for multi-account identity |
+| `pip_flex_position_snapshots` | Create | Owner-scoped statement dates and sync ordering for safe account snapshots |
 | `positions`, `transactions`, `dividends`, `daily_snapshots` | Create | Portfolio-owned and indexed by portfolio/symbol/date |
 | `analyst_signals` | Create | Portfolio/user-owned; no cross-user client reads |
 | `stock_scores`, `sell_recommendations`, `replacement_candidates` | Create | Portfolio-owned, RLS checked through the portfolio owner |
@@ -44,8 +45,8 @@ each event atomically with the corresponding recommendation transition.
    keys, timestamps, and indexes.
 3. Apply/verify RLS policies and approval RPC grants as the authenticated owner, another approved user,
    a pending user, and an anonymous user. Confirm cross-owner operations fail.
-4. Apply the account-fingerprint and Vault-backed Flex migrations; verify the
-   owner policies and restricted service-role RPC grants.
+4. Apply the account-fingerprint, Vault-backed Flex, and Flex position-snapshot
+   migrations; verify the owner policies and restricted RPC grants.
 5. Deploy the authenticated FastAPI service and the `pip-ibkr-flex` Edge
    Function. Keep the service-role key inside Supabase and set a matching,
    server-only internal key on both hosts.
@@ -60,8 +61,9 @@ each event atomically with the corresponding recommendation transition.
 ## Risks and rollback
 
 - The existing data model is per-user imports; PIP's normalized records add a
-  second representation. Treat imports as source data and use idempotent,
-  portfolio-scoped upserts to avoid duplicates.
+  second representation. Flex sync replaces only the included accounts' prior
+  Flex positions. CSV/manual imports remain separate and may duplicate holdings
+  if users import the same account through both paths.
 - `price_snapshots` does not contain a historical portfolio series. PIP
   `daily_snapshots` is separate and must not change scanner cache semantics.
 - Policy mistakes could expose portfolio data. Test RLS with multiple owners

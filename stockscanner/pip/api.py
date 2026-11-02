@@ -195,6 +195,10 @@ class FlexConnectionCreate(StrictModel):
         return value
 
 
+class FlexSyncRequest(StrictModel):
+    confirm_unfiltered: bool = Field(strict=True)
+
+
 class ApprovalTransitionRequest(StrictModel):
     status: ApprovalStatus
     actor: str | None = Field(default=None, max_length=80)
@@ -410,8 +414,8 @@ def create_app(
         return response_payload
 
     @app.get("/healthz")
-    def health() -> dict[str, str]:
-        return {"status": "ok", "service": "pip"}
+    def health() -> dict[str, str | int]:
+        return {"status": "ok", "service": "pip", "flex_position_snapshot_sync": 1}
 
     @app.get("/api/pip/portfolios")
     def list_portfolios(user: AuthenticatedUser = Depends(require_user)) -> list[dict[str, Any]]:
@@ -539,8 +543,14 @@ def create_app(
     def sync_flex_connection(
         portfolio_id: UUID,
         connection_id: UUID,
+        body: FlexSyncRequest | None = None,
         user: AuthenticatedUser = Depends(require_user),
     ) -> dict[str, Any]:
+        if body is None or not body.confirm_unfiltered:
+            raise HTTPException(
+                status_code=409,
+                detail="Confirm that the Flex Query includes all stock positions for each account without symbol filters. Reload the workbench if needed.",
+            )
         owned_portfolio(user, portfolio_id)
         connection_result = user.client.table("pip_ibkr_connections").select(
             "id,connection_name"
@@ -553,6 +563,7 @@ def create_app(
         if connection is None:
             raise HTTPException(status_code=404, detail="Flex connection not found.")
 
+        sync_started_at = datetime.now(timezone.utc)
         edge_result = invoke_flex_edge(user, {
             "action": "sync",
             "portfolio_id": str(portfolio_id),
@@ -567,12 +578,20 @@ def create_app(
             ).sync(
                 FlexXMLPortfolioDataSource(statement_xml),
                 str(portfolio_id),
+                snapshot_started_at=sync_started_at,
             )
         except ValueError as exc:
             raise HTTPException(
                 status_code=502,
-                detail="IBKR Flex returned an invalid statement. Configure the Flex Query to provide XML stock positions, trades, and dividends.",
+                detail="IBKR Flex returned an incomplete or invalid statement. Configure an unfiltered XML Activity Flex Query with account IDs, base currency, statement dates, and Open Positions at one detail level per holding.",
             ) from exc
+        except APIError as exc:
+            if getattr(exc, "code", None) == "PPS01":
+                raise HTTPException(
+                    status_code=409,
+                    detail="A newer Flex position snapshot is already saved. Sync a current statement instead.",
+                ) from exc
+            raise
 
         synced_at = datetime.now(timezone.utc).isoformat()
         try:

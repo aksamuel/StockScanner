@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, is_dataclass
+from datetime import date, datetime
 import hashlib
 import json
 from typing import Any, Dict, Iterable, List, Optional
@@ -30,6 +31,7 @@ class InMemoryPortfolioRepository(PortfolioRepository):
         self.positions: Dict[str, List[PositionRecord]] = {}
         self.scores: Dict[str, Dict[str, Any]] = {}
         self.recommendations: List[SellRecommendation] = []
+        self.flex_snapshots: dict[str, dict[str, tuple[date, datetime]]] = {}
 
     def upsert_positions(self, portfolio_id: str, positions: Iterable[PositionRecord]) -> List[PositionRecord]:
         batch = list(positions)
@@ -39,6 +41,31 @@ class InMemoryPortfolioRepository(PortfolioRepository):
             existing[position.symbol] = position
         self.positions[portfolio_id] = list(existing.values())
         return list(existing.values())
+
+    def replace_flex_positions(
+        self,
+        portfolio_id: str,
+        positions: Iterable[PositionRecord],
+        snapshot_accounts: dict[str, date],
+        started_at: datetime,
+    ) -> list[PositionRecord]:
+        snapshots = self.flex_snapshots.setdefault(portfolio_id, {})
+        for fingerprint, statement_date in snapshot_accounts.items():
+            previous = snapshots.get(fingerprint)
+            if previous and (statement_date, started_at) < previous:
+                raise RuntimeError("A newer Flex position snapshot is already saved")
+        retained = [
+            position for position in self.positions.get(portfolio_id, [])
+            if position.notes.get("source") != "ibkr_flex"
+            or position.notes.get("account_fingerprint") not in snapshot_accounts
+        ]
+        batch = list(positions)
+        self.positions[portfolio_id] = retained + batch
+        snapshots.update({
+            fingerprint: (statement_date, started_at)
+            for fingerprint, statement_date in snapshot_accounts.items()
+        })
+        return batch
 
     def upsert_score(self, portfolio_id: str, symbol: str, score_record: Dict[str, Any]) -> Dict[str, Any]:
         key = f"{portfolio_id}:{symbol}"
@@ -144,7 +171,7 @@ class SupabasePortfolioRepository(PortfolioRepository):
                 self.account_ids_by_mask[str(masked_id)] = str(account_id)
         return saved
 
-    def upsert_positions(self, portfolio_id: str, positions: Iterable[PositionRecord]) -> list[dict[str, Any]]:
+    def _position_rows(self, portfolio_id: str, positions: Iterable[PositionRecord]) -> list[dict[str, Any]]:
         rows = []
         for position in positions:
             account_key = position.account_id or "unassigned"
@@ -174,7 +201,48 @@ class SupabasePortfolioRepository(PortfolioRepository):
                 "source_key": source_key,
                 "metadata": position.notes,
             })
+        return rows
+
+    def upsert_positions(self, portfolio_id: str, positions: Iterable[PositionRecord]) -> list[dict[str, Any]]:
+        rows = self._position_rows(portfolio_id, positions)
         return self._upsert("positions", rows, "portfolio_id,source_key")
+
+    def replace_flex_positions(
+        self,
+        portfolio_id: str,
+        positions: Iterable[PositionRecord],
+        snapshot_accounts: dict[str, date],
+        started_at: datetime,
+    ) -> list[dict[str, Any]]:
+        if not snapshot_accounts or any(
+            fingerprint not in self.account_ids for fingerprint in snapshot_accounts
+        ):
+            raise RuntimeError("Unable to identify every Flex snapshot account")
+        rows = self._position_rows(portfolio_id, positions)
+        for row in rows:
+            metadata = row["metadata"]
+            fingerprint = metadata.get("account_fingerprint")
+            if (
+                metadata.get("source") != "ibkr_flex"
+                or fingerprint not in snapshot_accounts
+                or row["account_id"] != self.account_ids.get(fingerprint)
+            ):
+                raise RuntimeError("Unable to identify a Flex position's account")
+        response = self.client.rpc(
+            "pip_replace_flex_positions",
+            {
+                "p_portfolio_id": portfolio_id,
+                "p_accounts": [
+                    {"account_fingerprint": fingerprint, "statement_date": statement_date.isoformat()}
+                    for fingerprint, statement_date in snapshot_accounts.items()
+                ],
+                "p_positions": rows,
+                "p_sync_started_at": started_at.isoformat(),
+            },
+        ).execute()
+        if getattr(response, "error", None) or getattr(response, "data", None) != len(rows):
+            raise RuntimeError("Unable to replace the Flex position snapshot")
+        return rows
 
     @staticmethod
     def _source_key(row: dict[str, Any]) -> str:

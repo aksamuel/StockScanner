@@ -4,6 +4,7 @@ from datetime import date
 from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
+from postgrest.exceptions import APIError
 
 import stockscanner.pip.api as pip_api
 from stockscanner.pip.api import create_app
@@ -125,7 +126,11 @@ class PipelineQuery:
         elif self.operation in {"insert", "upsert"}:
             if self.table_name == "ibkr_accounts":
                 data = [
-                    {"id": f"account-{index}", "masked_account_id": row.get("masked_account_id")}
+                    {
+                        "id": f"account-{index}",
+                        "masked_account_id": row.get("masked_account_id"),
+                        "account_fingerprint": row.get("account_fingerprint"),
+                    }
                     for index, row in enumerate(self.rows)
                 ]
             else:
@@ -209,6 +214,11 @@ class PipelineClient(FakeClient):
 
     def rpc(self, name, params):
         self.rpc_calls.append((name, params))
+        if name == "pip_replace_flex_positions":
+            self.writes.append(("positions", params["p_positions"]))
+            return SimpleNamespace(
+                execute=lambda: SimpleNamespace(data=len(params["p_positions"]), error=None)
+            )
         return SimpleNamespace(execute=lambda: SimpleNamespace(data=params["p_next_status"], error=None))
 
 
@@ -827,7 +837,7 @@ def test_flex_connection_api_rejects_invalid_credentials_without_echoing_them():
 def test_flex_sync_persists_masked_records_and_returns_counts_not_raw_statement():
     fake = PipelineClient()
     statement_xml = """<FlexQueryResponse>
-      <FlexStatements><FlexStatement accountId="U1234567" currency="USD">
+      <FlexStatements><FlexStatement accountId="U1234567" currency="USD" toDate="20250131">
         <OpenPositions><OpenPosition assetCategory="STK" accountId="U1234567"
           currency="USD" symbol="AAPL" conid="265598" position="5"
           costBasisPrice="100" markPrice="120" positionValue="600"
@@ -850,6 +860,7 @@ def test_flex_sync_persists_masked_records_and_returns_counts_not_raw_statement(
     )
     response = TestClient(app).post(
         f"/api/pip/portfolios/{fake.portfolio_id}/ibkr-flex-connections/{fake.connection_id}/sync",
+        json={"confirm_unfiltered": True},
         headers={"Authorization": "Bearer test-access-token"},
     )
 
@@ -862,6 +873,7 @@ def test_flex_sync_persists_masked_records_and_returns_counts_not_raw_statement(
         "dividends": 0,
     }
     assert payload["accounts"][0]["masked_account_id"] == "***4567"
+    assert payload["accounts"][0]["statement_date"] == "2025-01-31"
     assert "account_fingerprint" not in payload["accounts"][0]
     assert payload["positions"][0]["account_id"] == "***4567"
     assert "account_fingerprint" not in payload["positions"][0]["notes"]
@@ -870,6 +882,10 @@ def test_flex_sync_persists_masked_records_and_returns_counts_not_raw_statement(
     assert "<FlexQueryResponse>" not in response.text
     assert any(table == "ibkr_accounts" for table, rows in fake.writes)
     assert any(table == "positions" for table, rows in fake.writes)
+    snapshot_call = next(params for name, params in fake.rpc_calls if name == "pip_replace_flex_positions")
+    assert snapshot_call["p_accounts"][0]["statement_date"] == "2025-01-31"
+    assert snapshot_call["p_sync_started_at"]
+    assert "U1234567" not in repr(snapshot_call)
     assert fake.updates[0][0] == "pip_ibkr_connections"
     assert calls == [
         (
@@ -882,6 +898,96 @@ def test_flex_sync_persists_masked_records_and_returns_counts_not_raw_statement(
             },
         )
     ]
+
+
+def test_flex_sync_requires_explicit_unfiltered_query_confirmation_before_contacting_ibkr():
+    fake = PipelineClient()
+    calls = []
+    app = create_app(
+        client_factory=lambda url, key: fake,
+        environ={
+            "SUPABASE_URL": "https://project.example.test",
+            "SUPABASE_PUBLISHABLE_KEY": "public-test-key",
+        },
+        flex_edge_invoker=lambda user, payload: calls.append(payload) or {},
+    )
+    client = TestClient(app)
+    path = f"/api/pip/portfolios/{fake.portfolio_id}/ibkr-flex-connections/{fake.connection_id}/sync"
+    headers = {"Authorization": "Bearer synthetic-test-token"}
+    assert client.post(path, headers=headers).status_code == 409
+    assert client.post(path, headers=headers, json={"confirm_unfiltered": False}).status_code == 409
+    assert client.post(path, headers=headers, json={"confirm_unfiltered": "true"}).status_code == 422
+    assert calls == []
+    assert fake.writes == []
+    assert fake.rpc_calls == []
+
+
+def test_flex_sync_rejects_an_incomplete_statement_before_persisting():
+    fake = PipelineClient()
+    app = create_app(
+        client_factory=lambda url, key: fake,
+        environ={
+            "SUPABASE_URL": "https://project.example.test",
+            "SUPABASE_PUBLISHABLE_KEY": "public-test-key",
+        },
+        flex_edge_invoker=lambda user, payload: {
+            "statement_xml": (
+                '<FlexQueryResponse><FlexStatement accountId="U1234567" '
+                'toDate="20250131" /></FlexQueryResponse>'
+            )
+        },
+    )
+    response = TestClient(app).post(
+        f"/api/pip/portfolios/{fake.portfolio_id}/ibkr-flex-connections/{fake.connection_id}/sync",
+        headers={"Authorization": "Bearer synthetic-test-token"},
+        json={"confirm_unfiltered": True},
+    )
+    assert response.status_code == 502
+    assert "Open Positions" in response.json()["detail"]
+    assert fake.writes == []
+    assert fake.rpc_calls == []
+    assert fake.updates == []
+
+
+def test_flex_sync_reports_an_older_snapshot_conflict():
+    fake = PipelineClient()
+
+    def reject_stale_snapshot(name, params):
+        assert name == "pip_replace_flex_positions"
+
+        def execute():
+            raise APIError({"message": "A newer snapshot exists", "code": "PPS01"})
+
+        return SimpleNamespace(execute=execute)
+
+    fake.rpc = reject_stale_snapshot
+    app = create_app(
+        client_factory=lambda url, key: fake,
+        environ={
+            "SUPABASE_URL": "https://project.example.test",
+            "SUPABASE_PUBLISHABLE_KEY": "public-test-key",
+        },
+        flex_edge_invoker=lambda user, payload: {
+            "statement_xml": (
+                '<FlexQueryResponse><FlexStatement accountId="U1234567" '
+                'currency="USD" toDate="20250131"><OpenPositions />'
+                "</FlexStatement></FlexQueryResponse>"
+            )
+        },
+    )
+    response = TestClient(app).post(
+        f"/api/pip/portfolios/{fake.portfolio_id}/ibkr-flex-connections/{fake.connection_id}/sync",
+        headers={"Authorization": "Bearer synthetic-test-token"},
+        json={"confirm_unfiltered": True},
+    )
+    assert response.status_code == 409
+    assert "newer Flex position snapshot" in response.json()["detail"]
+    assert fake.updates == []
+
+
+def test_health_advertises_safe_flex_snapshot_support():
+    client, _, _ = _client()
+    assert client.get("/healthz").json()["flex_position_snapshot_sync"] == 1
 
 
 def test_flex_connection_api_returns_not_found_for_another_users_connection():

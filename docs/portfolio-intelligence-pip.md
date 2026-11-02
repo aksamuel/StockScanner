@@ -109,8 +109,9 @@ PostgREST operations. It does not use or accept a service-role key.
 
 Install the project dependencies and apply these migrations in order:
 `20261023_pip_core_schema.sql`, `20261024_pip_approval_rpc.sql`,
-`20261026000000_pip_account_fingerprints.sql`, and
-`20261027000000_pip_ibkr_flex_vault.sql`. Supabase Vault must be enabled before
+`20261026000000_pip_account_fingerprints.sql`,
+`20261027000000_pip_ibkr_flex_vault.sql`, and
+`20261102000000_pip_flex_position_snapshots.sql`. Supabase Vault must be enabled before
 the Flex Vault migration. Configure the API host with:
 
 - `SUPABASE_URL`
@@ -132,8 +133,9 @@ Deploy `supabase/functions/pip-ibkr-flex` separately with
 Edge Function uses Supabase's server-side service-role secret only for narrow,
 restricted Vault RPCs; the FastAPI API does not receive that key. The internal
 key, Flex tokens, and Query IDs must never be placed in HTML, JavaScript,
-browser storage, logs, or source control. Configure each IBKR Flex Query to
-produce XML with the required position, trade, and dividend sections.
+browser storage, logs, or source control. Configure each IBKR Activity Flex
+Query to produce unfiltered XML with the required account, Open Positions,
+Trades, and Cash Transactions fields. See the [IBKR sync runbook](pip/IBKR_SYNC_RUNBOOK.md).
 
 ### Render test deployment
 
@@ -157,7 +159,7 @@ also has an origin allowlist; update and redeploy it if a different browser
 origin is required.
 
 After the service is live, open its `https://<service>.onrender.com/healthz`
-URL and confirm it returns `{"status":"ok","service":"pip"}`. Copy the service's
+URL and confirm it returns `"status":"ok"` and `"service":"pip"`. Copy the service's
 base HTTPS URL into the Portfolio Intelligence page's API URL field and
 connect. The Blueprint does not publish the static workbench; use the local
 workbench or publish the updated page separately. A free service's first
@@ -204,7 +206,7 @@ API routes:
 | GET, POST | `/api/pip/portfolios` | List or create caller-owned portfolios |
 | POST | `/api/pip/portfolios/{id}/sync/csv` | Import a CSV export |
 | GET, POST | `/api/pip/portfolios/{id}/ibkr-flex-connections` | List or save caller-owned Vault-backed Flex connections |
-| POST | `/api/pip/portfolios/{id}/ibkr-flex-connections/{connection_id}/sync` | Retrieve and normalize one read-only XML Flex statement |
+| POST | `/api/pip/portfolios/{id}/ibkr-flex-connections/{connection_id}/sync` | Retrieve a read-only XML statement; requires `{"confirm_unfiltered":true}` |
 | DELETE | `/api/pip/portfolios/{id}/ibkr-flex-connections/{connection_id}` | Remove the connection and delete its Vault secret |
 | POST | `/api/pip/portfolios/{id}/research` | Load available research for an imported holding |
 | POST | `/api/pip/analysis` | Run modules, persist scores and propose a recommendation |
@@ -217,7 +219,10 @@ where available; other components remain explicitly missing until supplied.
 CSV import and Flex sync are both read-only with respect to the broker; no route
 submits an order. Each account is stored with a masked display identifier and a
 non-display fingerprint so accounts sharing the same masked suffix remain
-distinct.
+distinct. A confirmed, complete Flex statement atomically replaces prior Flex
+positions for its included accounts; older statements and incomplete snapshots
+are rejected. CSV/manual holdings and transaction/dividend history are not
+replaced. Importing the same holdings by CSV and Flex counts both copies.
 
 ## Decision quality guidance
 The PIP layer helps by giving better evidence, not by guaranteeing a right decision. It is most useful when it answers:
