@@ -807,6 +807,43 @@ def test_flex_connection_api_fails_closed_when_internal_key_is_missing(monkeypat
     assert calls == []
 
 
+def test_flex_sync_exposes_only_known_retry_codes_from_edge_errors(monkeypatch):
+    fake = PipelineClient()
+    edge_error = {"error": "The IBKR Flex statement is not ready. Retry shortly."}
+
+    def post(url, *, headers, json, timeout):
+        return SimpleNamespace(
+            status_code=504,
+            is_success=False,
+            json=lambda: edge_error,
+        )
+
+    monkeypatch.setattr(pip_api.httpx, "post", post)
+    app = create_app(
+        client_factory=lambda url, key: fake,
+        environ={
+            "SUPABASE_URL": "https://project.example.test",
+            "SUPABASE_PUBLISHABLE_KEY": "public-test-key",
+            "PIP_FLEX_INTERNAL_KEY": "test-internal-key-with-at-least-thirty-two-characters",
+        },
+    )
+    client = TestClient(app)
+    url = f"/api/pip/portfolios/{fake.portfolio_id}/ibkr-flex-connections/{fake.connection_id}/sync"
+
+    edge_error["ibkr_error_code"] = "1019"
+    response = client.post(url, headers={"Authorization": "Bearer verified-token"}, json={"confirm_unfiltered": True})
+    assert response.status_code == 504
+    assert response.json()["detail"] == (
+        "The IBKR Flex statement is not ready. Retry shortly (IBKR code 1019)."
+    )
+
+    for invalid_code in ("secret-or-unexpected-code", ["1019"]):
+        edge_error["ibkr_error_code"] = invalid_code
+        response = client.post(url, headers={"Authorization": "Bearer verified-token"}, json={"confirm_unfiltered": True})
+        assert response.status_code == 504
+        assert response.json()["detail"] == "The IBKR Flex statement is not ready. Retry shortly."
+
+
 def test_flex_connection_api_rejects_invalid_credentials_without_echoing_them():
     fake = PipelineClient()
     calls = []

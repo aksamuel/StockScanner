@@ -21,9 +21,11 @@ imports and never sends an order.
    service-role key.
 4. In IBKR Client Portal, open **Reporting > Flex Queries**, enable **Flex Web
    Service Configuration**, and create an Activity Flex Query. Select the
-   intended accounts, XML output, and a current reporting period. Do not apply
-   symbol filters: the Open Positions section must include all stock positions
-   for each selected account. Include these fields:
+   intended accounts and XML output. To backfill up to a year of available
+   trades and dividend payments, choose **Last 365 Calendar Days**; a shorter
+   period may legitimately contain no activity. Do not apply symbol filters:
+   the Open Positions section must include all stock positions for each
+   selected account. Include these fields:
    - **Account Information:** Account ID and Currency (the account's base
      currency).
    - **Open Positions:** Account ID, Currency, Asset Class, Symbol, Conid,
@@ -50,7 +52,10 @@ Each user can manage multiple named Flex connections and each connection can
 return multiple IBKR accounts. Account IDs are masked for display and a
 non-display fingerprint distinguishes accounts that happen to share the same
 last four digits. Each Flex response is limited to 5 MB and 10,000 normalized
-records; the Edge Function enforces IBKR's per-token request limits.
+records; the Edge Function enforces IBKR's per-token request limits. The live
+path accepts XML, not ZIP bundles. If IBKR provides only a ZIP bundle for
+multiple accounts, configure a separate XML query and named connection for
+each account instead.
 
 For each included account, a complete Flex snapshot atomically replaces earlier
 Flex positions, including positions no longer present. An older statement or an
@@ -65,11 +70,14 @@ If sync fails, check that the user is approved, the portfolio and connection
 belong to that user, the matching internal keys are configured, and the Flex
 Query returns a complete, current XML statement. If IBKR omits Open Positions
 for an empty account, PIP cannot safely distinguish that from an omitted
-section and will leave earlier positions unchanged. Credentials are cleared
-from the browser form after every save attempt. They are never returned by the
-API, stored in browser storage, or written to audit events. Do not log request
-URLs to IBKR because the Flex token is a query parameter in the upstream
-protocol.
+section and will leave earlier positions unchanged. Longer reports can take
+time to prepare; PIP polls within a bounded window and respects IBKR's
+per-token limits. If the report is still unavailable, wait before retrying and
+consult [IBKR's error-code reference](https://www.ibkrguides.com/clientportal/performanceandstatements/flex3error.htm)
+for any code shown. Credentials are cleared from the browser form after every
+save attempt. They are never returned by the API, stored in browser storage,
+or written to audit events. Do not log request URLs to IBKR because the Flex
+token is a query parameter in the upstream protocol.
 
 ## CSV fallback
 

@@ -45,6 +45,9 @@ from .scoring import calculate_cps_result
 MAX_CSV_BYTES = 1_000_000
 MAX_CSV_ROWS = 1_000
 SYMBOL_PATTERN = re.compile(r"^[A-Z0-9][A-Z0-9.-]{0,29}$")
+FLEX_RETRYABLE_ERROR_CODES = frozenset({
+    "1001", "1004", "1005", "1006", "1007", "1008", "1009", "1019", "1021",
+})
 
 
 class StrictModel(BaseModel):
@@ -395,7 +398,7 @@ def create_app(
                 429: "IBKR Flex is rate-limited. Wait before syncing again.",
                 502: "IBKR Flex is temporarily unavailable.",
                 503: "Live IBKR Flex storage is not available.",
-                504: "The IBKR Flex statement is still being generated. Retry shortly.",
+                504: "The IBKR Flex statement is not ready. Retry shortly.",
             }
             message = response_payload.get("error")
             allowed_messages = {
@@ -405,11 +408,19 @@ def create_app(
                 "IBKR rejected the Flex request. Verify the saved token and Query ID.",
                 "IBKR Flex is rate-limited. Wait before syncing again.",
                 "The IBKR Flex statement is still being generated. Retry shortly.",
+                "The IBKR Flex statement is not ready. Retry shortly.",
             }
             detail = message if isinstance(message, str) and message in allowed_messages else safe_errors.get(
                 response.status_code,
                 "The IBKR Flex service request failed.",
             )
+            retry_code = response_payload.get("ibkr_error_code")
+            if (
+                response.status_code == 504
+                and isinstance(retry_code, str)
+                and retry_code in FLEX_RETRYABLE_ERROR_CODES
+            ):
+                detail = f"{detail.rstrip('.')} (IBKR code {retry_code})."
             raise HTTPException(status_code=response.status_code, detail=detail)
         return response_payload
 

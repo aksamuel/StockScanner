@@ -1,5 +1,10 @@
 const MAX_REQUEST_BYTES = 4_096;
 const MAX_FLEX_RESPONSE_BYTES = 5_000_000;
+const FLEX_STATEMENT_DEADLINE_MS = 85_000;
+const FLEX_INITIAL_POLL_DELAY_MS = 3_000;
+const FLEX_POLL_INTERVAL_MS = 7_000;
+const FLEX_MAX_STATEMENT_POLLS = 12;
+const FLEX_FETCH_TIMEOUT_MS = 15_000;
 const FLEX_SEND_REQUEST_URL = "https://ndcdyn.interactivebrokers.com/AccountManagement/FlexWebService/SendRequest";
 const FLEX_GET_STATEMENT_PATH = "/AccountManagement/FlexWebService/GetStatement";
 const FLEX_ALLOWED_HOSTS = new Set([
@@ -55,6 +60,13 @@ function json(request, body, status = 200) {
     status,
     headers: { ...corsHeaders(request), "Content-Type": "application/json" },
   });
+}
+
+function flexNotReady(request, code = null) {
+  return json(request, {
+    error: "The IBKR Flex statement is not ready. Retry shortly.",
+    ibkr_error_code: code,
+  }, 504);
 }
 
 function xmlValue(xml, name) {
@@ -164,8 +176,10 @@ export function createFlexHandler({
   env,
   fetcher = fetch,
   sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)),
+  now = () => performance.now(),
 }) {
   return async (request) => {
+    const requestStartedAt = now();
     const origin = request.headers.get("origin") || "";
     if (origin && !ALLOWED_ORIGINS.has(origin)) return json(request, { error: "Origin not allowed." }, 403);
     if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders(request) });
@@ -317,13 +331,24 @@ export function createFlexHandler({
       sendUrl.searchParams.set("t", credentials.token);
       sendUrl.searchParams.set("q", credentials.query_id);
       sendUrl.searchParams.set("v", "3");
-      const sendResponse = await fetcher(sendUrl, {
-        method: "GET",
-        headers: { "User-Agent": "StockScanner-PIP/1.0" },
-        redirect: "error",
-        signal: AbortSignal.timeout(15_000),
-      });
-      const sendXml = await boundedUtf8Text(sendResponse, MAX_FLEX_RESPONSE_BYTES);
+      const statementDeadline = requestStartedAt + FLEX_STATEMENT_DEADLINE_MS;
+      const sendRemaining = statementDeadline - now();
+      if (sendRemaining <= 0) return flexNotReady(request);
+      const sendSignal = AbortSignal.timeout(Math.ceil(Math.min(FLEX_FETCH_TIMEOUT_MS, sendRemaining)));
+      let sendResponse;
+      let sendXml;
+      try {
+        sendResponse = await fetcher(sendUrl, {
+          method: "GET",
+          headers: { "User-Agent": "StockScanner-PIP/1.0" },
+          redirect: "error",
+          signal: sendSignal,
+        });
+        sendXml = await boundedUtf8Text(sendResponse, MAX_FLEX_RESPONSE_BYTES);
+      } catch (error) {
+        if (sendSignal.aborted && now() >= statementDeadline) return flexNotReady(request);
+        throw error;
+      }
       if (!sendResponse.ok || sendXml === null) {
         return json(request, { error: "IBKR Flex could not start the statement request." }, 502);
       }
@@ -333,6 +358,7 @@ export function createFlexHandler({
         if (code === "1018") {
           return json(request, { error: "IBKR Flex is rate-limited. Wait before syncing again." }, 429);
         }
+        if (FLEX_RETRY_CODES.has(code || "")) return flexNotReady(request, code);
         return json(request, { error: "IBKR rejected the Flex request. Verify the saved token and Query ID." }, 422);
       }
       const referenceCode = xmlValue(sendXml, "ReferenceCode");
@@ -341,24 +367,37 @@ export function createFlexHandler({
         return json(request, { error: "IBKR returned an invalid Flex statement reference." }, 502);
       }
 
-      await sleep(3_000);
-      for (let attempt = 0; attempt < 5; attempt += 1) {
+      let lastRetryCode = null;
+      const initialDelay = Math.min(FLEX_INITIAL_POLL_DELAY_MS, statementDeadline - now());
+      if (initialDelay > 0) await sleep(initialDelay);
+      for (let attempt = 0; attempt < FLEX_MAX_STATEMENT_POLLS; attempt += 1) {
+        if (now() >= statementDeadline) break;
         const getLimit = await reserveRequest();
         if (getLimit === "rate_limited") {
           return json(request, { error: "IBKR Flex is rate-limited. Wait before syncing again." }, 429);
         }
         if (getLimit) return json(request, { error: "Unable to prepare the IBKR Flex request." }, 503);
 
+        const remaining = statementDeadline - now();
+        if (remaining <= 0) break;
         statementUrl.searchParams.set("t", credentials.token);
         statementUrl.searchParams.set("q", referenceCode);
         statementUrl.searchParams.set("v", "3");
-        const statementResponse = await fetcher(statementUrl, {
-          method: "GET",
-          headers: { "User-Agent": "StockScanner-PIP/1.0" },
-          redirect: "error",
-          signal: AbortSignal.timeout(15_000),
-        });
-        const statementXml = await boundedUtf8Text(statementResponse, MAX_FLEX_RESPONSE_BYTES);
+        const signal = AbortSignal.timeout(Math.ceil(Math.min(FLEX_FETCH_TIMEOUT_MS, remaining)));
+        let statementResponse;
+        let statementXml;
+        try {
+          statementResponse = await fetcher(statementUrl, {
+            method: "GET",
+            headers: { "User-Agent": "StockScanner-PIP/1.0" },
+            redirect: "error",
+            signal,
+          });
+          statementXml = await boundedUtf8Text(statementResponse, MAX_FLEX_RESPONSE_BYTES);
+        } catch (error) {
+          if (signal.aborted && now() >= statementDeadline) break;
+          throw error;
+        }
         if (!statementResponse.ok || statementXml === null) {
           return json(request, { error: "IBKR Flex could not retrieve the generated statement." }, 502);
         }
@@ -373,9 +412,11 @@ export function createFlexHandler({
         if (!FLEX_RETRY_CODES.has(errorCode || "")) {
           return json(request, { error: "IBKR Flex could not retrieve the generated statement." }, 502);
         }
-        if (attempt < 4) await sleep(2_000);
+        lastRetryCode = errorCode;
+        const delay = Math.min(FLEX_POLL_INTERVAL_MS, statementDeadline - now());
+        if (attempt < FLEX_MAX_STATEMENT_POLLS - 1 && delay > 0) await sleep(delay);
       }
-      return json(request, { error: "The IBKR Flex statement is still being generated. Retry shortly." }, 504);
+      return flexNotReady(request, lastRetryCode);
     } catch {
       return json(request, { error: "IBKR Flex is temporarily unavailable." }, 502);
     }

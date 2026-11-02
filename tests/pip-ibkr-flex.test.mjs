@@ -8,6 +8,10 @@ const CONNECTION_ID = "55555555-5555-4555-8555-555555555555";
 const INTERNAL_KEY = "test-internal-key-with-at-least-thirty-two-characters";
 const FLEX_TOKEN = "ibkr-flex-token-test-only";
 const QUERY_ID = "123456789";
+const SEND_RESPONSE_XML = "<FlexStatementResponse><Status>Success</Status>"
+  + "<ReferenceCode>87654321</ReferenceCode>"
+  + "<Url>https://ndcdyn.interactivebrokers.com/AccountManagement/FlexWebService/GetStatement</Url>"
+  + "</FlexStatementResponse>";
 const STATEMENT_XML = `<FlexQueryResponse>
   <FlexStatements><FlexStatement accountId="U1234567" currency="USD">
     <OpenPositions><OpenPosition assetCategory="STK" accountId="U1234567"
@@ -20,10 +24,13 @@ function harness({
   portfolioOwned = true,
   connectionOwned = true,
   rateLimited = false,
+  rateLimitedAt = null,
   fetcher,
   userId = USER_ID,
 } = {}) {
-  const calls = { rpc: [], fetch: [], createdClients: [] };
+  const calls = { rpc: [], fetch: [], sleep: [], createdClients: [] };
+  let time = 0;
+  let reservationCount = 0;
   const envValues = {
     PIP_FLEX_INTERNAL_KEY: INTERNAL_KEY,
     SUPABASE_URL: "https://project.supabase.co",
@@ -90,8 +97,11 @@ function harness({
           error: null,
         };
       }
-      if (name === "pip_flex_reserve_request" && rateLimited) {
-        return { data: null, error: { code: "P4290" } };
+      if (name === "pip_flex_reserve_request") {
+        reservationCount += 1;
+        if (rateLimited || reservationCount === rateLimitedAt) {
+          return { data: null, error: { code: "P4290" } };
+        }
       }
       return { data: true, error: null };
     },
@@ -103,15 +113,16 @@ function harness({
   const handler = createFlexHandler({
     createClient,
     env: (name) => envValues[name],
-    sleep: async () => {},
+    sleep: async (milliseconds) => {
+      calls.sleep.push(milliseconds);
+      time += milliseconds;
+    },
+    now: () => time,
     fetcher: async (url, options) => {
-      calls.fetch.push({ url: new URL(url), options });
-      if (fetcher) return fetcher(url, options);
+      calls.fetch.push({ url: new URL(url), options, time });
+      if (fetcher) return fetcher(url, options, (milliseconds) => { time += milliseconds; });
       if (new URL(url).pathname.endsWith("/SendRequest")) {
-        return new Response(
-          "<FlexStatementResponse><Status>Success</Status><ReferenceCode>87654321</ReferenceCode><Url>https://ndcdyn.interactivebrokers.com/AccountManagement/FlexWebService/GetStatement</Url></FlexStatementResponse>",
-          { status: 200 },
-        );
+        return new Response(SEND_RESPONSE_XML, { status: 200 });
       }
       return new Response(STATEMENT_XML, { status: 200 });
     },
@@ -250,6 +261,101 @@ test("Flex sync uses the fixed IBKR endpoints, bounded rate-limit RPC, and retur
   assert.equal(calls.rpc.filter(([name]) => name === "pip_flex_reserve_request").length, 2);
 });
 
+test("Flex sync waits for a slow report without exceeding per-token request limits", async () => {
+  let polls = 0;
+  const { handler, calls } = harness({
+    fetcher: async (url) => {
+      if (new URL(url).pathname.endsWith("/SendRequest")) {
+        return new Response(SEND_RESPONSE_XML);
+      }
+      polls += 1;
+      return new Response(polls < 8
+        ? "<FlexStatementResponse><ErrorCode>1019</ErrorCode></FlexStatementResponse>"
+        : STATEMENT_XML);
+    },
+  });
+  const response = await handler(request({
+    action: "sync",
+    portfolio_id: PORTFOLIO_ID,
+    connection_id: CONNECTION_ID,
+  }));
+
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).statement_xml, STATEMENT_XML);
+  assert.equal(polls, 8);
+  assert.deepEqual(calls.sleep, [3_000, 7_000, 7_000, 7_000, 7_000, 7_000, 7_000, 7_000]);
+  assert.equal(calls.rpc.filter(([name]) => name === "pip_flex_reserve_request").length, 9);
+});
+
+test("Flex sync stops polling at its deadline while respecting rolling rate limits", async () => {
+  const { handler, calls } = harness({
+    fetcher: async (url) => new URL(url).pathname.endsWith("/SendRequest")
+      ? new Response(SEND_RESPONSE_XML)
+      : new Response("<FlexStatementResponse><ErrorCode>1019</ErrorCode></FlexStatementResponse>"),
+  });
+  const response = await handler(request({
+    action: "sync",
+    portfolio_id: PORTFOLIO_ID,
+    connection_id: CONNECTION_ID,
+  }));
+
+  assert.equal(response.status, 504);
+  assert.deepEqual(await response.json(), {
+    error: "The IBKR Flex statement is not ready. Retry shortly.",
+    ibkr_error_code: "1019",
+  });
+  assert.equal(calls.fetch.length, 13);
+  assert.equal(calls.fetch.at(-1).time, 80_000);
+  for (const [index, call] of calls.fetch.entries()) {
+    const preceding = calls.fetch.slice(0, index).filter((other) => other.time > call.time - 60_000);
+    assert.ok(preceding.length < 10);
+    if (index > 0) assert.ok(call.time - calls.fetch[index - 1].time >= 1_000);
+  }
+});
+
+test("Flex polling includes slow upstream responses in its deadline", async () => {
+  const { handler, calls } = harness({
+    fetcher: async (url, _options, advance) => {
+      if (new URL(url).pathname.endsWith("/SendRequest")) {
+        return new Response(SEND_RESPONSE_XML);
+      }
+      advance(14_000);
+      return new Response("<FlexStatementResponse><ErrorCode>1004</ErrorCode></FlexStatementResponse>");
+    },
+  });
+  const response = await handler(request({
+    action: "sync",
+    portfolio_id: PORTFOLIO_ID,
+    connection_id: CONNECTION_ID,
+  }));
+
+  assert.equal(response.status, 504);
+  assert.equal((await response.json()).ibkr_error_code, "1004");
+  assert.equal(calls.fetch.length, 5);
+  assert.equal(calls.fetch.at(-1).time, 66_000);
+  assert.equal(calls.sleep.reduce((sum, delay) => sum + delay, 0), 29_000);
+});
+
+test("Flex sync reports transient SendRequest errors without blaming the credentials", async () => {
+  const { handler, calls } = harness({
+    fetcher: async () => new Response(
+      "<FlexStatementResponse><Status>Fail</Status><ErrorCode>1009</ErrorCode></FlexStatementResponse>",
+    ),
+  });
+  const response = await handler(request({
+    action: "sync",
+    portfolio_id: PORTFOLIO_ID,
+    connection_id: CONNECTION_ID,
+  }));
+
+  assert.equal(response.status, 504);
+  assert.deepEqual(await response.json(), {
+    error: "The IBKR Flex statement is not ready. Retry shortly.",
+    ibkr_error_code: "1009",
+  });
+  assert.equal(calls.fetch.length, 1);
+});
+
 test("Flex sync rejects an unsafe statement URL without following it", async () => {
   const { handler, calls } = harness({
     fetcher: async () => new Response(
@@ -312,6 +418,32 @@ test("Flex rate limit stops before contacting IBKR", async () => {
 
   assert.equal(response.status, 429);
   assert.equal(calls.fetch.length, 0);
+});
+
+test("Flex polling stops when either the local limiter or IBKR reports a rate limit", async () => {
+  const limitedLocally = harness({
+    rateLimitedAt: 3,
+    fetcher: async (url) => new URL(url).pathname.endsWith("/SendRequest")
+      ? new Response(SEND_RESPONSE_XML)
+      : new Response("<FlexStatementResponse><ErrorCode>1019</ErrorCode></FlexStatementResponse>"),
+  });
+  const payload = {
+    action: "sync",
+    portfolio_id: PORTFOLIO_ID,
+    connection_id: CONNECTION_ID,
+  };
+  const locallyLimitedResponse = await limitedLocally.handler(request(payload));
+  assert.equal(locallyLimitedResponse.status, 429);
+  assert.equal(limitedLocally.calls.fetch.length, 2);
+
+  const limitedByBroker = harness({
+    fetcher: async (url) => new URL(url).pathname.endsWith("/SendRequest")
+      ? new Response(SEND_RESPONSE_XML)
+      : new Response("<FlexStatementResponse><ErrorCode>1018</ErrorCode></FlexStatementResponse>"),
+  });
+  const brokerLimitedResponse = await limitedByBroker.handler(request(payload));
+  assert.equal(brokerLimitedResponse.status, 429);
+  assert.equal(limitedByBroker.calls.fetch.length, 2);
 });
 
 test("Flex request fingerprints remain shared by token across application users", async () => {
