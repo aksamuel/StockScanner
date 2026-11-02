@@ -8,8 +8,9 @@ imports and never sends an order.
 
 1. Apply the PIP schema and approval migrations, then
    `20261026000000_pip_account_fingerprints.sql`,
-   `20261027000000_pip_ibkr_flex_vault.sql`, and
-   `20261102000000_pip_flex_position_snapshots.sql`. Supabase Vault must be enabled.
+   `20261027000000_pip_ibkr_flex_vault.sql`,
+   `20261102000000_pip_flex_position_snapshots.sql`, and
+   `20261102000001_pip_flex_token_validation.sql`. Supabase Vault must be enabled.
 2. Deploy the Edge Function with `supabase functions deploy pip-ibkr-flex`.
    Supabase's function environment must retain its normal server-side service
    role secret; do not put that key in the FastAPI service or browser.
@@ -83,11 +84,12 @@ The browser/API CSV limit is 1 MB and 1,000 data rows. Existing scanner
 portfolio imports are not modified by either PIP sync path. Never print raw
 source rows or persist unmasked account identifiers.
 
-## Snapshot migration regression test
+## Flex migration regression tests
 
-The SQL regression test uses `@electric-sql/pglite` in an isolated directory
-and is skipped unless `PIP_PGLITE_PREFIX` points to that directory. Install
+The SQL regression tests use `@electric-sql/pglite` in an isolated directory
+and are skipped unless `PIP_PGLITE_PREFIX` points to that directory. Install
 version `0.5.14` there, set `PIP_PGLITE_PREFIX`, and run
-`node --test tests/pip-flex-snapshots-sql.test.mjs`. It exercises the real
-migrations in an isolated database, including owner isolation and default
-Supabase role grants.
+`node --test tests/pip-flex-snapshots-sql.test.mjs tests/pip-flex-vault-sql.test.mjs`.
+They exercise the real migrations in an isolated database, including owner
+isolation, default Supabase role grants, and Vault RPC token validation. The
+Vault test uses a stub in place of the encrypted production Vault extension.

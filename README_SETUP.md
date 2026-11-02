@@ -165,6 +165,7 @@ Apply the migrations in timestamp order:
 16. `20261026000000_pip_account_fingerprints.sql`
 17. `20261027000000_pip_ibkr_flex_vault.sql`
 18. `20261102000000_pip_flex_position_snapshots.sql`
+19. `20261102000001_pip_flex_token_validation.sql`
 
 The 20260831 migrations add backend-only leases and price telemetry. The two
 20261002 migrations add owner-gated portfolio Technical-strength storage,

@@ -45,8 +45,8 @@ each event atomically with the corresponding recommendation transition.
    keys, timestamps, and indexes.
 3. Apply/verify RLS policies and approval RPC grants as the authenticated owner, another approved user,
    a pending user, and an anonymous user. Confirm cross-owner operations fail.
-4. Apply the account-fingerprint, Vault-backed Flex, and Flex position-snapshot
-   migrations; verify the owner policies and restricted RPC grants.
+4. Apply the account-fingerprint, Vault-backed Flex, Flex position-snapshot,
+   and Flex token-validation migrations; verify owner policies and RPC grants.
 5. Deploy the authenticated FastAPI service and the `pip-ibkr-flex` Edge
    Function. Keep the service-role key inside Supabase and set a matching,
    server-only internal key on both hosts.

@@ -110,9 +110,10 @@ PostgREST operations. It does not use or accept a service-role key.
 Install the project dependencies and apply these migrations in order:
 `20261023_pip_core_schema.sql`, `20261024_pip_approval_rpc.sql`,
 `20261026000000_pip_account_fingerprints.sql`,
-`20261027000000_pip_ibkr_flex_vault.sql`, and
-`20261102000000_pip_flex_position_snapshots.sql`. Supabase Vault must be enabled before
-the Flex Vault migration. Configure the API host with:
+`20261027000000_pip_ibkr_flex_vault.sql`,
+`20261102000000_pip_flex_position_snapshots.sql`, and
+`20261102000001_pip_flex_token_validation.sql`. Supabase Vault must be enabled
+before the Flex Vault migration. Configure the API host with:
 
 - `SUPABASE_URL`
 - `SUPABASE_PUBLISHABLE_KEY`

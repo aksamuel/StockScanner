@@ -211,6 +211,23 @@ test("saving a Flex connection sends credentials only to the Vault RPC", async (
   ]);
 });
 
+test("Flex connection accepts a 256-character token but rejects longer tokens", async () => {
+  const { handler, calls } = harness();
+  const payload = {
+    action: "connect",
+    portfolio_id: PORTFOLIO_ID,
+    connection_name: "Main IBKR",
+    query_id: QUERY_ID,
+  };
+  const valid = await handler(request({ ...payload, token: "x".repeat(256) }));
+  const invalid = await handler(request({ ...payload, token: "x".repeat(257) }));
+
+  assert.equal(valid.status, 201);
+  assert.equal(invalid.status, 400);
+  assert.equal(calls.rpc.length, 1);
+  assert.equal(calls.rpc[0][1].p_token.length, 256);
+});
+
 test("Flex sync uses the fixed IBKR endpoints, bounded rate-limit RPC, and returns the XML statement internally", async () => {
   const { handler, calls } = harness();
   const response = await handler(request({
