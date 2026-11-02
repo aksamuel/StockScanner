@@ -202,6 +202,7 @@ def _revision_periods(frame):
 
 def get_pip_research_metrics(symbol, cache_directory=None, cache_hours=24):
     """Return Yahoo growth percentages and raw EPS revision counts for PIP."""
+    symbol = str(symbol).strip().upper()
     if cache_directory is None:
         cache_directory = os.path.abspath(
             os.path.join(os.path.dirname(__file__), "..", "data", "analyst")
@@ -211,7 +212,7 @@ def get_pip_research_metrics(symbol, cache_directory=None, cache_hours=24):
     if isinstance(cached, dict) and cached.get("schema_version") == 1:
         return {key: value for key, value in cached.items() if key != "schema_version"}
 
-    ticker = yf.Ticker(str(symbol).strip().upper())
+    ticker = yf.Ticker(symbol)
     warnings = []
     try:
         info = ticker.get_info() or {}

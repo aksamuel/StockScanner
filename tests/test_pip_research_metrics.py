@@ -31,6 +31,7 @@ def test_pip_research_metrics_normalize_yahoo_growth_and_keep_revision_counts_ra
 
     result = get_pip_research_metrics("aapl", cache_directory=str(tmp_path))
 
+    assert [path.name for path in tmp_path.glob("*.pip.json")] == ["AAPL.pip.json"]
     assert result["source"] == "Yahoo Finance"
     assert result["earnings_growth_percent"] == 28.7
     assert result["revenue_growth_percent"] == 16.4
@@ -50,4 +51,5 @@ def test_pip_research_metrics_normalize_yahoo_growth_and_keep_revision_counts_ra
     }
     assert not result["warnings"]
     assert get_pip_research_metrics("AAPL", cache_directory=str(tmp_path)) == result
+    assert get_pip_research_metrics(" AAPL ", cache_directory=str(tmp_path)) == result
     assert calls == {"ticker": 1, "info": 1, "revisions": 1}
