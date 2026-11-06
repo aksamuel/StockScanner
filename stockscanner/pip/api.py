@@ -38,6 +38,7 @@ from .ibkr_sync import (
     IBKRPortfolioSyncService,
 )
 from .opportunity_cost import OpportunityCostEngine
+from .portfolio_review import DEFAULT_REPLACEMENT_LIMIT, DEFAULT_TOP_N, PortfolioReviewer
 from .position_lifecycle import PositionLifecycleAnalyzer
 from .repository import SupabaseAuditLogSink, SupabasePortfolioRepository
 from .research import ResearchDataUnavailable, collect_research_data
@@ -46,6 +47,8 @@ from .scoring import calculate_cps_result
 
 MAX_CSV_BYTES = 1_000_000
 MAX_CSV_ROWS = 1_000
+REVIEW_PAGE_SIZE = 1_000
+REVIEW_MAX_PAGES = 10
 SYMBOL_PATTERN = re.compile(r"^[A-Z0-9][A-Z0-9.-]{0,29}$")
 FLEX_RETRYABLE_ERROR_CODES = frozenset({
     "1001", "1004", "1005", "1006", "1007", "1008", "1009", "1019", "1021",
@@ -257,6 +260,29 @@ class AnalysisRequest(StrictModel):
         return value
 
 
+class ReviewCandidate(PeerScore):
+    score: float = Field(ge=0, le=100)
+
+
+class PortfolioReviewRequest(StrictModel):
+    required_annual_return_percent: float = Field(
+        default=DEFAULT_REQUIRED_ANNUAL_RETURN_PERCENT,
+        ge=0,
+        le=100,
+    )
+    top_n: int = Field(default=DEFAULT_TOP_N, ge=1, le=20)
+    replacement_limit: int = Field(default=DEFAULT_REPLACEMENT_LIMIT, ge=1, le=10)
+    peer_scores: list[ReviewCandidate] = Field(default_factory=list, max_length=500)
+
+    @field_validator("peer_scores")
+    @classmethod
+    def reject_duplicate_candidates(cls, value: list[ReviewCandidate]) -> list[ReviewCandidate]:
+        symbols = [candidate.symbol for candidate in value]
+        if len(symbols) != len(set(symbols)):
+            raise ValueError("Each replacement candidate symbol may appear only once.")
+        return value
+
+
 class ResearchRequest(StrictModel):
     symbol: str
 
@@ -330,6 +356,20 @@ def _one_row(data: Any) -> dict[str, Any] | None:
     if isinstance(data, list) and data:
         return data[0]
     return None
+
+
+def _read_pages(build_query: Callable[[], Any], message: str) -> tuple[list[dict[str, Any]], bool]:
+    rows: list[dict[str, Any]] = []
+    for page in range(REVIEW_MAX_PAGES):
+        start = page * REVIEW_PAGE_SIZE
+        chunk = _response_data(
+            build_query().range(start, start + REVIEW_PAGE_SIZE - 1).execute(),
+            message,
+        ) or []
+        rows.extend(chunk)
+        if len(chunk) < REVIEW_PAGE_SIZE:
+            return rows, False
+    return rows, True
 
 
 def _position_payload(position: Any) -> dict[str, Any]:
@@ -538,6 +578,7 @@ def create_app(
             "flex_symbol_diagnostics": 1,
             "flex_positions_only_sync": 1,
             "hurdle_analysis": 1,
+            "portfolio_review": 1,
         }
 
     @app.get("/api/pip/portfolios")
@@ -1137,6 +1178,48 @@ def create_app(
             "modules": module_assessments,
             "recommendation": asdict(recommendation),
         }
+
+    @app.post("/api/pip/portfolios/{portfolio_id}/review")
+    def review_portfolio(
+        portfolio_id: UUID,
+        body: PortfolioReviewRequest,
+        user: AuthenticatedUser = Depends(require_user),
+    ) -> dict[str, Any]:
+        owned_portfolio(user, portfolio_id)
+        portfolio = str(portfolio_id)
+
+        position_rows, truncated = _read_pages(
+            lambda: user.client.table("positions").select(
+                "symbol,quantity,average_cost,market_price,market_value,cost_basis,entry_date,currency"
+            ).eq("portfolio_id", portfolio).order("id"),
+            "Unable to load portfolio positions.",
+        )
+        score_rows = _response_data(
+            user.client.table("stock_scores").select(
+                "symbol,cps,opportunity_cost"
+            ).eq("portfolio_id", portfolio).limit(REVIEW_PAGE_SIZE).execute(),
+            "Unable to load saved scores.",
+        ) or []
+        signal_rows = _response_data(
+            user.client.table("analyst_signals").select(
+                "symbol,target_price,target_upside,signal_date"
+            ).eq("portfolio_id", portfolio).order(
+                "signal_date", desc=True
+            ).limit(REVIEW_PAGE_SIZE).execute(),
+            "Unable to load analyst signals.",
+        ) or []
+
+        review = PortfolioReviewer(lifecycle_analyzer=PositionLifecycleAnalyzer()).review(
+            position_rows,
+            scores=score_rows,
+            signals=signal_rows,
+            required_annual_return_percent=body.required_annual_return_percent,
+            top_n=body.top_n,
+            peer_scores=[(candidate.symbol, candidate.score) for candidate in body.peer_scores],
+            replacement_limit=body.replacement_limit,
+            truncated=truncated,
+        )
+        return {"review": asdict(review)}
 
     @app.get("/api/pip/portfolios/{portfolio_id}/recommendations")
     def list_recommendations(

@@ -9,6 +9,7 @@ from .growth_analysis import GrowthAnalysisEngine
 from .hurdle import HurdleAnalyzer
 from .ibkr_sync import IBKRPortfolioSyncService
 from .opportunity_cost import OpportunityCostEngine
+from .portfolio_review import PortfolioReviewer
 from .position_lifecycle import PositionLifecycleAnalyzer
 from .replacement_engine import ReplacementCandidateEngine
 from .sell_advisor import SellAdvisor
@@ -23,6 +24,7 @@ __all__ = [
     "HurdleAnalyzer",
     "IBKRPortfolioSyncService",
     "OpportunityCostEngine",
+    "PortfolioReviewer",
     "PositionLifecycleAnalyzer",
     "ReplacementCandidateEngine",
     "SellAdvisor",

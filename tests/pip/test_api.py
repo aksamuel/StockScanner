@@ -1570,6 +1570,7 @@ def test_health_advertises_safe_flex_snapshot_support():
     assert client.get("/healthz").json()["flex_symbol_diagnostics"] == 1
     assert client.get("/healthz").json()["flex_positions_only_sync"] == 1
     assert client.get("/healthz").json()["hurdle_analysis"] == 1
+    assert client.get("/healthz").json()["portfolio_review"] == 1
 
 
 def test_flex_connection_api_returns_not_found_for_another_users_connection():
