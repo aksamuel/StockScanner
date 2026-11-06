@@ -59,8 +59,9 @@
 
     <section class="module-grid" aria-label="PIP modules">
       <article class="module-card"><span class="pill">API · Vault-backed Flex</span><h3>IBKR portfolio sync</h3><p>Imports CSV files or retrieves read-only XML Flex statements through the server, masks account identifiers, and saves normalized records. No order transmitter.</p><a href="https://github.com/aksamuel/StockScanner/blob/main/stockscanner/pip/ibkr_sync.py">Review sync source</a></article>
-      <article class="module-card"><span class="pill">Python analysis</span><h3>Position lifecycle</h3><p>Summarizes holding duration and total return when entry, market-value, and dividend inputs exist.</p><a href="https://github.com/aksamuel/StockScanner/blob/main/stockscanner/pip/position_lifecycle.py">Review lifecycle source</a></article>
-      <article class="module-card"><span class="pill">Python analysis</span><h3>Dead money detector</h3><p>Flags weak productivity only when supporting return or opportunity-cost evidence is available; reports confidence and reasons.</p><a href="https://github.com/aksamuel/StockScanner/blob/main/stockscanner/pip/dead_money.py">Review detector source</a></article>
+      <article class="module-card"><span class="pill">Python analysis</span><h3>Position lifecycle</h3><p>Summarizes holding duration, price return, and total return when entry, market-value, and dividend inputs exist.</p><a href="https://github.com/aksamuel/StockScanner/blob/main/stockscanner/pip/position_lifecycle.py">Review lifecycle source</a></article>
+      <article class="module-card"><span class="pill">Python analysis</span><h3>Dead money detector</h3><p>Flags weak productivity only when supporting return, return-hurdle, or opportunity-cost evidence is available; reports confidence and reasons.</p><a href="https://github.com/aksamuel/StockScanner/blob/main/stockscanner/pip/dead_money.py">Review detector source</a></article>
+      <article class="module-card"><span class="pill">Python analysis</span><h3>Return hurdle</h3><p>Compares each holding with the annual return you require (7% by default) from its own entry date. Catch-up and time-to-gain figures are scenarios from assumed returns, not forecasts.</p><a href="https://github.com/aksamuel/StockScanner/blob/main/stockscanner/pip/hurdle.py">Review hurdle source</a></article>
       <article class="module-card"><span class="pill">Python analysis</span><h3>Opportunity cost</h3><p>Ranks supplied alternatives against a holding and reports an estimated relative score benefit.</p><a href="https://github.com/aksamuel/StockScanner/blob/main/stockscanner/pip/opportunity_cost.py">Review opportunity-cost source</a></article>
       <article class="module-card"><span class="pill">Python analysis</span><h3>Dividend analysis</h3><p>Computes income, yield, growth, quality, confidence, and reasons for missing dividend inputs.</p><a href="https://github.com/aksamuel/StockScanner/blob/main/stockscanner/pip/dividend_analysis.py">Review dividend source</a></article>
       <article class="module-card"><span class="pill">Python analysis</span><h3>Growth analysis</h3><p>Normalizes earnings and revenue growth into a bounded score and lowers confidence for missing data.</p><a href="https://github.com/aksamuel/StockScanner/blob/main/stockscanner/pip/growth_analysis.py">Review growth source</a></article>
@@ -155,8 +156,9 @@
         <p id="researchStatus" class="subtle" role="status" aria-live="polite">Connect the API, select a portfolio, and enter an imported holding symbol.</p>
         <p id="researchResult" class="score-result" aria-live="polite" hidden></p>
         <details style="margin: 12px 0">
-          <summary>Additional inputs for lifecycle, dividends, growth, and replacements</summary>
+          <summary>Additional inputs for lifecycle, dividends, growth, return hurdle, and replacements</summary>
           <p class="subtle">Imported position values are used when these optional overrides are blank. Enter growth rates and dividend ratios as decimals (for example, 0.08 means 8%).</p>
+          <p class="subtle">Return hurdle: each holding is compared with the annual return you require (7% by default), measured from its own entry date. A holding is judged only after a year, and only once dividends received are known (enter 0 if none). The what-if returns are optional assumptions for catch-up and time-to-gain arithmetic; they are not forecasts.</p>
           <div class="score-inputs">
             <label for="pipEntryDate">Entry date<input id="pipEntryDate" type="date"></label>
             <label for="pipCostBasis">Cost basis<input id="pipCostBasis" type="number" min="0" step="any" inputmode="decimal"></label>
@@ -171,6 +173,9 @@
             <label for="pipTargetPrice">Analyst target price<input id="pipTargetPrice" type="number" min="0.01" step="any" inputmode="decimal"></label>
             <label for="pipTargetUpside">Target upside (%)<input id="pipTargetUpside" type="number" step="any" inputmode="decimal"></label>
             <label for="pipForwardRevisions">Forward revisions score (0–100)<input id="pipForwardRevisions" type="number" min="0" max="100" step="any" inputmode="decimal"></label>
+            <label for="pipRequiredReturn">Required annual return (%)<input id="pipRequiredReturn" type="number" min="0" max="100" step="any" inputmode="decimal" value="7"></label>
+            <label for="pipHoldingAssumedReturn">What-if annual return for this holding (%)<input id="pipHoldingAssumedReturn" type="number" min="-99.99" max="1000" step="any" inputmode="decimal"></label>
+            <label for="pipReplacementAssumedReturn">What-if annual return for a replacement (%)<input id="pipReplacementAssumedReturn" type="number" min="-99.99" max="1000" step="any" inputmode="decimal"></label>
             <label for="pipPeerScores">Replacement candidates (SYMBOL:score, comma-separated)
               <input id="pipPeerScores" type="text" placeholder="MSFT:82, NVDA:90" autocomplete="off">
             </label>
@@ -211,6 +216,6 @@
     </section>
   </main>
   <script type="module" src="/StockScanner/auth.js" data-stockscanner-auth></script>
-  <script type="module" src="/StockScanner/pip-dashboard.js?v=flex-positions-only-1" data-stockscanner-pip-api></script>
+  <script type="module" src="/StockScanner/pip-dashboard.js?v=hurdle-1" data-stockscanner-pip-api></script>
 </body>
 </html>

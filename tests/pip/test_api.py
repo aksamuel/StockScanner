@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
@@ -9,6 +10,7 @@ from postgrest.exceptions import APIError
 
 import stockscanner.pip.api as pip_api
 from stockscanner.pip.api import create_app
+from stockscanner.pip.position_lifecycle import PositionLifecycleAnalyzer
 from stockscanner.pip.research import ResearchDataUnavailable
 
 
@@ -436,6 +438,7 @@ def test_analysis_api_runs_modules_and_persists_score_and_proposed_recommendatio
     assert result["recommendation"]["status"] == "proposed"
     assert {
         "lifecycle",
+        "hurdle",
         "dead_money",
         "dividends",
         "growth",
@@ -539,6 +542,237 @@ def test_analysis_does_not_use_saved_upside_when_target_price_has_no_current_quo
 
     assert response.status_code == 200, response.text
     assert response.json()["modules"]["forward_looking"]["score"] is None
+
+
+class _FixedClockLifecycle(PositionLifecycleAnalyzer):
+    """Pins "today" to 2027-01-01 so holding days do not drift with the calendar."""
+
+    def __init__(self):
+        super().__init__()
+        self.snapshot_time = datetime(2027, 1, 1, tzinfo=timezone.utc)
+
+
+def _hurdle_client(monkeypatch, fake):
+    monkeypatch.setattr(pip_api, "PositionLifecycleAnalyzer", _FixedClockLifecycle)
+    app = create_app(
+        client_factory=lambda url, key: fake,
+        environ={
+            "SUPABASE_URL": "https://project.example.test",
+            "SUPABASE_PUBLISHABLE_KEY": "public-test-key",
+        },
+    )
+    return TestClient(app)
+
+
+def _post_analysis(client, fake, **body):
+    return client.post(
+        "/api/pip/analysis",
+        headers={"Authorization": "Bearer " + "user-access-token"},
+        json={"portfolio_id": fake.portfolio_id, "symbol": "AAPL", **body},
+    )
+
+
+def test_analysis_adds_a_seven_percent_hurdle_and_uses_it_for_dead_money(monkeypatch):
+    fake = PipelineClient()
+    response = _post_analysis(
+        _hurdle_client(monkeypatch, fake),
+        fake,
+        position={"market_value": 210, "dividends_received": 0},
+        forward={"target_upside_percent": 3},
+    )
+
+    assert response.status_code == 200, response.text
+    modules = response.json()["modules"]
+    hurdle = modules["hurdle"]
+    assert hurdle["required_annual_return_percent"] == 7
+    assert hurdle["status"] == "below"
+    assert hurdle["outlook_status"] == "below"
+    assert hurdle["return_basis"] == "total"
+    assert hurdle["lot_count"] == 1
+    assert hurdle["days_held"] == 730
+    assert hurdle["return_percent"] == pytest.approx(5)
+    assert hurdle["hurdle_return_percent"] == pytest.approx(14.49)
+    assert hurdle["annualized_return_percent"] == pytest.approx((1.05**0.5 - 1) * 100)
+    assert hurdle["shortfall_amount"] == pytest.approx(200 * 1.07**2 - 210)
+    assert [item["years"] for item in hurdle["required_return_by_horizon"]] == [1, 3, 5]
+    assert hurdle["years_to_catch_up"] is None
+    assert hurdle["replacement_months_to_hurdle_gain"] is None
+    assert modules["dead_money"]["is_dead_money"] is True
+    assert any("hurdle path" in reason for reason in modules["dead_money"]["reasons"])
+    assert modules["lifecycle"]["price_return_percent"] == pytest.approx(5)
+
+    stock_scores = [rows for table, rows in fake.writes if table == "stock_scores"]
+    persisted = stock_scores[0][0]["metadata"]["modules"]["hurdle"]
+    assert persisted["required_annual_return_percent"] == 7
+    assert persisted["status"] == "below"
+
+
+def test_analysis_accepts_a_custom_hurdle_and_explicit_scenario_assumptions(monkeypatch):
+    fake = PipelineClient()
+    response = _post_analysis(
+        _hurdle_client(monkeypatch, fake),
+        fake,
+        position={"market_value": 190, "dividends_received": 0},
+        hurdle={
+            "required_annual_return_percent": 10,
+            "holding_assumed_return_percent": 15,
+            "replacement_assumed_return_percent": 20,
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    hurdle = response.json()["modules"]["hurdle"]
+    path = 200 * 1.1**2
+    assert hurdle["required_annual_return_percent"] == 10
+    assert hurdle["hurdle_return_percent"] == pytest.approx(21)
+    assert hurdle["status"] == "below"
+    assert hurdle["holding_assumed_return_percent"] == 15
+    assert hurdle["years_to_catch_up"] == pytest.approx(
+        math.log(path / 190) / (math.log(1.15) - math.log(1.10))
+    )
+    assert hurdle["replacement_assumed_return_percent"] == 20
+    assert hurdle["replacement_months_to_hurdle_gain"] == pytest.approx(
+        12 * math.log(1.10) / math.log(1.20)
+    )
+    assert "not forecasts" in hurdle["note"]
+
+
+def test_analysis_leaves_the_hurdle_verdict_unavailable_without_dividends_received(monkeypatch):
+    fake = PipelineClient()
+    response = _post_analysis(
+        _hurdle_client(monkeypatch, fake),
+        fake,
+        position={"market_value": 210},
+    )
+
+    assert response.status_code == 200, response.text
+    modules = response.json()["modules"]
+    assert modules["hurdle"]["status"] == "unavailable"
+    assert modules["hurdle"]["return_basis"] == "price_only"
+    assert any("dividends" in reason.lower() for reason in modules["hurdle"]["reasons"])
+    assert modules["lifecycle"]["total_return_percent"] is None
+    assert modules["lifecycle"]["price_return_percent"] == pytest.approx(5)
+    assert modules["dead_money"]["is_dead_money"] is not True
+
+
+def test_analysis_measures_each_stored_lot_from_its_own_entry_date(monkeypatch):
+    fake = PipelineClient()
+    fake.position_rows = [
+        {
+            "symbol": "AAPL",
+            "quantity": "2",
+            "cost_basis": "200",
+            "entry_date": "2024-01-01T00:00:00+00:00",
+            "currency": "USD",
+        },
+        {
+            "symbol": "AAPL",
+            "quantity": "8",
+            "cost_basis": "800",
+            "entry_date": "2026-12-01T00:00:00+00:00",
+            "currency": "USD",
+        },
+    ]
+    response = _post_analysis(
+        _hurdle_client(monkeypatch, fake),
+        fake,
+        position={"market_value": 1060, "dividends_received": 0},
+    )
+
+    assert response.status_code == 200, response.text
+    hurdle = response.json()["modules"]["hurdle"]
+    per_lot_path = 200 * 1.07 ** (1096 / 365) + 800 * 1.07 ** (31 / 365)
+    earliest_date_path = 1000 * 1.07 ** (1096 / 365)
+    assert hurdle["lot_count"] == 2
+    assert hurdle["days_held"] == round((200 * 1096 + 800 * 31) / 1000)
+    assert hurdle["hurdle_return_percent"] == pytest.approx((per_lot_path / 1000 - 1) * 100)
+    assert hurdle["status"] == "meets"
+    # Applying the earliest entry date to every dollar would wrongly flag this holding.
+    assert 1060 >= per_lot_path
+    assert 1060 < earliest_date_path
+
+
+def test_analysis_leaves_the_hurdle_unavailable_when_a_stored_lot_has_no_entry_date(monkeypatch):
+    fake = PipelineClient()
+    fake.position_rows = [
+        {
+            "symbol": "AAPL",
+            "quantity": "1",
+            "cost_basis": "100",
+            "entry_date": "2024-01-01T00:00:00+00:00",
+            "currency": "USD",
+        },
+        {"symbol": "AAPL", "quantity": "1", "cost_basis": "100", "currency": "USD"},
+    ]
+    response = _post_analysis(
+        _hurdle_client(monkeypatch, fake),
+        fake,
+        position={"market_value": 150, "dividends_received": 0},
+    )
+
+    assert response.status_code == 200, response.text
+    hurdle = response.json()["modules"]["hurdle"]
+    assert hurdle["status"] == "unavailable"
+    assert hurdle["lot_count"] == 2
+    assert any("at least one lot" in reason for reason in hurdle["reasons"])
+
+
+def test_analysis_treats_manual_entry_details_as_a_single_lot(monkeypatch):
+    fake = PipelineClient()
+    fake.position_rows = [
+        {
+            "symbol": "AAPL",
+            "quantity": "1",
+            "cost_basis": "100",
+            "entry_date": "2024-01-01T00:00:00+00:00",
+            "currency": "USD",
+        },
+        {
+            "symbol": "AAPL",
+            "quantity": "1",
+            "cost_basis": "100",
+            "entry_date": "2026-12-01T00:00:00+00:00",
+            "currency": "USD",
+        },
+    ]
+    response = _post_analysis(
+        _hurdle_client(monkeypatch, fake),
+        fake,
+        position={
+            "cost_basis": 300,
+            "entry_date": "2026-07-01",
+            "market_value": 320,
+            "dividends_received": 0,
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    hurdle = response.json()["modules"]["hurdle"]
+    assert hurdle["lot_count"] == 1
+    assert hurdle["days_held"] == 184
+    assert hurdle["hurdle_return_percent"] == pytest.approx((1.07 ** (184 / 365) - 1) * 100)
+
+
+@pytest.mark.parametrize(
+    "hurdle",
+    [
+        {"required_annual_return_percent": -1},
+        {"required_annual_return_percent": 101},
+        {"holding_assumed_return_percent": -100},
+        {"holding_assumed_return_percent": 1001},
+        {"replacement_assumed_return_percent": -100},
+        {"replacement_assumed_return_percent": 1001},
+        {"required_annual_return_percent": "seven"},
+        {"unexpected": 1},
+    ],
+)
+def test_analysis_rejects_invalid_hurdle_inputs_before_touching_data(monkeypatch, hurdle):
+    fake = PipelineClient()
+    response = _post_analysis(_hurdle_client(monkeypatch, fake), fake, hurdle=hurdle)
+
+    assert response.status_code == 422
+    assert fake.writes == []
+    assert fake.rpc_calls == []
 
 
 def test_approval_api_persists_authenticated_human_transition_through_atomic_rpc():
@@ -1335,6 +1569,7 @@ def test_health_advertises_safe_flex_snapshot_support():
     assert client.get("/healthz").json()["flex_validation_diagnostics"] == 1
     assert client.get("/healthz").json()["flex_symbol_diagnostics"] == 1
     assert client.get("/healthz").json()["flex_positions_only_sync"] == 1
+    assert client.get("/healthz").json()["hurdle_analysis"] == 1
 
 
 def test_flex_connection_api_returns_not_found_for_another_users_connection():

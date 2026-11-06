@@ -83,6 +83,85 @@ export function calculatePipScore(components, weights) {
   };
 }
 
+export const PIP_DEFAULT_REQUIRED_RETURN_PERCENT = 7;
+
+const HURDLE_VERDICTS = Object.freeze({
+  below: "below the hurdle path",
+  meets: "on or ahead of the hurdle path",
+  unavailable: "cannot be judged yet",
+});
+
+function finiteNumber(value) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function trimmedPercent(value) {
+  return `${Number(value.toFixed(2))}%`;
+}
+
+export function describePipHurdle(hurdle) {
+  if (!hurdle || typeof hurdle !== "object") {
+    return ["Return hurdle: unavailable from this API version."];
+  }
+  const required = finiteNumber(hurdle.required_annual_return_percent);
+  const rate = required === null ? "required annual return" : `${trimmedPercent(required)} per year`;
+  const lines = [`Return hurdle (${rate}): ${HURDLE_VERDICTS[hurdle.status] || HURDLE_VERDICTS.unavailable}.`];
+
+  const returnPercent = finiteNumber(hurdle.return_percent);
+  const pathPercent = finiteNumber(hurdle.hurdle_return_percent);
+  if (returnPercent !== null && pathPercent !== null) {
+    const days = finiteNumber(hurdle.days_held);
+    const lots = finiteNumber(hurdle.lot_count);
+    const basis = hurdle.return_basis === "total"
+      ? "Total return (price plus dividends received)"
+      : "Price-only return";
+    const period = days === null
+      ? ""
+      : ` after ${days} days${lots !== null && lots > 1 ? ` (cost-weighted across ${lots} lots)` : ""}`;
+    lines.push(`${basis} is ${returnPercent.toFixed(1)}% against ${pathPercent.toFixed(1)}% needed to match the hurdle path${period}.`);
+  }
+  const annualized = finiteNumber(hurdle.annualized_return_percent);
+  if (annualized !== null) lines.push(`Annualized return: ${annualized.toFixed(1)}% per year.`);
+  const shortfall = finiteNumber(hurdle.shortfall_amount);
+  if (shortfall !== null && shortfall > 0) lines.push(`Shortfall against the hurdle path: ${shortfall.toFixed(2)}.`);
+
+  const needed = (Array.isArray(hurdle.required_return_by_horizon) ? hurdle.required_return_by_horizon : [])
+    .map((item) => [finiteNumber(item?.years), finiteNumber(item?.required_annual_return_percent)])
+    .filter(([years, percent]) => years !== null && percent !== null)
+    .map(([years, percent]) => `${percent.toFixed(1)}% per year for ${years} year${years === 1 ? "" : "s"}`);
+  if (needed.length) lines.push(`Return needed to reach the hurdle path: ${needed.join(", ")}.`);
+
+  const forward = finiteNumber(hurdle.forward_return_percent);
+  if (forward !== null && (hurdle.outlook_status === "below" || hurdle.outlook_status === "meets")) {
+    lines.push(`Analyst target upside of ${forward.toFixed(1)}% ${hurdle.outlook_status === "below" ? "is below" : "meets or exceeds"} the hurdle.`);
+  }
+
+  const scenarios = [];
+  const holdingAssumed = finiteNumber(hurdle.holding_assumed_return_percent);
+  const yearsToCatchUp = finiteNumber(hurdle.years_to_catch_up);
+  if (holdingAssumed !== null && yearsToCatchUp !== null) {
+    scenarios.push(yearsToCatchUp === 0
+      ? `Scenario: at an assumed ${trimmedPercent(holdingAssumed)} per year this holding is already on or ahead of the hurdle path.`
+      : `Scenario: at an assumed ${trimmedPercent(holdingAssumed)} per year this holding would catch up with the hurdle path in about ${yearsToCatchUp.toFixed(1)} years.`);
+  }
+  const replacementAssumed = finiteNumber(hurdle.replacement_assumed_return_percent);
+  const replacementMonths = finiteNumber(hurdle.replacement_months_to_hurdle_gain);
+  if (replacementAssumed !== null && replacementMonths !== null && required !== null) {
+    scenarios.push(`Scenario: a replacement assumed to earn ${trimmedPercent(replacementAssumed)} per year would take about ${replacementMonths.toFixed(1)} months to gain ${trimmedPercent(required)}.`);
+  }
+  lines.push(...scenarios);
+  if (scenarios.length) {
+    lines.push(typeof hurdle.note === "string" && hurdle.note
+      ? hurdle.note
+      : "Scenario figures are arithmetic from the assumed returns, not forecasts.");
+  }
+
+  const reasons = (Array.isArray(hurdle.reasons) ? hurdle.reasons : [])
+    .filter((reason) => typeof reason === "string" && reason);
+  if (reasons.length) lines.push(`Notes: ${reasons.join(" ")}`);
+  return lines;
+}
+
 export { portfolioImportPreviewFromCsv, portfolioRowsFromCsv };
 
 if (typeof document !== "undefined") {
@@ -264,10 +343,13 @@ if (typeof document !== "undefined") {
       "#pipTargetPrice",
       "#pipTargetUpside",
       "#pipForwardRevisions",
+      "#pipHoldingAssumedReturn",
+      "#pipReplacementAssumedReturn",
       "#pipPeerScores",
     ]) {
       document.querySelector(id).value = "";
     }
+    document.querySelector("#pipRequiredReturn").value = String(PIP_DEFAULT_REQUIRED_RETURN_PERCENT);
     document.querySelector("#researchResult").hidden = true;
     document.querySelector("#analysisResult").hidden = true;
     updateScores();
@@ -535,7 +617,9 @@ if (typeof document !== "undefined") {
     ];
     const assessmentText = document.createElement("p");
     assessmentText.textContent = assessments.join(" ");
-    container.append(heading, detail, reasons, assessmentText);
+    const hurdleText = document.createElement("p");
+    hurdleText.textContent = describePipHurdle(modules.hurdle).join(" ");
+    container.append(heading, detail, reasons, hurdleText, assessmentText);
     container.hidden = false;
   }
 
@@ -832,9 +916,19 @@ if (typeof document !== "undefined") {
       const targetPrice = optionalNumber("#pipTargetPrice", "Analyst target price", { min: 0.01 });
       const targetUpside = optionalNumber("#pipTargetUpside", "Target upside");
       const forwardRevisions = optionalNumber("#pipForwardRevisions", "Forward revisions score", { min: 0, max: 100 });
+      const requiredReturn = optionalNumber("#pipRequiredReturn", "Required annual return", { min: 0, max: 100 });
+      const holdingAssumedReturn = optionalNumber("#pipHoldingAssumedReturn", "What-if return for this holding", { min: -99.99, max: 1000 });
+      const replacementAssumedReturn = optionalNumber("#pipReplacementAssumedReturn", "What-if return for a replacement", { min: -99.99, max: 1000 });
       const peerScores = readPeerScores();
       setBusy(button, true, "Analyzing…");
       output.textContent = "Running portfolio analysis and saving the recommendation…";
+      const health = await apiRequest("/healthz");
+      if (health?.hurdle_analysis !== 1) {
+        throw new Error("The PIP API must be updated before return hurdle analysis is available.");
+      }
+      if (portfolioSelect.value !== portfolioId) {
+        throw new Error("The selected portfolio changed. Start the analysis again.");
+      }
       const result = await apiRequest("/api/pip/analysis", {
         method: "POST",
         body: JSON.stringify({
@@ -861,6 +955,11 @@ if (typeof document !== "undefined") {
             target_price: targetPrice,
             target_upside_percent: targetUpside,
             analyst_revisions_score: forwardRevisions,
+          },
+          hurdle: {
+            ...(requiredReturn === null ? {} : { required_annual_return_percent: requiredReturn }),
+            holding_assumed_return_percent: holdingAssumedReturn,
+            replacement_assumed_return_percent: replacementAssumedReturn,
           },
           peer_scores: peerScores,
         }),

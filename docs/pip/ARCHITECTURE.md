@@ -72,8 +72,9 @@ The deployable FastAPI service is `stockscanner.pip.api:app` (console command
 `stockscanner-pip-api`). Each request authenticates its bearer token with Supabase
 Auth, requires approved `user_access`, and uses the same token for PostgREST so
 table RLS remains active. The service never uses a service-role key. The API
-integrates lifecycle, dead-money, opportunity-cost, dividend, growth,
-forward-looking, scoring, recommendation, and approval modules. The browser page
+integrates lifecycle, return-hurdle, dead-money, opportunity-cost, dividend,
+growth, forward-looking, scoring, recommendation, and approval modules. The
+hurdle result is stored in `stock_scores.metadata.modules`; it needs no migration. The browser page
 uses the signed-in Supabase access token only for API requests; its configured API
 URL is stored locally and never contains credentials. Flex tokens and Query IDs
 are submitted only to the API and saved through restricted Vault RPCs; the API

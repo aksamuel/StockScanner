@@ -10,7 +10,8 @@ PIP analysis.
 ## What is included?
 
 The package provides fixture/CSV portfolio normalization, lifecycle and
-productivity analysis, dividend/growth/forward-looking helpers, CPS and Sell
+productivity analysis, a required-annual-return hurdle (7% by default),
+dividend/growth/forward-looking helpers, CPS and Sell
 Confidence scores, replacement ranking, recommendation helpers, and explicit
 approval-state tracking. It can also load Yahoo historical prices and available
 analyst consensus through the existing scanner helpers, and read the shared
@@ -68,6 +69,27 @@ Each available component is clamped to 0–100, and missing/invalid components a
 excluded from the weighted mean. The result reports missing-input reasons and
 confidence based on the available weight. An entirely missing score is `None`
 with zero confidence rather than a misleading zero.
+
+## Will PIP flag a holding that is not earning my required return, such as 7% per year?
+
+Yes, as a prompt for human review. Each analysis compares the holding with the
+annual return you require (7% by default, 0%–100%) measured from its own entry
+date. A holding is judged below the hurdle only after a year of holding and once
+dividends received are known (enter 0 if none); until then the status reads
+"cannot be judged yet". Dead money combines the hurdle with a weak CPS, a
+non-positive return, high opportunity cost, or an analyst target upside below the
+hurdle, and reports insufficient data instead of guessing. See
+[Scoring](SCORING.md#return-hurdle-and-dead-money) for the exact rules.
+
+## Can PIP say when the holding or a replacement will reach 7%?
+
+Not as a forecast. PIP shows the annual return a holding would need over 1, 3 and
+5 years to catch up with the hurdle path. If you enter an assumed annual return
+for the holding or a replacement, it also shows the arithmetic result: years for
+the holding to catch up, or months for the replacement to earn the hurdle gain.
+Those figures are scenarios from your assumptions, not predictions or guarantees.
+PIP ranks the replacement symbols and scores you supply; it does not search the
+market for candidates.
 
 ## Why do Sell Score weights total 115?
 

@@ -30,6 +30,7 @@ from .decision_engine import DecisionEngine
 from .dividend_analysis import DividendAnalysisEngine, DividendRecord
 from .forward_looking import ForwardLookingAnalyzer
 from .growth_analysis import GrowthAnalysisEngine
+from .hurdle import DEFAULT_REQUIRED_ANNUAL_RETURN_PERCENT, HoldingLot, HurdleAnalyzer
 from .ibkr_sync import (
     CSVPortfolioDataSource,
     FlexSymbolValidationError,
@@ -211,6 +212,16 @@ class ForwardInputs(StrictModel):
     analyst_revisions_score: float | None = Field(default=None, ge=0, le=100)
 
 
+class HurdleInputs(StrictModel):
+    required_annual_return_percent: float = Field(
+        default=DEFAULT_REQUIRED_ANNUAL_RETURN_PERCENT,
+        ge=0,
+        le=100,
+    )
+    holding_assumed_return_percent: float | None = Field(default=None, gt=-100, le=1_000)
+    replacement_assumed_return_percent: float | None = Field(default=None, gt=-100, le=1_000)
+
+
 class PeerScore(StrictModel):
     symbol: str
     score: float
@@ -232,6 +243,7 @@ class AnalysisRequest(StrictModel):
     dividends: DividendInputs = Field(default_factory=DividendInputs)
     growth: GrowthInputs = Field(default_factory=GrowthInputs)
     forward: ForwardInputs = Field(default_factory=ForwardInputs)
+    hurdle: HurdleInputs = Field(default_factory=HurdleInputs)
     peer_scores: list[PeerScore] = Field(default_factory=list, max_length=500)
     candidate_cps: dict[str, float] = Field(default_factory=dict, max_length=500)
     held_symbols: list[str] = Field(default_factory=list, max_length=1_000)
@@ -525,6 +537,7 @@ def create_app(
             "flex_validation_diagnostics": 1,
             "flex_symbol_diagnostics": 1,
             "flex_positions_only_sync": 1,
+            "hurdle_analysis": 1,
         }
 
     @app.get("/api/pip/portfolios")
@@ -970,18 +983,41 @@ def create_app(
         entry_date = body.position.entry_date or stored_entry_date
         cost_basis = body.position.cost_basis if body.position.cost_basis is not None else stored_cost_basis
         cps_result = calculate_cps_result(components)
-        lifecycle = PositionLifecycleAnalyzer().summarize_position(
+        lifecycle_analyzer = PositionLifecycleAnalyzer()
+        lifecycle = lifecycle_analyzer.summarize_position(
             body.symbol,
             entry_date=entry_date,
             cost_basis=cost_basis,
             market_value=market_value,
             dividends=body.position.dividends_received,
         )
+        manual_position = (
+            body.position.cost_basis is not None or body.position.entry_date is not None
+        )
+        hurdle = HurdleAnalyzer().analyze(
+            body.symbol,
+            cost_basis=cost_basis,
+            market_value=market_value,
+            dividends=body.position.dividends_received,
+            days_held=lifecycle.days_held,
+            lots=None
+            if manual_position
+            else [
+                HoldingLot(cost, lifecycle_analyzer.days_since(row.get("entry_date")))
+                for cost, row in zip(cost_values, position_rows)
+                if float(row.get("quantity") or 0) != 0
+            ],
+            required_annual_return_percent=body.hurdle.required_annual_return_percent,
+            forward_return_percent=forward_target_upside,
+            holding_assumed_return_percent=body.hurdle.holding_assumed_return_percent,
+            replacement_assumed_return_percent=body.hurdle.replacement_assumed_return_percent,
+        )
         dead_money = DeadMoneyDetector().assess(
             body.symbol,
             cps=cps_result.score,
             total_return_percent=lifecycle.total_return_percent,
             opportunity_cost_score=components["opportunity_cost"],
+            hurdle=hurdle,
         )
         alternatives = [
             (
@@ -1003,6 +1039,7 @@ def create_app(
         )
         module_assessments = {
             "lifecycle": asdict(lifecycle),
+            "hurdle": asdict(hurdle),
             "dead_money": asdict(dead_money),
             "dividends": dividend,
             "growth": asdict(growth),

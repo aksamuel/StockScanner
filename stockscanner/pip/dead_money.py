@@ -3,6 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from math import isfinite
 
+from .hurdle import STATUS_BELOW, STATUS_MEETS, STATUS_UNAVAILABLE, HurdleAnalysis
+
+
+def _percent(value: float | None) -> str:
+    return f"{value:.1f}%" if value is not None else "n/a"
+
 
 @dataclass(frozen=True)
 class DeadMoneyAssessment:
@@ -25,6 +31,8 @@ class DeadMoneyDetector:
         cps: float | None,
         total_return_percent: float | None = None,
         opportunity_cost_score: float | None = None,
+        *,
+        hurdle: HurdleAnalysis | None = None,
     ) -> DeadMoneyAssessment:
         values: list[float | None] = []
         for value in (cps, total_return_percent, opportunity_cost_score):
@@ -35,23 +43,60 @@ class DeadMoneyDetector:
             values.append(numeric_value if numeric_value is not None and isfinite(numeric_value) else None)
         cps, total_return_percent, opportunity_cost_score = values
         available = [value for value in values if value is not None]
-        confidence = len(available) / 3
-        if not available:
+        hurdle_evidence = (
+            [hurdle.status != STATUS_UNAVAILABLE, hurdle.outlook_status != STATUS_UNAVAILABLE]
+            if hurdle is not None
+            else []
+        )
+        confidence = (len(available) + sum(hurdle_evidence)) / (3 + len(hurdle_evidence))
+        if not available and not any(hurdle_evidence):
             return DeadMoneyAssessment(symbol, None, 0.0, ("No lifecycle or productivity data is available.",))
 
         reasons: list[str] = []
         weak_cps = cps is not None and cps < self.cps_threshold
         negative_return = total_return_percent is not None and total_return_percent <= self.return_threshold
         high_opportunity_cost = opportunity_cost_score is not None and opportunity_cost_score >= 60
+        below_hurdle = hurdle is not None and hurdle.status == STATUS_BELOW
+        weak_outlook = hurdle is not None and hurdle.outlook_status == STATUS_BELOW
         if weak_cps:
             reasons.append(f"CPS is below the {self.cps_threshold:.0f}-point productivity threshold.")
         if negative_return:
             reasons.append("Total return is not positive over the analyzed holding period.")
+        if below_hurdle and hurdle is not None:
+            reasons.append(
+                f"Return since entry ({_percent(hurdle.return_percent)}) is below the "
+                f"{hurdle.required_annual_return_percent:g}% per year hurdle path "
+                f"({_percent(hurdle.hurdle_return_percent)})."
+            )
+        if weak_outlook and hurdle is not None:
+            reasons.append(
+                f"Analyst target upside ({_percent(hurdle.forward_return_percent)}) is below the "
+                f"{hurdle.required_annual_return_percent:g}% hurdle."
+            )
         if high_opportunity_cost:
             reasons.append("Opportunity cost is elevated versus available alternatives.")
-        detected = weak_cps and (negative_return or high_opportunity_cost)
+        detected = (
+            weak_cps and (negative_return or below_hurdle or high_opportunity_cost)
+        ) or (below_hurdle and weak_outlook)
         if not reasons:
             reasons.append("Available indicators do not show persistent capital productivity drag.")
-        if len(available) < 3:
+        if hurdle is not None and hurdle.status == STATUS_MEETS:
+            reasons.append(
+                f"Return since entry meets the {hurdle.required_annual_return_percent:g}% per year hurdle path."
+            )
+        if confidence < 1:
             reasons.append("Some inputs are missing; confidence is reduced.")
+
+        if (
+            not detected
+            and below_hurdle
+            and cps is None
+            and hurdle is not None
+            and hurdle.outlook_status == STATUS_UNAVAILABLE
+        ):
+            reasons.append(
+                "Below the hurdle, but no productivity or outlook evidence is available "
+                "to confirm dead money."
+            )
+            return DeadMoneyAssessment(symbol, None, confidence, tuple(reasons))
         return DeadMoneyAssessment(symbol, detected, confidence, tuple(reasons))

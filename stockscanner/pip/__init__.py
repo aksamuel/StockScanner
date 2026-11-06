@@ -6,6 +6,7 @@ from .decision_engine import DecisionEngine
 from .dividend_analysis import DividendAnalysisEngine
 from .forward_looking import ForwardLookingAnalyzer
 from .growth_analysis import GrowthAnalysisEngine
+from .hurdle import HurdleAnalyzer
 from .ibkr_sync import IBKRPortfolioSyncService
 from .opportunity_cost import OpportunityCostEngine
 from .position_lifecycle import PositionLifecycleAnalyzer
@@ -19,6 +20,7 @@ __all__ = [
     "DividendAnalysisEngine",
     "ForwardLookingAnalyzer",
     "GrowthAnalysisEngine",
+    "HurdleAnalyzer",
     "IBKRPortfolioSyncService",
     "OpportunityCostEngine",
     "PositionLifecycleAnalyzer",

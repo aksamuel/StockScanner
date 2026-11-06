@@ -56,3 +56,34 @@ Dividend income is named `trailing_twelve_month_income` and includes only dated
 events in the trailing 365-day window. If the events have no usable dates, income
 and yield are unavailable rather than treating an arbitrary multi-period sum as
 annualized.
+
+## Return hurdle and dead money
+
+The return hurdle compares what a holding has earned since entry with an annual
+return you require. It defaults to 7% per year and can be set from 0% to 100% in
+each analysis request (`hurdle.required_annual_return_percent`); it is not stored
+per portfolio. The API reports `"hurdle_analysis": 1` on `/healthz`, and the
+workbench refuses to analyze against an API that does not.
+
+| Topic | Rule |
+| --- | --- |
+| Hurdle path | Each lot's cost compounds at the required return from that lot's own entry date (365-day year). Stored positions are measured lot by lot; a cost basis or entry date entered in the analysis form is treated as a single lot. |
+| Return basis | Market value plus dividends received. Dividends come only from the **Dividends received** input (enter 0 if none); stored dividend history is not summed. If it is missing or invalid, the basis is `price_only` and the status stays `unavailable` unless the price return already meets the path. |
+| Verdict | `meets` when the current value is at or above the path. `below` only after at least 365 cost-weighted days with dividends known. Otherwise `unavailable`. Periods under one year are not annualized. |
+| Shortfall | Path value minus current value; negative when the holding is ahead of the path. |
+| Catch-up requirement | The annual return needed over the next 1, 3 and 5 years to reach the path (`required_return_by_horizon`). It is a requirement, not a prediction. |
+| Outlook | Only an analyst target upside (entered or stored) gives an outlook: `below` when it is under the hurdle, otherwise `meets`. Without it the outlook is `unavailable`. |
+| What-if scenarios | `years_to_catch_up` and `replacement_months_to_hurdle_gain` (12 × ln(1 + hurdle) ÷ ln(1 + assumed return)) are computed only from assumed annual returns you enter (greater than −100% up to 1,000%). They are arithmetic, not forecasts, dates or guarantees. PIP never estimates a future return. |
+
+Dead money uses the hurdle as additional evidence. A holding is flagged when a
+CPS below 40 coincides with a non-positive total return, a return below the
+hurdle, or high opportunity cost, or when it is below the hurdle and its analyst
+target upside is also below the hurdle. Below the hurdle with neither a CPS nor
+an outlook is reported as insufficient data rather than flagged. Unavailable
+hurdle or outlook evidence lowers the assessment's input confidence. A request
+without hurdle evidence behaves as before.
+
+The hurdle result is saved in `stock_scores.metadata.modules.hurdle`, so no schema
+change is needed. A flag is a prompt for human review; PIP never submits or
+approves an order, and replacement candidates are ranked only from the symbols
+and scores you supply.

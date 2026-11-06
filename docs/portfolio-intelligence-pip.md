@@ -45,7 +45,7 @@ Load IBKR positions, transactions, and account metadata into normalized forms su
 Track entry dates, holding duration, cost basis, market value and age-related performance drift.
 
 ### 3. Dead Money Detector
-Identify holdings with weak score quality, low expected upside, or persistent drag on portfolio productivity.
+Identify holdings with weak score quality, low expected upside, or persistent drag on portfolio productivity. It also uses a required annual return (7% by default) measured from each holding's entry date; see [return hurdle and dead money](pip/SCORING.md#return-hurdle-and-dead-money).
 
 ### 4. Opportunity Cost Engine
 Compare current positions to alternative candidates and quantify the cost of keeping weak holdings.
@@ -176,9 +176,9 @@ analysis for imported holdings, and persist human approval transitions. Flex
 tokens and Query IDs are cleared from the form after submission and are stored
 only in Supabase Vault; the page never saves them to browser storage. CSV imports
 are limited to 1 MB and 1,000 rows. Optional analysis inputs cover position
-overrides, dividend and growth metrics, analyst targets/revisions, and
-candidate symbols with 0–100 scores; blank position values reuse imported
-records where possible.
+overrides, dividend and growth metrics, analyst targets/revisions, a required
+annual return with optional what-if returns, and candidate symbols with 0–100
+scores; blank position values reuse imported records where possible.
 
 The authenticated `POST /api/pip/portfolios/{id}/research` route uses Yahoo
 historical-price, analyst-consensus, company-growth, and raw EPS revision data,
@@ -217,6 +217,10 @@ API routes:
 
 Analysis reuses imported position/dividend rows and saved analyst/score inputs
 where available; other components remain explicitly missing until supplied.
+The request's optional `hurdle` object sets `required_annual_return_percent`
+(default 7, range 0–100) and the optional `holding_assumed_return_percent` and
+`replacement_assumed_return_percent` what-if returns. The workbench requires the
+API's `hurdle_analysis` health marker before it sends an analysis.
 CSV import and Flex sync are both read-only with respect to the broker; no route
 submits an order. Each account is stored with a masked display identifier and a
 non-display fingerprint so accounts sharing the same masked suffix remain
@@ -252,3 +256,5 @@ The PIP layer helps by giving better evidence, not by guaranteeing a right decis
   distinct Sell Score.
 - Dividend yield uses dated cash events from the trailing 365-day period; an
   undated sum is reported as unavailable rather than mislabeled as annual income.
+- Return-hurdle catch-up and time-to-gain figures are arithmetic scenarios from
+  the returns you assume, never forecasts, dates or guarantees.

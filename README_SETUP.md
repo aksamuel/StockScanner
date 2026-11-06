@@ -139,8 +139,8 @@ Then run:
 To run just the offline PIP tests:
 
 ```cmd
-.venv\Scripts\python.exe -m pytest -q tests\pip tests\test_pip_integration.py
-node --test tests\pip-dashboard.test.mjs tests\pip-ibkr-flex.test.mjs
+.venv\Scripts\python.exe -m pytest -q tests\pip tests\test_pip_integration.py tests\test_pip_research_metrics.py
+node --test tests/pip-*.test.mjs
 ```
 
 ## Apply the Supabase migrations
