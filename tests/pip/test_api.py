@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
+import pytest
 from fastapi.testclient import TestClient
 from postgrest.exceptions import APIError
 
@@ -1050,7 +1051,7 @@ def test_flex_sync_rejects_an_incomplete_statement_before_persisting():
         flex_edge_invoker=lambda user, payload: {
             "statement_xml": (
                 '<FlexQueryResponse><FlexStatement accountId="U1234567" '
-                'toDate="20250131" /></FlexQueryResponse>'
+                'currency="USD" toDate="20250131" /></FlexQueryResponse>'
             )
         },
     )
@@ -1061,6 +1062,94 @@ def test_flex_sync_rejects_an_incomplete_statement_before_persisting():
     )
     assert response.status_code == 502
     assert "Open Positions" in response.json()["detail"]
+    assert fake.writes == []
+    assert fake.rpc_calls == []
+    assert fake.updates == []
+
+
+@pytest.mark.parametrize(
+    ("position_rows", "expected_detail"),
+    [
+        (
+            '<OpenPosition assetCategory="STK" currency="USD" symbol="AAPL" '
+            'position="1" openDateTime="PRIVATE_DATE_MARKER" />',
+            "The Flex report contains a date PIP cannot read.",
+        ),
+        (
+            '<OpenPosition assetCategory="STK" currency="USD" symbol="AAPL" '
+            'position="1" costBasisPrice="PRIVATE_COST_MARKER" />',
+            "The Flex report contains an invalid average cost value.",
+        ),
+        (
+            '<OpenPosition assetCategory="STK" currency="USD" symbol="AAPL" '
+            'position="1" levelOfDetail="SUMMARY" />'
+            '<OpenPosition assetCategory="STK" currency="USD" symbol="AAPL" '
+            'position="1" levelOfDetail="LOT" />',
+            "The Flex report contains ambiguous or mixed Summary and Lot positions.",
+        ),
+        (
+            '<OpenPosition currency="USD" symbol="AAPL" position="1" />',
+            "An Open Positions row is missing its asset class.",
+        ),
+    ],
+)
+def test_flex_sync_returns_only_allowlisted_validation_details(position_rows, expected_detail):
+    fake = PipelineClient()
+    statement_xml = (
+        '<FlexQueryResponse><FlexStatement accountId="U1234567" '
+        'currency="USD" toDate="20250131"><OpenPositions>'
+        f"{position_rows}"
+        "</OpenPositions></FlexStatement></FlexQueryResponse>"
+    )
+    app = create_app(
+        client_factory=lambda url, key: fake,
+        environ={
+            "SUPABASE_URL": "https://project.example.test",
+            "SUPABASE_PUBLISHABLE_KEY": "public-test-key",
+        },
+        flex_edge_invoker=lambda user, payload: {"statement_xml": statement_xml},
+    )
+    response = TestClient(app).post(
+        f"/api/pip/portfolios/{fake.portfolio_id}/ibkr-flex-connections/{fake.connection_id}/sync",
+        headers={"Authorization": "Bearer " + "test-access-token"},
+        json={"confirm_unfiltered": True},
+    )
+
+    assert response.status_code == 502
+    assert expected_detail in response.json()["detail"]
+    assert "PRIVATE_" not in response.text
+    assert "U1234567" not in response.text
+    assert "AAPL" not in response.text
+    assert "<OpenPosition" not in response.text
+    assert fake.writes == []
+    assert fake.rpc_calls == []
+    assert fake.updates == []
+
+
+def test_flex_sync_does_not_expose_unknown_validation_errors(monkeypatch):
+    fake = PipelineClient()
+
+    def reject_statement(*args, **kwargs):
+        raise ValueError("PRIVATE_REPORT_VALUE")
+
+    monkeypatch.setattr(pip_api.IBKRPortfolioSyncService, "sync", reject_statement)
+    app = create_app(
+        client_factory=lambda url, key: fake,
+        environ={
+            "SUPABASE_URL": "https://project.example.test",
+            "SUPABASE_PUBLISHABLE_KEY": "public-test-key",
+        },
+        flex_edge_invoker=lambda user, payload: {"statement_xml": "<FlexQueryResponse />"},
+    )
+    response = TestClient(app).post(
+        f"/api/pip/portfolios/{fake.portfolio_id}/ibkr-flex-connections/{fake.connection_id}/sync",
+        headers={"Authorization": "Bearer " + "test-access-token"},
+        json={"confirm_unfiltered": True},
+    )
+
+    assert response.status_code == 502
+    assert response.json()["detail"] == pip_api.FLEX_INVALID_STATEMENT_DETAIL
+    assert "PRIVATE_REPORT_VALUE" not in response.text
     assert fake.writes == []
     assert fake.rpc_calls == []
     assert fake.updates == []
@@ -1106,6 +1195,7 @@ def test_health_advertises_safe_flex_snapshot_support():
     client, _, _ = _client()
     assert client.get("/healthz").json()["flex_position_snapshot_sync"] == 1
     assert client.get("/healthz").json()["flex_history_section_warnings"] == 1
+    assert client.get("/healthz").json()["flex_validation_diagnostics"] == 1
 
 
 def test_flex_connection_api_returns_not_found_for_another_users_connection():

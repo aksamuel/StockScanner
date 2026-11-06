@@ -48,6 +48,73 @@ SYMBOL_PATTERN = re.compile(r"^[A-Z0-9][A-Z0-9.-]{0,29}$")
 FLEX_RETRYABLE_ERROR_CODES = frozenset({
     "1001", "1004", "1005", "1006", "1007", "1008", "1009", "1019", "1021",
 })
+FLEX_INVALID_STATEMENT_DETAIL = (
+    "IBKR Flex returned an incomplete or invalid statement. Configure an unfiltered XML "
+    "Activity Flex Query with account IDs, base currency, statement dates, and Open Positions "
+    "at one detail level per holding."
+)
+FLEX_VALIDATION_DETAILS = {
+    "An IBKR Flex XML import is limited to 5 MB":
+        "The IBKR Flex statement exceeds 5 MB.",
+    "An IBKR Flex import is limited to 10,000 records":
+        "The IBKR Flex statement exceeds the 10,000-record limit.",
+    "IBKR returned invalid or unsafe Flex XML":
+        "The IBKR Flex statement is invalid or unsafe XML.",
+    "IBKR response is not a Flex Query XML statement":
+        "IBKR did not return an XML Flex Query statement.",
+    "Flex XML contains no account statements":
+        "The Flex report does not contain an account statement.",
+    "Flex account information does not match its statement":
+        "The Flex account information does not match its statement.",
+    "Flex statements require an account ID and statement end date":
+        "The Flex statement is missing an account ID or statement end date.",
+    "Flex statements require an account base currency":
+        "The Flex statement is missing a valid account base currency.",
+    "Flex reports must contain one statement per account":
+        "The Flex report contains more than one statement for an account.",
+    "Flex statements must include Open Positions for every account":
+        "The Flex report must include Open Positions for every account.",
+    "Flex positions require an asset class":
+        "An Open Positions row is missing its asset class.",
+    "Flex position is missing its quantity":
+        "An Open Positions row is missing its quantity.",
+    "Position requires a quantity":
+        "An Open Positions row is missing its quantity.",
+    "Flex positions must belong to their statement account":
+        "An Open Positions row does not belong to its statement account.",
+    "Flex positions have ambiguous or mixed Summary and Lot detail":
+        "The Flex report contains ambiguous or mixed Summary and Lot positions. "
+        "Select only one detail level and include the Level of Detail field.",
+    "Flex report rows require a three-letter currency":
+        "A Flex report row is missing a valid three-letter currency.",
+    "Flex report contains an invalid stock symbol":
+        "The Flex report contains a stock symbol PIP cannot read.",
+    "Invalid symbol in portfolio input":
+        "The Flex report contains a stock symbol PIP cannot read.",
+    "Invalid date in portfolio input":
+        "The Flex report contains a date PIP cannot read. Check the Flex Query date format; "
+        "yyyyMMdd and yyyy-MM-dd are supported.",
+    "Flex trade rows require a date and transaction type":
+        "A Flex trade row is missing a date or transaction type.",
+    "Flex trades must belong to their statement account":
+        "A Flex trade row does not belong to its statement account.",
+    "Transaction requires a symbol and valid trade date":
+        "A Flex trade row is missing a symbol or valid trade date.",
+    "Flex dividend rows are missing the cash amount":
+        "A Flex dividend row is missing its cash amount.",
+    "Flex dividends must belong to their statement account":
+        "A Flex dividend row does not belong to its statement account.",
+    "Dividend requires a symbol":
+        "A Flex dividend row is missing its symbol.",
+    **{
+        f"Invalid {field_name} in portfolio input":
+            f"The Flex report contains an invalid {field_name} value."
+        for field_name in (
+            "quantity", "cost basis", "average cost", "market price", "market value",
+            "transaction quantity", "transaction price", "dividend amount",
+        )
+    },
+}
 
 
 class StrictModel(BaseModel):
@@ -432,6 +499,7 @@ def create_app(
             "service": "pip",
             "flex_position_snapshot_sync": 1,
             "flex_history_section_warnings": 1,
+            "flex_validation_diagnostics": 1,
         }
 
     @app.get("/api/pip/portfolios")
@@ -600,8 +668,8 @@ def create_app(
         except ValueError as exc:
             raise HTTPException(
                 status_code=502,
-                detail="IBKR Flex returned an incomplete or invalid statement. Configure an unfiltered XML Activity Flex Query with account IDs, base currency, statement dates, and Open Positions at one detail level per holding.",
-            ) from exc
+                detail=FLEX_VALIDATION_DETAILS.get(str(exc), FLEX_INVALID_STATEMENT_DETAIL),
+            ) from None
         except APIError as exc:
             if getattr(exc, "code", None) == "PPS01":
                 raise HTTPException(
