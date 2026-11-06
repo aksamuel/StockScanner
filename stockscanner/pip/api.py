@@ -32,6 +32,7 @@ from .forward_looking import ForwardLookingAnalyzer
 from .growth_analysis import GrowthAnalysisEngine
 from .ibkr_sync import (
     CSVPortfolioDataSource,
+    FlexSymbolValidationError,
     FlexXMLPortfolioDataSource,
     IBKRPortfolioSyncService,
 )
@@ -115,6 +116,27 @@ FLEX_VALIDATION_DETAILS = {
         )
     },
 }
+FLEX_SYMBOL_SECTIONS = {
+    "positions": "Open Positions",
+    "trades": "Trades",
+    "dividends": "Cash Transactions",
+}
+FLEX_SYMBOL_REASONS = {
+    "missing": "a missing stock symbol",
+    "too_long": "a stock symbol longer than 30 characters",
+    "non_ascii": "a stock symbol containing non-ASCII characters",
+    "whitespace": "a stock symbol containing internal whitespace",
+    "unsupported": "a stock symbol with unsupported characters",
+}
+
+
+def flex_validation_detail(error: ValueError) -> str:
+    if isinstance(error, FlexSymbolValidationError):
+        section = FLEX_SYMBOL_SECTIONS.get(error.section)
+        reason = FLEX_SYMBOL_REASONS.get(error.reason)
+        if section and reason:
+            return f"The Flex {section} section contains {reason}."
+    return FLEX_VALIDATION_DETAILS.get(str(error), FLEX_INVALID_STATEMENT_DETAIL)
 
 
 class StrictModel(BaseModel):
@@ -500,6 +522,7 @@ def create_app(
             "flex_position_snapshot_sync": 1,
             "flex_history_section_warnings": 1,
             "flex_validation_diagnostics": 1,
+            "flex_symbol_diagnostics": 1,
         }
 
     @app.get("/api/pip/portfolios")
@@ -668,7 +691,7 @@ def create_app(
         except ValueError as exc:
             raise HTTPException(
                 status_code=502,
-                detail=FLEX_VALIDATION_DETAILS.get(str(exc), FLEX_INVALID_STATEMENT_DETAIL),
+                detail=flex_validation_detail(exc),
             ) from None
         except APIError as exc:
             if getattr(exc, "code", None) == "PPS01":

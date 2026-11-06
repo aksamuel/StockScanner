@@ -1155,6 +1155,93 @@ def test_flex_sync_does_not_expose_unknown_validation_errors(monkeypatch):
     assert fake.updates == []
 
 
+@pytest.mark.parametrize(
+    ("position_symbol", "expected_detail"),
+    [
+        ("", "a missing stock symbol"),
+        (' symbol="SECRET SYMBOL"', "a stock symbol containing internal whitespace"),
+        (' symbol="SECRET_SYMBOL"', "a stock symbol with unsupported characters"),
+        (' symbol="SECRET-AAAAAAAAAAAAAAAAAAAAAAAAAA"', "a stock symbol longer than 30 characters"),
+        (' symbol="SECRET\u00e9"', "a stock symbol containing non-ASCII characters"),
+    ],
+)
+def test_flex_symbol_diagnostics_do_not_expose_symbol_values(position_symbol, expected_detail):
+    fake = PipelineClient()
+    statement_xml = (
+        '<FlexQueryResponse><FlexStatement accountId="U1234567" '
+        'currency="USD" toDate="20250131"><OpenPositions>'
+        f'<OpenPosition assetCategory="STK" currency="USD" position="1"{position_symbol} />'
+        "</OpenPositions></FlexStatement></FlexQueryResponse>"
+    )
+    app = create_app(
+        client_factory=lambda url, key: fake,
+        environ={
+            "SUPABASE_URL": "https://project.example.test",
+            "SUPABASE_PUBLISHABLE_KEY": "public-test-key",
+        },
+        flex_edge_invoker=lambda user, payload: {"statement_xml": statement_xml},
+    )
+    response = TestClient(app).post(
+        f"/api/pip/portfolios/{fake.portfolio_id}/ibkr-flex-connections/{fake.connection_id}/sync",
+        headers={"Authorization": "Bearer " + "test-access-token"},
+        json={"confirm_unfiltered": True},
+    )
+
+    assert response.status_code == 502
+    assert "Open Positions" in response.json()["detail"]
+    assert expected_detail in response.json()["detail"]
+    assert "SECRET" not in response.text
+    assert "U1234567" not in response.text
+    assert fake.writes == []
+    assert fake.rpc_calls == []
+    assert fake.updates == []
+
+
+@pytest.mark.parametrize(
+    ("extra_section", "expected_section"),
+    [
+        (
+            '<Trades><Trade assetCategory="STK" symbol="SECRET_SYMBOL" /></Trades>',
+            "Trades",
+        ),
+        (
+            '<CashTransactions><CashTransaction type="Dividends" '
+            'symbol="SECRET_SYMBOL" /></CashTransactions>',
+            "Cash Transactions",
+        ),
+    ],
+)
+def test_flex_symbol_diagnostics_identify_the_section_without_its_values(extra_section, expected_section):
+    fake = PipelineClient()
+    statement_xml = (
+        '<FlexQueryResponse><FlexStatement accountId="U1234567" '
+        f'currency="USD" toDate="20250131"><OpenPositions />{extra_section}'
+        "</FlexStatement></FlexQueryResponse>"
+    )
+    app = create_app(
+        client_factory=lambda url, key: fake,
+        environ={
+            "SUPABASE_URL": "https://project.example.test",
+            "SUPABASE_PUBLISHABLE_KEY": "public-test-key",
+        },
+        flex_edge_invoker=lambda user, payload: {"statement_xml": statement_xml},
+    )
+    response = TestClient(app).post(
+        f"/api/pip/portfolios/{fake.portfolio_id}/ibkr-flex-connections/{fake.connection_id}/sync",
+        headers={"Authorization": "Bearer " + "test-access-token"},
+        json={"confirm_unfiltered": True},
+    )
+
+    assert response.status_code == 502
+    assert expected_section in response.json()["detail"]
+    assert "unsupported characters" in response.json()["detail"]
+    assert "SECRET" not in response.text
+    assert "U1234567" not in response.text
+    assert fake.writes == []
+    assert fake.rpc_calls == []
+    assert fake.updates == []
+
+
 def test_flex_sync_reports_an_older_snapshot_conflict():
     fake = PipelineClient()
 
@@ -1196,6 +1283,7 @@ def test_health_advertises_safe_flex_snapshot_support():
     assert client.get("/healthz").json()["flex_position_snapshot_sync"] == 1
     assert client.get("/healthz").json()["flex_history_section_warnings"] == 1
     assert client.get("/healthz").json()["flex_validation_diagnostics"] == 1
+    assert client.get("/healthz").json()["flex_symbol_diagnostics"] == 1
 
 
 def test_flex_connection_api_returns_not_found_for_another_users_connection():

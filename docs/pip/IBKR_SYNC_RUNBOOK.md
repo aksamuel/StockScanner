@@ -81,12 +81,13 @@ If sync fails, check that the user is approved, the portfolio and connection
 belong to that user, the matching internal keys are configured, and the Flex
 Query returns a complete, current XML statement. Known validation failures
 return a fixed, privacy-safe category, such as an unsupported date or ambiguous
-position detail; unknown failures retain a generic message. The API does not
-include report values or raw exception text in these diagnostics. If IBKR omits
-Open Positions for an empty account, PIP cannot safely distinguish that from
-an omitted section and will leave earlier positions unchanged. Longer reports
-can take time to prepare; PIP polls within a bounded window and respects IBKR's
-per-token limits. If the report is still unavailable, wait before retrying and
+position detail. Symbol diagnostics identify only the section and broad format
+problem, not the symbol; unknown failures retain a generic message. The API
+does not include report values or raw exception text in these diagnostics. If
+IBKR omits Open Positions for an empty account, PIP cannot safely distinguish
+that from an omitted section and will leave earlier positions unchanged. Longer
+reports can take time to prepare; PIP polls within a bounded window and respects
+IBKR's per-token limits. If the report is still unavailable, wait before retrying and
 consult [IBKR's error-code reference](https://www.ibkrguides.com/clientportal/performanceandstatements/flex3error.htm)
 for any code shown. Credentials are cleared from the browser form after every
 save attempt. They are never returned by the API, stored in browser storage,

@@ -22,6 +22,13 @@ MAX_FLEX_RECORDS = 10_000
 _SYMBOL_PATTERN = re.compile(r"^[A-Z0-9][A-Z0-9.-]{0,29}$")
 
 
+class FlexSymbolValidationError(ValueError):
+    def __init__(self, section: str, reason: str):
+        super().__init__("Flex report contains an invalid stock symbol")
+        self.section = section
+        self.reason = reason
+
+
 def mask_account_identifier(identifier: Any) -> str | None:
     """Return a safe display form without retaining an unmasked account identifier."""
     value = re.sub(r"\s+", "", str(identifier or ""))
@@ -294,7 +301,22 @@ class FlexXMLPortfolioDataSource:
     def _validated_symbol(element: Any) -> str:
         symbol = str(_field(element.attrib, "symbol", "ticker", default="")).strip().upper()
         if not _SYMBOL_PATTERN.fullmatch(symbol):
-            raise ValueError("Flex report contains an invalid stock symbol")
+            section = {
+                "OpenPosition": "positions",
+                "Trade": "trades",
+                "CashTransaction": "dividends",
+            }.get(_xml_local_name(element.tag), "report")
+            if not symbol:
+                reason = "missing"
+            elif len(symbol) > 30:
+                reason = "too_long"
+            elif not symbol.isascii():
+                reason = "non_ascii"
+            elif any(character.isspace() for character in symbol):
+                reason = "whitespace"
+            else:
+                reason = "unsupported"
+            raise FlexSymbolValidationError(section, reason)
         return symbol
 
     def load_portfolio(self) -> PortfolioData:
