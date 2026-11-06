@@ -116,6 +116,7 @@ if (typeof document !== "undefined") {
   const apiStatus = document.querySelector("#pipApiStatus");
   const flexStatus = document.querySelector("#flexStatus");
   const flexConnectionList = document.querySelector("#flexConnectionList");
+  const flexPositionsOnly = document.querySelector("#flexPositionsOnly");
   let csvText = null;
   let portfolios = [];
   let apiConnected = false;
@@ -312,9 +313,11 @@ if (typeof document !== "undefined") {
       syncButton.textContent = "Sync statement";
       syncButton.addEventListener("click", async () => {
         const portfolioId = portfolioSelect.value;
+        const positionsOnly = Boolean(flexPositionsOnly?.checked);
         if (!window.confirm(
           "Does this unfiltered Flex Query include all stock positions for every included account? "
-          + "Sync replaces earlier Flex positions for those accounts. CSV/manual imports and history are retained.",
+          + "Sync replaces earlier Flex positions for those accounts. CSV/manual imports and history are retained."
+          + (positionsOnly ? " This sync skips trade and dividend history." : ""),
         )) return;
         setBusy(syncButton, true, "Syncing…");
         flexStatus.textContent = `Requesting a read-only Flex statement for ${name.textContent}…`;
@@ -323,12 +326,20 @@ if (typeof document !== "undefined") {
           if (health?.flex_position_snapshot_sync !== 1) {
             throw new Error("The PIP API must be updated before safe Flex position sync is available.");
           }
+          if (positionsOnly && health?.flex_positions_only_sync !== 1) {
+            throw new Error("The PIP API must be updated before positions-only Flex sync is available.");
+          }
           if (portfolioSelect.value !== portfolioId) {
             throw new Error("The selected portfolio changed. Start the Flex sync again.");
           }
           const result = await apiRequest(
             `/api/pip/portfolios/${encodeURIComponent(portfolioId)}/ibkr-flex-connections/${encodeURIComponent(connection.id)}/sync`,
-            { method: "POST", body: JSON.stringify({ confirm_unfiltered: true }) },
+            {
+              method: "POST",
+              body: JSON.stringify(positionsOnly
+                ? { confirm_unfiltered: true, positions_only: true }
+                : { confirm_unfiltered: true }),
+            },
           );
           if (portfolioSelect.value !== portfolioId) {
             flexStatus.textContent = "Flex sync completed for the previously selected portfolio.";

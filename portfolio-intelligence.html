@@ -31,6 +31,8 @@
     #flexConnectionList { display: grid; gap: 10px; margin-top: 12px; }
     .flex-connection-item { padding: 12px; border: 1px solid #334b5f; border-radius: 7px; background: #10212d; }
     .flex-connection-item p { margin: 6px 0 10px; }
+    .flex-option { display: flex; align-items: center; gap: 9px; margin: 12px 0; }
+    .flex-option input { width: 18px; min-height: 18px; margin: 0; padding: 0; flex: 0 0 18px; }
     .empty-state { color: #90a4ae; }
   </style>
 </head>
@@ -128,6 +130,11 @@
           <input id="flexQueryId" type="text" maxlength="20" inputmode="numeric" pattern="[0-9]{1,20}" autocomplete="off">
         </label>
         <button id="saveFlexConnection" type="button" disabled>Save encrypted connection</button>
+        <label class="flex-option" for="flexPositionsOnly">
+          <input id="flexPositionsOnly" type="checkbox">
+          Import open positions only; skip trade and dividend history for this sync.
+        </label>
+        <p class="subtle">Previously imported history is retained and may be incomplete.</p>
         <p id="flexStatus" class="subtle" role="status" aria-live="polite">Connect the API and select a portfolio to manage Flex connections.</p>
         <div id="flexConnectionList" aria-live="polite">
           <p class="empty-state">No Flex connections loaded.</p>
@@ -204,6 +211,6 @@
     </section>
   </main>
   <script type="module" src="/StockScanner/auth.js" data-stockscanner-auth></script>
-  <script type="module" src="/StockScanner/pip-dashboard.js?v=flex-snapshot-1" data-stockscanner-pip-api></script>
+  <script type="module" src="/StockScanner/pip-dashboard.js?v=flex-positions-only-1" data-stockscanner-pip-api></script>
 </body>
 </html>

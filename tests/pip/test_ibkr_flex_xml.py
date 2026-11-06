@@ -210,6 +210,49 @@ def test_flex_xml_warns_once_if_any_account_lacks_a_history_section():
     assert ACCOUNT_TWO not in data.warnings[0]
 
 
+def test_flex_positions_only_skips_invalid_optional_history():
+    xml = (
+        f'<FlexQueryResponse><FlexStatement accountId="{ACCOUNT_ONE}" '
+        'currency="USD" toDate="20250131"><OpenPositions>'
+        '<OpenPosition assetCategory="STK" currency="USD" symbol="AAPL" '
+        'position="2" costBasisPrice="100" openDateTime="20250102;090000" '
+        'levelOfDetail="LOT" /></OpenPositions>'
+        '<Trades><Trade assetCategory="STK" /></Trades>'
+        '<CashTransactions><CashTransaction type="Dividends" /></CashTransactions>'
+        "</FlexStatement></FlexQueryResponse>"
+    )
+    with pytest.raises(ValueError, match="invalid stock symbol"):
+        FlexXMLPortfolioDataSource(xml).load_portfolio()
+
+    data = FlexXMLPortfolioDataSource(xml, positions_only=True).load_portfolio()
+
+    assert len(data.positions) == 1
+    assert data.positions[0]["entry_date"] == "20250102;090000"
+    assert data.transactions == []
+    assert data.dividends == []
+    assert len(data.warnings) == 1
+    assert "Positions-only" in data.warnings[0]
+    assert "retained" in data.warnings[0]
+    assert "incomplete" in data.warnings[0]
+    assert ACCOUNT_ONE not in data.warnings[0]
+
+
+def test_flex_positions_only_still_rejects_invalid_open_positions_before_writing():
+    xml = (
+        f'<FlexQueryResponse><FlexStatement accountId="{ACCOUNT_ONE}" '
+        'currency="USD" toDate="20250131"><OpenPositions>'
+        '<OpenPosition assetCategory="STK" currency="USD" position="1" />'
+        "</OpenPositions></FlexStatement></FlexQueryResponse>"
+    )
+    repository = CapturingRepository()
+
+    with pytest.raises(ValueError, match="invalid stock symbol"):
+        IBKRPortfolioSyncService(repository).sync(
+            FlexXMLPortfolioDataSource(xml, positions_only=True), PORTFOLIO_ID,
+        )
+    assert repository.saved == {}
+
+
 @pytest.mark.parametrize(
     ("content", "message"),
     [

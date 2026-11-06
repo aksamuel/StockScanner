@@ -11,6 +11,7 @@ class Element {
     this.textContent = "";
     this.hidden = false;
     this.disabled = false;
+    this.checked = false;
   }
 
   append(...children) {
@@ -58,6 +59,7 @@ test("Flex sync requires confirmation, a compatible API, and a stable portfolio 
   const confirmations = [];
   let confirmed = false;
   let snapshotVersion = 1;
+  let positionsOnlyVersion = 1;
   let healthGate = null;
   let healthRequested = null;
   let releaseHealth = null;
@@ -88,7 +90,12 @@ test("Flex sync requires confirmation, a compatible API, and a stable portfolio 
         signalHealth();
         await healthGate;
       }
-      return response({ status: "ok", service: "pip", flex_position_snapshot_sync: snapshotVersion });
+      return response({
+        status: "ok",
+        service: "pip",
+        flex_position_snapshot_sync: snapshotVersion,
+        flex_positions_only_sync: positionsOnlyVersion,
+      });
     }
     if (path === "/api/pip/portfolios") {
       return response([{ id: "portfolio-1", name: "Test", currency: "USD" }]);
@@ -143,6 +150,7 @@ test("Flex sync requires confirmation, a compatible API, and a stable portfolio 
     assert.match(get("#flexStatus").textContent, /portfolio changed/i);
 
     get("#portfolioSelect").value = "portfolio-1";
+    positionsOnlyVersion = 0;
     await syncButton.fire("click");
     const syncRequests = requests.filter((request) => request.path.endsWith("/sync"));
     assert.equal(syncRequests.length, 1);
@@ -152,11 +160,90 @@ test("Flex sync requires confirmation, a compatible API, and a stable portfolio 
     assert.match(get("#flexStatus").textContent, /statement 2025-01-31/);
     assert.match(get("#flexStatus").textContent, /No Trades section was returned/);
 
+    let refreshedSyncButton = get("#flexConnectionList").querySelectorAll("button")
+      .find((button) => button.textContent === "Sync statement");
+    get("#flexPositionsOnly").checked = true;
+    await refreshedSyncButton.fire("click");
+    assert.equal(requests.filter((request) => request.path.endsWith("/sync")).length, 1);
+    assert.match(get("#flexStatus").textContent, /positions-only Flex sync is available/);
+
+    positionsOnlyVersion = 1;
+    healthGate = new Promise((resolve) => { releaseHealth = resolve; });
+    healthRequested = new Promise((resolve) => { signalHealth = resolve; });
+    const positionsOnlyPending = refreshedSyncButton.fire("click");
+    await healthRequested;
+    get("#flexPositionsOnly").checked = false;
+    releaseHealth();
+    await positionsOnlyPending;
+    healthGate = null;
+    const positionsOnlyRequests = requests.filter((request) => request.path.endsWith("/sync"));
+    assert.equal(positionsOnlyRequests.length, 2);
+    assert.deepEqual(JSON.parse(positionsOnlyRequests[1].options.body), {
+      confirm_unfiltered: true,
+      positions_only: true,
+    });
+    assert.match(confirmations.at(-1), /skips trade and dividend history/i);
+
     syncError = "The IBKR Flex statement exceeds 5 MB. Reduce selected fields or the report period.";
-    const refreshedSyncButton = get("#flexConnectionList").querySelectorAll("button")
+    refreshedSyncButton = get("#flexConnectionList").querySelectorAll("button")
       .find((button) => button.textContent === "Sync statement");
     await refreshedSyncButton.fire("click");
     assert.equal(get("#flexStatus").textContent, syncError);
+  } finally {
+    delete globalThis.document;
+    delete globalThis.window;
+    delete globalThis.localStorage;
+    delete globalThis.fetch;
+  }
+});
+
+test("a cached workbench without the positions-only option keeps the existing sync behavior", async () => {
+  const elements = new Map();
+  const get = (selector) => {
+    if (!elements.has(selector)) {
+      elements.set(selector, new Element(selector.endsWith("Select") ? "select" : "div"));
+    }
+    return elements.get(selector);
+  };
+  const requests = [];
+  const response = (data) => ({ ok: true, status: 200, json: async () => data });
+  globalThis.document = {
+    querySelector: (selector) => selector === "#flexPositionsOnly" ? null : get(selector),
+    querySelectorAll: () => [],
+    createElement: (tag) => new Element(tag),
+    addEventListener: () => {},
+  };
+  globalThis.window = {
+    stockscannerPipAuth: { getAccessToken: async () => "synthetic-test-token" },
+    confirm: () => true,
+    addEventListener: () => {},
+  };
+  globalThis.localStorage = { getItem: () => null, setItem: () => {} };
+  globalThis.fetch = async (url, options) => {
+    const path = new URL(url).pathname;
+    requests.push({ path, options });
+    if (path === "/healthz") return response({ flex_position_snapshot_sync: 1 });
+    if (path === "/api/pip/portfolios") {
+      return response([{ id: "portfolio-1", name: "Test", currency: "USD" }]);
+    }
+    if (path.endsWith("/recommendations")) return response([]);
+    if (path.endsWith("/ibkr-flex-connections")) {
+      return response([{ id: "connection-1", connection_name: "Test" }]);
+    }
+    if (path.endsWith("/sync")) return response({ counts: {}, accounts: [], warnings: [] });
+    throw new Error(`Unexpected request: ${path}`);
+  };
+
+  try {
+    await import("../pip-dashboard.js?flex-legacy-ui-test");
+    await get("#connectApi").fire("click");
+    get("#portfolioSelect").value = "portfolio-1";
+    await get("#portfolioSelect").fire("change");
+    const syncButton = get("#flexConnectionList").querySelectorAll("button")
+      .find((button) => button.textContent === "Sync statement");
+    await syncButton.fire("click");
+    const syncRequest = requests.find((request) => request.path.endsWith("/sync"));
+    assert.deepEqual(JSON.parse(syncRequest.options.body), { confirm_unfiltered: true });
   } finally {
     delete globalThis.document;
     delete globalThis.window;

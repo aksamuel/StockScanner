@@ -31,10 +31,10 @@ imports and never sends an order.
    - **Open Positions:** Account ID, Currency, Asset Class, Symbol, Conid,
      Quantity, Cost Basis Price, Mark Price, Position Value, Open Date Time,
      and Level of Detail. Use either Summary or Lot detail for a holding, not both.
-   - **Trades:** Account ID, Currency, Asset Class, Symbol, Trade ID, Trade Date,
-     Buy/Sell, Quantity, and Trade Price.
-   - **Cash Transactions:** Account ID, Currency, Symbol, Type, Amount, and
-     Date/Time; this section contains dividend payments.
+   - To import trade history, add **Trades:** Account ID, Currency, Asset Class,
+     Symbol, Trade ID, Trade Date, Buy/Sell, Quantity, and Trade Price.
+   - To import dividend history, add **Cash Transactions:** Account ID, Currency,
+     Symbol, Type, Amount, and Date/Time.
    Save the field selections for each section, then continue to the review
    screen and save the complete query. Use the Query ID of that same query in
    the PIP connection.
@@ -50,6 +50,11 @@ imports and never sends an order.
    authenticated API; the Edge Function stores them in Vault and retrieves
    statements on demand. The API validates the XML and persists masked account
    and normalized portfolio data using the caller's Supabase JWT and owner RLS.
+
+For open-position analysis without history, select **Import open positions only**
+before syncing. This ignores Trades and Cash Transactions even if the report
+includes them; previously imported history is retained and may be incomplete.
+The option does not change the default behavior of an ordinary Flex sync.
 
 Each user can manage multiple named Flex connections and each connection can
 return multiple IBKR accounts. Account IDs are masked for display and a

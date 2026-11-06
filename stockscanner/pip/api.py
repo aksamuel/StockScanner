@@ -289,6 +289,7 @@ class FlexConnectionCreate(StrictModel):
 
 class FlexSyncRequest(StrictModel):
     confirm_unfiltered: bool = Field(strict=True)
+    positions_only: bool = Field(default=False, strict=True)
 
 
 class ApprovalTransitionRequest(StrictModel):
@@ -523,6 +524,7 @@ def create_app(
             "flex_history_section_warnings": 1,
             "flex_validation_diagnostics": 1,
             "flex_symbol_diagnostics": 1,
+            "flex_positions_only_sync": 1,
         }
 
     @app.get("/api/pip/portfolios")
@@ -684,7 +686,7 @@ def create_app(
             sync_result = IBKRPortfolioSyncService(
                 SupabasePortfolioRepository(user.client)
             ).sync(
-                FlexXMLPortfolioDataSource(statement_xml),
+                FlexXMLPortfolioDataSource(statement_xml, positions_only=body.positions_only),
                 str(portfolio_id),
                 snapshot_started_at=sync_started_at,
             )

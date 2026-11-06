@@ -1035,9 +1035,59 @@ def test_flex_sync_requires_explicit_unfiltered_query_confirmation_before_contac
     assert client.post(path, headers=headers).status_code == 409
     assert client.post(path, headers=headers, json={"confirm_unfiltered": False}).status_code == 409
     assert client.post(path, headers=headers, json={"confirm_unfiltered": "true"}).status_code == 422
+    assert client.post(
+        path, headers=headers, json={"confirm_unfiltered": True, "positions_only": "true"},
+    ).status_code == 422
     assert calls == []
     assert fake.writes == []
     assert fake.rpc_calls == []
+
+
+def test_flex_positions_only_sync_skips_invalid_history_and_retains_existing_records():
+    fake = PipelineClient()
+    statement_xml = (
+        '<FlexQueryResponse><FlexStatement accountId="U1234567" '
+        'currency="USD" toDate="20250131"><OpenPositions>'
+        '<OpenPosition assetCategory="STK" currency="USD" symbol="AAPL" '
+        'position="2" costBasisPrice="100" markPrice="120" '
+        'openDateTime="20250102;090000" levelOfDetail="LOT" /></OpenPositions>'
+        '<Trades><Trade assetCategory="STK" /></Trades>'
+        '<CashTransactions><CashTransaction type="Dividends" /></CashTransactions>'
+        "</FlexStatement></FlexQueryResponse>"
+    )
+    app = create_app(
+        client_factory=lambda url, key: fake,
+        environ={
+            "SUPABASE_URL": "https://project.example.test",
+            "SUPABASE_PUBLISHABLE_KEY": "public-test-key",
+        },
+        flex_edge_invoker=lambda user, payload: {"statement_xml": statement_xml},
+    )
+    client = TestClient(app)
+    path = f"/api/pip/portfolios/{fake.portfolio_id}/ibkr-flex-connections/{fake.connection_id}/sync"
+    headers = {"Authorization": "Bearer " + "test-access-token"}
+
+    normal_response = client.post(path, headers=headers, json={"confirm_unfiltered": True})
+    assert normal_response.status_code == 502
+    assert fake.writes == []
+    assert fake.rpc_calls == []
+
+    response = client.post(
+        path, headers=headers, json={"confirm_unfiltered": True, "positions_only": True},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["counts"]["positions"] == 1
+    assert payload["counts"]["transactions"] == 0
+    assert payload["counts"]["dividends"] == 0
+    assert payload["positions"][0]["entry_date"].startswith("2025-01-02")
+    assert payload["positions"][0]["average_cost"] == 100
+    assert len(payload["warnings"]) == 1
+    assert "Existing history was retained and may be incomplete" in payload["warnings"][0]
+    assert {table for table, rows in fake.writes} == {"ibkr_accounts", "positions"}
+    assert len(fake.rpc_calls) == 1
+    assert "U1234567" not in response.text
 
 
 def test_flex_sync_rejects_an_incomplete_statement_before_persisting():
@@ -1284,6 +1334,7 @@ def test_health_advertises_safe_flex_snapshot_support():
     assert client.get("/healthz").json()["flex_history_section_warnings"] == 1
     assert client.get("/healthz").json()["flex_validation_diagnostics"] == 1
     assert client.get("/healthz").json()["flex_symbol_diagnostics"] == 1
+    assert client.get("/healthz").json()["flex_positions_only_sync"] == 1
 
 
 def test_flex_connection_api_returns_not_found_for_another_users_connection():

@@ -279,11 +279,12 @@ def _source_record_key(account_id: Any, *parts: Any) -> str:
 class FlexXMLPortfolioDataSource:
     """Parse a bounded IBKR Flex Query XML statement without retaining raw account IDs."""
 
-    def __init__(self, content: str | bytes):
+    def __init__(self, content: str | bytes, *, positions_only: bool = False):
         encoded = content.encode("utf-8") if isinstance(content, str) else bytes(content)
         if len(encoded) > MAX_FLEX_XML_BYTES:
             raise ValueError("An IBKR Flex XML import is limited to 5 MB")
         self.content = encoded
+        self.positions_only = positions_only
 
     @staticmethod
     def _currency(attributes: Mapping[str, Any]) -> str:
@@ -392,7 +393,8 @@ class FlexXMLPortfolioDataSource:
                 raise ValueError("Flex reports must contain one statement per account")
             if "OpenPositions" not in section_names:
                 raise ValueError("Flex statements must include Open Positions for every account")
-            missing_history_sections.update({"Trades", "CashTransactions"} - section_names)
+            if not self.positions_only:
+                missing_history_sections.update({"Trades", "CashTransactions"} - section_names)
             snapshot_accounts[fingerprint] = statement_date
             masked = mask_account_identifier(statement_account)
             accounts[fingerprint] = {
@@ -467,7 +469,7 @@ class FlexXMLPortfolioDataSource:
                         "currency": currency,
                         "entry_date": _field(element.attrib, "openDateTime", "openDate"),
                     })
-                elif tag == "Trade" and self._stock_row(element):
+                elif not self.positions_only and tag == "Trade" and self._stock_row(element):
                     symbol = self._validated_symbol(element)
                     trade_date = _field(element.attrib, "tradeDate", "dateTime", "date")
                     transaction_type = _field(
@@ -505,7 +507,7 @@ class FlexXMLPortfolioDataSource:
                             _field(element.attrib, "tradePrice", "price"),
                         ),
                     })
-                elif tag == "CashTransaction":
+                elif not self.positions_only and tag == "CashTransaction":
                     transaction_type = str(_field(
                         element.attrib,
                         "type",
@@ -560,6 +562,9 @@ class FlexXMLPortfolioDataSource:
             dividends=dividends,
             position_snapshot_accounts=snapshot_accounts,
             warnings=[
+                "Positions-only sync skipped trade and dividend history. "
+                "Existing history was retained and may be incomplete."
+            ] if self.positions_only else [
                 message
                 for section, message in (
                     (
