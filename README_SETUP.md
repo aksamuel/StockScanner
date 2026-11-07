@@ -303,9 +303,10 @@ The signed-in user pages serve different purposes:
   the signed-in user's older rows for that broker before the page recalculates
   the analysis; it never truncates another user or broker.
 - `portfolio-intelligence.html`: authenticated PIP API client for CSV imports,
-  optional read-only live IBKR Flex sync, Python analysis, recommendations, and
-  persisted human approval. Configure and deploy the FastAPI API and Vault-backed
-  Supabase Edge Function separately; PIP never transmits orders.
+  optional read-only live IBKR Flex sync, Python analysis, a read-only portfolio
+  review, recommendations, and persisted human approval. Configure and deploy the
+  FastAPI API and Vault-backed Supabase Edge Function separately; PIP never
+  transmits orders.
 - `help.html`: the current user guide and FAQ, available from the shared Menu,
   portfolio navigation, and report Help links.
 

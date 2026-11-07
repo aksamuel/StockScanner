@@ -172,13 +172,15 @@ configured. It keeps that URL in local browser storage and never stores the
 Supabase access token. Users can list and create portfolios, explicitly import
 CSV exports, save multiple named Flex connections per portfolio, run a
 read-only Flex sync, import normalized positions/transactions/dividends, run
-analysis for imported holdings, and persist human approval transitions. Flex
+analysis for imported holdings, review the whole portfolio against a required
+return (read-only), and persist human approval transitions. Flex
 tokens and Query IDs are cleared from the form after submission and are stored
 only in Supabase Vault; the page never saves them to browser storage. CSV imports
 are limited to 1 MB and 1,000 rows. Optional analysis inputs cover position
 overrides, dividend and growth metrics, analyst targets/revisions, a required
 annual return with optional what-if returns, and candidate symbols with 0–100
-scores; blank position values reuse imported records where possible.
+scores written as `SYMBOL:score` (a blank score is rejected, not read as 0); blank
+position values reuse imported records where possible.
 
 The authenticated `POST /api/pip/portfolios/{id}/research` route uses Yahoo
 historical-price, analyst-consensus, company-growth, and raw EPS revision data,
@@ -211,6 +213,7 @@ API routes:
 | DELETE | `/api/pip/portfolios/{id}/ibkr-flex-connections/{connection_id}` | Remove the connection and delete its Vault secret |
 | POST | `/api/pip/portfolios/{id}/research` | Load available research for an imported holding |
 | POST | `/api/pip/analysis` | Run modules, persist scores and propose a recommendation |
+| POST | `/api/pip/portfolios/{id}/review` | Rank open holdings against the return hurdle; read-only, saves nothing |
 | GET | `/api/pip/portfolios/{id}/recommendations` | List portfolio recommendations |
 | GET | `/api/pip/recommendations/{id}/events` | Read the append-only audit history |
 | POST | `/api/pip/recommendations/{id}/transitions` | Record a human workflow transition |
@@ -221,6 +224,17 @@ The request's optional `hurdle` object sets `required_annual_return_percent`
 (default 7, range 0–100) and the optional `holding_assumed_return_percent` and
 `replacement_assumed_return_percent` what-if returns. The workbench requires the
 API's `hurdle_analysis` health marker before it sends an analysis.
+
+The read-only review (`POST /api/pip/portfolios/{id}/review`) accepts
+`required_annual_return_percent` (default 7, 0–100), `top_n` (default 5, 1–20),
+`replacement_limit` (default 5, 1–10) and optional `peer_scores` (up to 500 unique
+symbols scored 0–100). It ranks the open holdings kept at least 365 days whose
+price-only return trails the hurdle path, furthest behind first, and returns
+dead-money and replacement advice for the first `top_n`. It runs only when
+requested, never after an import or sync, and saves nothing. The workbench requires the API's
+`portfolio_review` health marker; see
+[Scoring](pip/SCORING.md#portfolio-review) for the rules and limits.
+
 CSV import and Flex sync are both read-only with respect to the broker; no route
 submits an order. Each account is stored with a masked display identifier and a
 non-display fingerprint so accounts sharing the same masked suffix remain
@@ -258,3 +272,6 @@ The PIP layer helps by giving better evidence, not by guaranteeing a right decis
   undated sum is reported as unavailable rather than mislabeled as annual income.
 - Return-hurdle catch-up and time-to-gain figures are arithmetic scenarios from
   the returns you assume, never forecasts, dates or guarantees.
+- The portfolio review is a read-only comparison on price-only returns. It never
+  runs on import or sync, never forecasts, and never places, approves or transmits
+  an order.

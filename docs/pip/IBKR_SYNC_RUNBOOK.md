@@ -99,6 +99,15 @@ save attempt. They are never returned by the API, stored in browser storage,
 or written to audit events. Do not log request URLs to IBKR because the Flex
 token is a query parameter in the upstream protocol.
 
+## After a sync or import
+
+A sync or import only saves positions (and, for a full Flex sync, history). It does
+not score holdings, flag dead money or suggest replacements. When you are ready,
+select the portfolio in the workbench and press **Review portfolio**: it ranks the
+holdings that trail your required return and shows advice for the few furthest
+behind (five by default). The review only reads saved data and never places an
+order. See [Scoring](SCORING.md#portfolio-review).
+
 ## CSV fallback
 
 1. Select the target portfolio and upload the IBKR CSV export.

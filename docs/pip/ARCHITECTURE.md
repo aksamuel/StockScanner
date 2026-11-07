@@ -74,7 +74,11 @@ Auth, requires approved `user_access`, and uses the same token for PostgREST so
 table RLS remains active. The service never uses a service-role key. The API
 integrates lifecycle, return-hurdle, dead-money, opportunity-cost, dividend,
 growth, forward-looking, scoring, recommendation, and approval modules. The
-hurdle result is stored in `stock_scores.metadata.modules`; it needs no migration. The browser page
+hurdle result is stored in `stock_scores.metadata.modules`; it needs no migration.
+A read-only portfolio review (`portfolio_review.py`,
+`POST /api/pip/portfolios/{id}/review`) ranks open holdings against the hurdle from
+saved positions, scores and analyst signals. It runs only on request, reads through
+the caller's RLS-scoped client, writes nothing, and needs no migration. The browser page
 uses the signed-in Supabase access token only for API requests; its configured API
 URL is stored locally and never contains credentials. Flex tokens and Query IDs
 are submitted only to the API and saved through restricted Vault RPCs; the API

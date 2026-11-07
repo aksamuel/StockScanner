@@ -2,15 +2,17 @@
 
 ## Is PIP part of the existing scanner workflow?
 
-PIP is an additive Python package under `stockscanner/pip/`. It does not change
-scanner discovery, rankings, reports, or the existing portfolio pages. The
-deployed website does not currently provide a PIP dashboard or automatically run
-PIP analysis.
+PIP is an additive Python package under `stockscanner/pip/` with a FastAPI service
+and a Portfolio Intelligence workbench page. It does not change scanner discovery,
+rankings, reports, or the existing portfolio pages. Nothing runs automatically:
+analysis and portfolio review run only when you press their buttons, and the
+workbench works only while it is connected to a deployed PIP API.
 
 ## What is included?
 
 The package provides fixture/CSV portfolio normalization, lifecycle and
-productivity analysis, a required-annual-return hurdle (7% by default),
+productivity analysis, a required-annual-return hurdle (7% by default), a
+read-only portfolio review that ranks holdings against it,
 dividend/growth/forward-looking helpers, CPS and Sell
 Confidence scores, replacement ranking, recommendation helpers, and explicit
 approval-state tracking. It can also load Yahoo historical prices and available
@@ -90,6 +92,27 @@ the holding to catch up, or months for the replacement to earn the hurdle gain.
 Those figures are scenarios from your assumptions, not predictions or guarantees.
 PIP ranks the replacement symbols and scores you supply; it does not search the
 market for candidates.
+
+## Will downloading or syncing my portfolio automatically analyze every stock and suggest replacements?
+
+No. Importing a CSV or syncing Flex only saves positions. Nothing is analyzed until
+you press a button in the workbench. **Review portfolio** ranks the open holdings
+you have kept for at least a year that trail your required return (7% by default),
+furthest behind first, then attaches dead-money and replacement advice to the five
+furthest behind (you can choose 1–20). The review is read-only: it saves nothing,
+changes no recommendation, and places no order. Holdings kept under a year, holdings
+already on or ahead of the hurdle, holdings in more than one currency, and holdings
+missing a cost basis or entry date are counted or listed but not ranked.
+
+## Why does the review withhold a verdict or say replacements were not compared?
+
+The review does not know your dividends, so its returns are price-only and it will
+not call a holding "not dead money" on that basis. It compares replacements only
+with candidate scores you type in, written as `AAA:82, BBB:90`, and only against the
+holding's saved CPS. A candidate with a blank score such as `AAA:` is rejected
+rather than read as 0. To save a CPS and get a confirmed verdict, analyze that
+holding and enter dividends received. See [Scoring](SCORING.md#portfolio-review)
+for the exact rules.
 
 ## Why do Sell Score weights total 115?
 

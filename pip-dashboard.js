@@ -84,6 +84,8 @@ export function calculatePipScore(components, weights) {
 }
 
 export const PIP_DEFAULT_REQUIRED_RETURN_PERCENT = 7;
+export const PIP_DEFAULT_REVIEW_TOP_N = 5;
+export const PIP_DEFAULT_REVIEW_REPLACEMENT_LIMIT = 5;
 
 const HURDLE_VERDICTS = Object.freeze({
   below: "below the hurdle path",
@@ -162,6 +164,124 @@ export function describePipHurdle(hurdle) {
   return lines;
 }
 
+function nonEmptyStrings(values) {
+  return (Array.isArray(values) ? values : []).filter((value) => typeof value === "string" && value.trim());
+}
+
+function pluralize(count, singular) {
+  return `${count} ${count === 1 ? singular : `${singular}s`}`;
+}
+
+export function describePipReviewSummary(review) {
+  const summary = review && typeof review === "object" ? review.summary : null;
+  if (!summary || typeof summary !== "object") {
+    return ["Portfolio review: unavailable from this API version."];
+  }
+  const required = finiteNumber(review.required_annual_return_percent);
+  const rate = required === null ? "the required annual return" : `${trimmedPercent(required)} per year`;
+  const holdings = finiteNumber(summary.holdings);
+  const lines = [holdings === null
+    ? `Reviewed open holdings against ${rate}.`
+    : `Reviewed ${pluralize(holdings, "open holding")} against ${rate}.`];
+
+  const minimumDays = finiteNumber(review.minimum_holding_days);
+  const breakdown = [
+    [summary.behind_hurdle, "behind the hurdle path"],
+    [summary.meeting_hurdle, "on or ahead of it"],
+    [summary.held_under_minimum, minimumDays === null ? "held under the minimum holding period" : `held under ${minimumDays} days`],
+    [summary.not_analysable, "could not be compared"],
+  ]
+    .map(([count, label]) => [finiteNumber(count), label])
+    .filter(([count]) => count !== null)
+    .map(([count, label]) => `${count} ${label}`);
+  if (breakdown.length) lines.push(`${breakdown.join("; ")}.`);
+
+  const shown = Array.isArray(review.top) ? review.top.length : 0;
+  const behind = finiteNumber(summary.behind_hurdle);
+  if (shown === 0) {
+    lines.push("No holding is ranked as behind the hurdle path.");
+  } else if (behind !== null && behind > shown) {
+    lines.push(`Advice is shown for the ${shown === 1 ? "holding" : `${shown} holdings`} furthest behind the hurdle path.`);
+  } else {
+    lines.push(`Advice is shown for ${shown === 1 ? "the holding" : `all ${shown} holdings`} behind the hurdle path.`);
+  }
+  return lines;
+}
+
+export function describePipReviewTitle(entry) {
+  const symbol = typeof entry?.symbol === "string" && entry.symbol.trim() ? entry.symbol.trim() : "Unknown holding";
+  const currency = typeof entry?.currency === "string" && entry.currency.trim() ? ` (${entry.currency.trim()})` : "";
+  const rank = finiteNumber(entry?.rank);
+  return `${rank === null ? "" : `${rank}. `}${symbol}${currency}`;
+}
+
+function describePipReviewDeadMoney(deadMoney) {
+  if (!deadMoney || typeof deadMoney !== "object") return ["Dead money: unavailable from this API version."];
+  const verdict = deadMoney.is_dead_money === true
+    ? "flagged for review"
+    : deadMoney.is_dead_money === false
+      ? "not flagged"
+      : "verdict withheld";
+  const confidence = finiteNumber(deadMoney.confidence);
+  const lines = [confidence === null
+    ? `Dead money: ${verdict}.`
+    : `Dead money: ${verdict} (${(Math.min(1, Math.max(0, confidence)) * 100).toFixed(0)}% input confidence).`];
+  const reasons = nonEmptyStrings(deadMoney.reasons);
+  if (reasons.length) lines.push(`Dead-money evidence: ${reasons.join(" ")}`);
+  return lines;
+}
+
+function describePipReviewReplacements(replacements) {
+  if (!replacements || typeof replacements !== "object") return ["Replacements: unavailable from this API version."];
+  const reasons = nonEmptyStrings(replacements.reasons).join(" ");
+  const withReasons = (text) => (reasons ? `${text} ${reasons}` : text);
+  if (replacements.compared !== true) return [withReasons("Replacements: not compared.")];
+  const candidates = (Array.isArray(replacements.candidates) ? replacements.candidates : [])
+    .map((candidate) => [candidate?.symbol, finiteNumber(candidate?.score), finiteNumber(candidate?.expected_benefit)])
+    .filter(([symbol, score]) => typeof symbol === "string" && symbol.trim() && score !== null);
+  if (!candidates.length) return [withReasons("Replacements: none suggested.")];
+  return candidates.map(([symbol, score, benefit]) => (
+    `Replacement candidate ${symbol.trim()}: score ${score.toFixed(1)}${benefit === null ? "" : `, ${benefit.toFixed(1)} points above this holding's CPS`}.`
+  ));
+}
+
+export function describePipReviewHolding(entry) {
+  if (!entry || typeof entry !== "object") return [];
+  const hurdle = entry.hurdle && typeof entry.hurdle === "object" ? entry.hurdle : null;
+  const lines = [];
+  const excess = finiteNumber(hurdle?.excess_return_percentage_points);
+  if (excess !== null) {
+    const basis = hurdle.return_basis === "price_only" ? " (price-only)" : "";
+    const gap = `${Math.abs(excess).toFixed(1)} percentage points`;
+    lines.push(excess < 0
+      ? `Behind the hurdle path by ${gap}${basis}.`
+      : `Ahead of the hurdle path by ${gap}${basis}.`);
+  }
+  lines.push(...describePipHurdle(hurdle));
+  const cps = finiteNumber(entry.cps);
+  lines.push(cps === null
+    ? "No saved CPS for this holding; analyze it to save one."
+    : `Saved CPS: ${cps.toFixed(1)} / 100.`);
+  lines.push(...describePipReviewDeadMoney(entry.dead_money));
+  lines.push(...describePipReviewReplacements(entry.replacements));
+  return lines;
+}
+
+export function describePipReviewSkipped(skipped) {
+  return (Array.isArray(skipped) ? skipped : []).flatMap((group) => {
+    if (!group || typeof group !== "object") return [];
+    const symbols = nonEmptyStrings(group.symbols).map((symbol) => symbol.trim());
+    const count = Math.max(finiteNumber(group.count) ?? 0, symbols.length);
+    if (count === 0) return [];
+    const message = typeof group.message === "string" && group.message.trim()
+      ? group.message.trim()
+      : "These holdings could not be compared.";
+    const more = count > symbols.length ? ` and ${count - symbols.length} more` : "";
+    const affected = symbols.length ? ` Affected: ${symbols.join(", ")}${more}.` : "";
+    return [`${pluralize(count, "holding")} not compared. ${message}${affected}`];
+  });
+}
+
 export { portfolioImportPreviewFromCsv, portfolioRowsFromCsv };
 
 if (typeof document !== "undefined") {
@@ -196,11 +316,13 @@ if (typeof document !== "undefined") {
   const flexStatus = document.querySelector("#flexStatus");
   const flexConnectionList = document.querySelector("#flexConnectionList");
   const flexPositionsOnly = document.querySelector("#flexPositionsOnly");
+  const reviewStatus = document.querySelector("#reviewStatus");
   let csvText = null;
   let portfolios = [];
   let apiConnected = false;
   let selectedRecommendation = null;
   let researchRequestId = 0;
+  let reviewRequestId = 0;
 
   function renderScore(result, valueId, confidenceId, reasonsId) {
     document.querySelector(valueId).textContent = result.score === null ? "Unavailable" : `${result.score.toFixed(1)} / 100`;
@@ -298,19 +420,30 @@ if (typeof document !== "undefined") {
     return value;
   }
 
-  function readPeerScores() {
-    const raw = document.querySelector("#pipPeerScores").value.trim();
+  function optionalWholeNumber(id, label, bounds) {
+    const value = optionalNumber(id, label, bounds);
+    if (value !== null && !Number.isInteger(value)) throw new Error(`${label} must be a whole number.`);
+    return value;
+  }
+
+  function readPeerScores(id = "#pipPeerScores", { unique = false, max = null } = {}) {
+    const raw = document.querySelector(id).value.trim();
     if (!raw) return [];
-    return raw.split(",").map((entry) => {
+    const scores = raw.split(",").map((entry) => {
       const [symbolValue, scoreValue, ...extra] = entry.split(":");
       const symbol = symbolValue.trim().toUpperCase();
       const score = Number(scoreValue);
       if (extra.length || !/^[A-Z0-9][A-Z0-9.-]{0,29}$/.test(symbol)
-        || !Number.isFinite(score) || score < 0 || score > 100) {
+        || !scoreValue?.trim() || !Number.isFinite(score) || score < 0 || score > 100) {
         throw new Error(`Invalid replacement candidate: ${entry.trim()}. Use SYMBOL:score from 0 to 100.`);
       }
       return { symbol, score };
     });
+    if (max !== null && scores.length > max) throw new Error(`Enter at most ${max} replacement candidates.`);
+    if (unique && new Set(scores.map((candidate) => candidate.symbol)).size !== scores.length) {
+      throw new Error("Each replacement candidate symbol may appear only once.");
+    }
+    return scores;
   }
 
   function updateImportEnabled() {
@@ -353,6 +486,27 @@ if (typeof document !== "undefined") {
     document.querySelector("#researchResult").hidden = true;
     document.querySelector("#analysisResult").hidden = true;
     updateScores();
+  }
+
+  function clearReviewResult() {
+    document.querySelector("#reviewResult").hidden = true;
+    document.querySelector("#reviewResult").replaceChildren();
+  }
+
+  function resetReview() {
+    reviewRequestId += 1;
+    setBusy(document.querySelector("#runReview"), false);
+    document.querySelector("#reviewRequiredReturn").value = String(PIP_DEFAULT_REQUIRED_RETURN_PERCENT);
+    document.querySelector("#reviewTopN").value = String(PIP_DEFAULT_REVIEW_TOP_N);
+    document.querySelector("#reviewReplacementLimit").value = String(PIP_DEFAULT_REVIEW_REPLACEMENT_LIMIT);
+    document.querySelector("#reviewCandidates").value = "";
+    reviewStatus.textContent = "";
+    clearReviewResult();
+  }
+
+  function resetForPortfolioChange() {
+    resetAnalysisInputs();
+    resetReview();
   }
 
   function updateFlexControls() {
@@ -584,7 +738,7 @@ if (typeof document !== "undefined") {
       portfolioSelect.append(option);
     });
     if (portfolios.some((portfolio) => portfolio.id === previous)) portfolioSelect.value = previous;
-    if (portfolioSelect.value !== previous) resetAnalysisInputs();
+    if (portfolioSelect.value !== previous) resetForPortfolioChange();
     document.querySelector("#portfolioControls").hidden = false;
     updateImportEnabled();
     updateResearchEnabled();
@@ -620,6 +774,47 @@ if (typeof document !== "undefined") {
     const hurdleText = document.createElement("p");
     hurdleText.textContent = describePipHurdle(modules.hurdle).join(" ");
     container.append(heading, detail, reasons, hurdleText, assessmentText);
+    container.hidden = false;
+  }
+
+  function reviewElement(tag, text, className = "") {
+    const element = document.createElement(tag);
+    element.textContent = text;
+    if (className) element.className = className;
+    return element;
+  }
+
+  function showReview(review) {
+    const children = [reviewElement("h3", "Portfolio review")];
+    for (const line of describePipReviewSummary(review)) children.push(reviewElement("p", line));
+    if (review.summary?.truncated === true) {
+      children.push(reviewElement(
+        "p",
+        "Some holdings were not reviewed because the position list was longer than the review limit. This ranking may be incomplete.",
+        "notice",
+      ));
+    }
+    for (const entry of Array.isArray(review.top) ? review.top : []) {
+      const card = document.createElement("div");
+      card.className = "review-holding";
+      card.append(reviewElement("h3", describePipReviewTitle(entry)));
+      for (const line of describePipReviewHolding(entry)) card.append(reviewElement("p", line));
+      children.push(card);
+    }
+    const skipped = describePipReviewSkipped(review.skipped);
+    if (skipped.length) {
+      children.push(reviewElement("h3", "Not compared"));
+      for (const line of skipped) children.push(reviewElement("p", line));
+    }
+    const notes = nonEmptyStrings(review.notes);
+    if (notes.length) {
+      children.push(reviewElement("h3", "Notes"));
+      const list = document.createElement("ul");
+      for (const note of notes) list.append(reviewElement("li", note));
+      children.push(list);
+    }
+    const container = document.querySelector("#reviewResult");
+    container.replaceChildren(...children);
     container.hidden = false;
   }
 
@@ -663,7 +858,7 @@ if (typeof document !== "undefined") {
         }),
       });
       await refreshPortfolios();
-      if (portfolioSelect.value !== created.id) resetAnalysisInputs();
+      if (portfolioSelect.value !== created.id) resetForPortfolioChange();
       portfolioSelect.value = created.id;
       await Promise.all([loadRecommendations(), loadFlexConnections()]);
       updateImportEnabled();
@@ -879,7 +1074,7 @@ if (typeof document !== "undefined") {
   });
 
   portfolioSelect.addEventListener("change", async () => {
-    resetAnalysisInputs();
+    resetForPortfolioChange();
     updateImportEnabled();
     updateResearchEnabled();
     updateFlexControls();
@@ -971,6 +1166,54 @@ if (typeof document !== "undefined") {
       output.textContent = error.message || "Portfolio analysis failed.";
     } finally {
       setBusy(button, false);
+    }
+  });
+
+  document.querySelector("#runReview").addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    let requestId = null;
+    try {
+      clearReviewResult();
+      const portfolioId = selectedPortfolio();
+      const requiredReturn = optionalNumber("#reviewRequiredReturn", "Required annual return", { min: 0, max: 100 });
+      const topN = optionalWholeNumber("#reviewTopN", "Number of holdings", { min: 1, max: 20 });
+      const replacementLimit = optionalWholeNumber("#reviewReplacementLimit", "Replacements per holding", { min: 1, max: 10 });
+      const candidates = readPeerScores("#reviewCandidates", { unique: true, max: 500 });
+      requestId = ++reviewRequestId;
+      setBusy(button, true, "Reviewing…");
+      reviewStatus.textContent = "Reviewing saved positions…";
+      const health = await apiRequest("/healthz");
+      if (requestId !== reviewRequestId) return;
+      if (health?.portfolio_review !== 1) {
+        throw new Error("The PIP API must be updated before portfolio review is available.");
+      }
+      if (portfolioSelect.value !== portfolioId) {
+        throw new Error("The selected portfolio changed. Run the review again.");
+      }
+      const payload = await apiRequest(`/api/pip/portfolios/${encodeURIComponent(portfolioId)}/review`, {
+        method: "POST",
+        body: JSON.stringify({
+          ...(requiredReturn === null ? {} : { required_annual_return_percent: requiredReturn }),
+          ...(topN === null ? {} : { top_n: topN }),
+          ...(replacementLimit === null ? {} : { replacement_limit: replacementLimit }),
+          peer_scores: candidates,
+        }),
+      });
+      if (requestId !== reviewRequestId) return;
+      if (portfolioSelect.value !== portfolioId) {
+        throw new Error("The selected portfolio changed. Run the review again.");
+      }
+      if (!payload || typeof payload.review !== "object" || payload.review === null) {
+        throw new Error("The PIP API returned an unexpected review response.");
+      }
+      showReview(payload.review);
+      reviewStatus.textContent = "Review complete. It is read-only: nothing was saved and no orders were placed.";
+    } catch (error) {
+      if (requestId === null || requestId === reviewRequestId) {
+        reviewStatus.textContent = error.message || "Portfolio review failed.";
+      }
+    } finally {
+      if (requestId !== null && requestId === reviewRequestId) setBusy(button, false);
     }
   });
 
