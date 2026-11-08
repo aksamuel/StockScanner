@@ -108,6 +108,9 @@ holdings that trail your required return and shows advice for the few furthest
 behind (five by default). The review only reads saved data and never places an
 order. See [Scoring](SCORING.md#portfolio-review).
 
+To check what was saved, open the [module runner](MODULE_RUNNER.md). It lists the
+saved holdings per symbol and runs one module at a time, read-only.
+
 ## CSV fallback
 
 1. Select the target portfolio and upload the IBKR CSV export.

@@ -6,7 +6,7 @@ import os
 import re
 from dataclasses import asdict, dataclass, field
 from datetime import date, datetime, timedelta, timezone
-from typing import Any, Callable
+from typing import Any, Callable, Literal
 from uuid import UUID
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, status
@@ -26,10 +26,11 @@ except ImportError:
 
 from .approval_workflow import ApprovalDecision, ApprovalStatus, ApprovalWorkflow
 from .dead_money import DeadMoneyDetector
-from .decision_engine import DecisionEngine
+from .decision_engine import DecisionEngine, InMemoryPortfolioRepository
 from .dividend_analysis import DividendAnalysisEngine, DividendRecord
 from .forward_looking import ForwardLookingAnalyzer
 from .growth_analysis import GrowthAnalysisEngine
+from .holdings import summarize_holdings
 from .hurdle import DEFAULT_REQUIRED_ANNUAL_RETURN_PERCENT, HoldingLot, HurdleAnalyzer
 from .ibkr_sync import (
     CSVPortfolioDataSource,
@@ -42,7 +43,13 @@ from .portfolio_review import DEFAULT_REPLACEMENT_LIMIT, DEFAULT_TOP_N, Portfoli
 from .position_lifecycle import PositionLifecycleAnalyzer
 from .repository import SupabaseAuditLogSink, SupabasePortfolioRepository
 from .research import ResearchDataUnavailable, collect_research_data
-from .scoring import calculate_cps_result
+from .scoring import (
+    CPS_WEIGHTS,
+    SELL_SCORE_WEIGHTS,
+    ScoringResult,
+    calculate_cps_result,
+    calculate_sell_score_result,
+)
 
 
 MAX_CSV_BYTES = 1_000_000
@@ -238,8 +245,7 @@ class PeerScore(StrictModel):
         return value
 
 
-class AnalysisRequest(StrictModel):
-    portfolio_id: UUID
+class HoldingInputs(StrictModel):
     symbol: str
     scores: ScoreInputs = Field(default_factory=ScoreInputs)
     position: PositionInputs = Field(default_factory=PositionInputs)
@@ -258,6 +264,10 @@ class AnalysisRequest(StrictModel):
         if not SYMBOL_PATTERN.fullmatch(value):
             raise ValueError("Invalid symbol")
         return value
+
+
+class AnalysisRequest(HoldingInputs):
+    portfolio_id: UUID
 
 
 class ReviewCandidate(PeerScore):
@@ -344,6 +354,34 @@ class AuthenticatedUser:
     access_token: str = field(repr=False)
 
 
+ModuleName = Literal[
+    "lifecycle",
+    "hurdle",
+    "dead_money",
+    "dividends",
+    "growth",
+    "forward_looking",
+    "opportunity_cost",
+    "cps",
+    "sell_score",
+    "replacements",
+    "sell_advisor",
+]
+
+
+@dataclass
+class HoldingEvaluation:
+    currency: str
+    current_price: float | None
+    market_value: float | None
+    components: dict[str, float | None]
+    cps_result: ScoringResult
+    module_assessments: dict[str, Any]
+    forward_target_upside: float | None
+    forward_revision_score: float | None
+    held_symbols: set[str]
+
+
 def _response_data(response: Any, message: str) -> Any:
     if getattr(response, "error", None):
         raise HTTPException(status_code=502, detail=message)
@@ -394,6 +432,82 @@ def _public_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
         for key, value in metadata.items()
         if key not in {"account_fingerprint", "source_key"}
     }
+
+
+def _scoring_module_result(result: ScoringResult, weights: dict[str, float]) -> dict[str, Any]:
+    return {
+        "score": result.score,
+        "confidence": result.confidence,
+        "reasons": list(result.reasons),
+        "component_scores": dict(result.component_scores),
+        "weights": dict(weights),
+        "missing_components": [name for name in weights if name not in result.component_scores],
+    }
+
+
+def _advice_module_result(
+    module: str,
+    portfolio_id: str,
+    body: HoldingInputs,
+    evaluation: HoldingEvaluation,
+) -> dict[str, Any]:
+    # The in-memory repository keeps module runs read-only: nothing reaches Supabase.
+    engine = DecisionEngine(repository=InMemoryPortfolioRepository())
+    analysis = engine.analyze_position(
+        portfolio_id=portfolio_id,
+        symbol=body.symbol,
+        **evaluation.components,
+        peer_scores=[(peer.symbol, peer.score) for peer in body.peer_scores],
+        candidate_cps=body.candidate_cps,
+        held_symbols=evaluation.held_symbols,
+    )
+    recommendation = engine.last_recommendation
+    if recommendation is None:
+        raise HTTPException(status_code=500, detail="Unable to build the advice result.")
+    candidates = [asdict(candidate) for candidate in recommendation.replacement_candidates]
+    if module == "replacements":
+        reasons = []
+        if not body.peer_scores:
+            reasons.append("No replacement candidate scores were supplied.")
+        if analysis.cps is None:
+            reasons.append(
+                "This holding's CPS is unavailable, so candidates cannot be compared with it."
+            )
+        compared = not reasons
+        if compared and not candidates:
+            reasons.append("No supplied candidate scores are above this holding's CPS.")
+        return {"compared": compared, "reasons": reasons, "candidates": candidates}
+    return {
+        "recommendation": recommendation.recommendation,
+        "confidence": recommendation.confidence,
+        "sell_score": analysis.sell_score,
+        "cps": analysis.cps,
+        "rationale": list(recommendation.rationale),
+        "replacement_candidates": candidates,
+    }
+
+
+def _module_result(
+    module: str,
+    portfolio_id: str,
+    body: HoldingInputs,
+    evaluation: HoldingEvaluation,
+) -> dict[str, Any]:
+    if module == "opportunity_cost":
+        result = dict(evaluation.module_assessments[module])
+        if result["available"] and not result["items"]:
+            result["reasons"] = ["No replacement candidate scores were supplied."]
+        return result
+    if module in evaluation.module_assessments:
+        return evaluation.module_assessments[module]
+    if module == "cps":
+        return _scoring_module_result(evaluation.cps_result, CPS_WEIGHTS)
+    if module == "sell_score":
+        return _scoring_module_result(
+            calculate_sell_score_result(evaluation.components),
+            SELL_SCORE_WEIGHTS,
+        )
+    return _advice_module_result(module, portfolio_id, body, evaluation)
 
 
 def create_app(
@@ -579,6 +693,8 @@ def create_app(
             "flex_positions_only_sync": 1,
             "hurdle_analysis": 1,
             "portfolio_review": 1,
+            "positions_list": 1,
+            "module_runner": 1,
         }
 
     @app.get("/api/pip/portfolios")
@@ -860,16 +976,14 @@ def create_app(
         except ResearchDataUnavailable as exc:
             raise HTTPException(status_code=502, detail=str(exc)) from exc
 
-    @app.post("/api/pip/analysis")
-    def analyze(
-        body: AnalysisRequest,
-        user: AuthenticatedUser = Depends(require_user),
-    ) -> dict[str, Any]:
-        owned_portfolio(user, body.portfolio_id)
-
+    def evaluate_holding(
+        user: AuthenticatedUser,
+        portfolio_id: UUID,
+        body: HoldingInputs,
+    ) -> HoldingEvaluation:
         position_result = user.client.table("positions").select(
             "quantity,average_cost,market_price,market_value,cost_basis,entry_date,currency"
-        ).eq("portfolio_id", str(body.portfolio_id)).eq("symbol", body.symbol).execute()
+        ).eq("portfolio_id", str(portfolio_id)).eq("symbol", body.symbol).execute()
         position_rows = _response_data(position_result, "Unable to load the selected holding.") or []
         if not position_rows:
             raise HTTPException(
@@ -931,12 +1045,12 @@ def create_app(
         stored_score_result = user.client.table("stock_scores").select(
             "tsr,relative_performance,dividend_growth,earnings_growth,analyst_revisions,"
             "dividend_quality,technical_health,opportunity_cost,revisions"
-        ).eq("portfolio_id", str(body.portfolio_id)).eq("symbol", body.symbol).maybe_single().execute()
+        ).eq("portfolio_id", str(portfolio_id)).eq("symbol", body.symbol).maybe_single().execute()
         stored_scores = _one_row(_response_data(stored_score_result, "Unable to load saved score inputs.")) or {}
 
         signals_result = user.client.table("analyst_signals").select(
             "target_price,target_upside,revisions,signal_date"
-        ).eq("portfolio_id", str(body.portfolio_id)).eq(
+        ).eq("portfolio_id", str(portfolio_id)).eq(
             "symbol", body.symbol
         ).order("signal_date", desc=True).limit(1).execute()
         latest_signal = next(iter(_response_data(signals_result, "Unable to load analyst signals.") or []), {})
@@ -959,7 +1073,7 @@ def create_app(
             cutoff = datetime.now(timezone.utc).date() - timedelta(days=365)
             dividend_result = user.client.table("dividends").select(
                 "symbol,dividend_amount,ex_date,pay_date,metadata"
-            ).eq("portfolio_id", str(body.portfolio_id)).eq(
+            ).eq("portfolio_id", str(portfolio_id)).eq(
                 "symbol", body.symbol
             ).or_(
                 f"pay_date.gte.{cutoff.isoformat()},ex_date.gte.{cutoff.isoformat()}"
@@ -1098,7 +1212,7 @@ def create_app(
 
         held_result = user.client.table("positions").select(
             "symbol,quantity"
-        ).eq("portfolio_id", str(body.portfolio_id)).execute()
+        ).eq("portfolio_id", str(portfolio_id)).execute()
         held_rows = _response_data(held_result, "Unable to load current portfolio holdings.") or []
         held_symbols = set()
         for row in held_rows:
@@ -1114,17 +1228,36 @@ def create_app(
             for symbol in body.held_symbols
             if SYMBOL_PATTERN.fullmatch(symbol.strip().upper())
         )
+        return HoldingEvaluation(
+            currency=currency,
+            current_price=current_price,
+            market_value=market_value,
+            components=components,
+            cps_result=cps_result,
+            module_assessments=module_assessments,
+            forward_target_upside=forward_target_upside,
+            forward_revision_score=forward_revision_score,
+            held_symbols=held_symbols,
+        )
+
+    @app.post("/api/pip/analysis")
+    def analyze(
+        body: AnalysisRequest,
+        user: AuthenticatedUser = Depends(require_user),
+    ) -> dict[str, Any]:
+        owned_portfolio(user, body.portfolio_id)
+        evaluation = evaluate_holding(user, body.portfolio_id, body)
 
         repository = SupabasePortfolioRepository(user.client)
         engine = DecisionEngine(repository=repository)
         result = engine.analyze_position(
             portfolio_id=str(body.portfolio_id),
             symbol=body.symbol,
-            **components,
+            **evaluation.components,
             peer_scores=[(peer.symbol, peer.score) for peer in body.peer_scores],
             candidate_cps=body.candidate_cps,
-            held_symbols=held_symbols,
-            additional_metadata={"modules": module_assessments},
+            held_symbols=evaluation.held_symbols,
+            additional_metadata={"modules": evaluation.module_assessments},
         )
         recommendation = engine.last_recommendation
         if recommendation is None:
@@ -1148,8 +1281,8 @@ def create_app(
                 "portfolio_id": str(body.portfolio_id),
                 "symbol": body.symbol,
                 "target_price": body.forward.target_price,
-                "target_upside": forward_target_upside,
-                "revisions": forward_revision_score,
+                "target_upside": evaluation.forward_target_upside,
+                "revisions": evaluation.forward_revision_score,
                 "signal_date": datetime.now(timezone.utc).isoformat(),
                 "metadata": {"source": "user_supplied"},
             }).execute()
@@ -1160,13 +1293,13 @@ def create_app(
                 "portfolio_id": str(body.portfolio_id),
                 "symbol": body.symbol,
                 "snapshot_date": datetime.now(timezone.utc).date().isoformat(),
-                "price": current_price,
-                "market_value": market_value,
+                "price": evaluation.current_price,
+                "market_value": evaluation.market_value,
                 "score": result.cps,
                 "metadata": {
                     "score_type": "cps",
                     "sell_score": result.sell_score,
-                    "currency": currency,
+                    "currency": evaluation.currency,
                     "source": "pip_analysis",
                 },
             }],
@@ -1175,8 +1308,40 @@ def create_app(
         _response_data(snapshot_result, "Unable to persist daily portfolio snapshot.")
         return {
             "analysis": asdict(result),
-            "modules": module_assessments,
+            "modules": evaluation.module_assessments,
             "recommendation": asdict(recommendation),
+        }
+
+    @app.get("/api/pip/portfolios/{portfolio_id}/positions")
+    def list_positions(
+        portfolio_id: UUID,
+        user: AuthenticatedUser = Depends(require_user),
+    ) -> dict[str, Any]:
+        owned_portfolio(user, portfolio_id)
+        position_rows, truncated = _read_pages(
+            lambda: user.client.table("positions").select(
+                "symbol,quantity,average_cost,market_price,market_value,cost_basis,"
+                "entry_date,currency,last_updated"
+            ).eq("portfolio_id", str(portfolio_id)).order("id"),
+            "Unable to load portfolio positions.",
+        )
+        return asdict(summarize_holdings(position_rows, truncated=truncated))
+
+    @app.post("/api/pip/portfolios/{portfolio_id}/modules/{module}")
+    def run_module(
+        portfolio_id: UUID,
+        module: ModuleName,
+        body: HoldingInputs,
+        user: AuthenticatedUser = Depends(require_user),
+    ) -> dict[str, Any]:
+        owned_portfolio(user, portfolio_id)
+        evaluation = evaluate_holding(user, portfolio_id, body)
+        return {
+            "module": module,
+            "symbol": body.symbol,
+            "currency": evaluation.currency,
+            "saved": False,
+            "result": _module_result(module, str(portfolio_id), body, evaluation),
         }
 
     @app.post("/api/pip/portfolios/{portfolio_id}/review")

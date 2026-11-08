@@ -195,6 +195,8 @@ HTTPS. Then open the Portfolio Intelligence page; its API URL defaults to
 deployment. Sign in, select **Connect and load portfolios**, and verify the
 authenticated connection. Details and routes are in
 [docs/portfolio-intelligence-pip.md](docs/portfolio-intelligence-pip.md).
+To look at saved holdings and run the analysis modules one at a time, open the
+read-only [module runner](docs/pip/MODULE_RUNNER.md) instead.
 The page's **Load available research** action uses Yahoo history, company growth
 fields, raw EPS revision counts, analyst consensus/targets, and the shared price
 snapshot. It sends only the imported holding's symbol to Yahoo. Raw revision
@@ -307,6 +309,12 @@ The signed-in user pages serve different purposes:
   review, recommendations, and persisted human approval. Configure and deploy the
   FastAPI API and Vault-backed Supabase Edge Function separately; PIP never
   transmits orders.
+- `pip-modules.html`: a read-only module runner. It connects to the same PIP API
+  (default `https://stockscanner-pip-api.onrender.com`, editable), lists the
+  signed-in user's saved holdings, and runs one analysis module per button
+  click. Nothing is saved and no order is placed. `pip-modules-core.js` holds its
+  request and result logic and `pip-shared.js` the helpers it shares with the
+  workbench. See [docs/pip/MODULE_RUNNER.md](docs/pip/MODULE_RUNNER.md).
 - `help.html`: the current user guide and FAQ, available from the shared Menu,
   portfolio navigation, and report Help links.
 

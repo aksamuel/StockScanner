@@ -78,7 +78,12 @@ hurdle result is stored in `stock_scores.metadata.modules`; it needs no migratio
 A read-only portfolio review (`portfolio_review.py`,
 `POST /api/pip/portfolios/{id}/review`) ranks open holdings against the hurdle from
 saved positions, scores and analyst signals. It runs only on request, reads through
-the caller's RLS-scoped client, writes nothing, and needs no migration. The browser page
+the caller's RLS-scoped client, writes nothing, and needs no migration. A read-only
+module runner (`holdings.py`, `GET /api/pip/portfolios/{id}/positions` and
+`POST /api/pip/portfolios/{id}/modules/{module}`) shows the saved holdings per
+symbol and runs one module for one holding through the same evaluation as
+`/api/pip/analysis`; it persists nothing and needs no migration. See the
+[module runner guide](MODULE_RUNNER.md). The browser page
 uses the signed-in Supabase access token only for API requests; its configured API
 URL is stored locally and never contains credentials. Flex tokens and Query IDs
 are submitted only to the API and saved through restricted Vault RPCs; the API

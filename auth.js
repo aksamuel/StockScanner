@@ -543,6 +543,7 @@ function addNavigationDrawer(user) {
     ["My lists", "My bought list", "my-bought-selection.html"],
     ["My lists", "Portfolio analysis", "portfolio-analysis.html"],
     ["Portfolio intelligence", "PIP review workbench", "portfolio-intelligence.html"],
+    ["Portfolio intelligence", "PIP module runner", "pip-modules.html"],
     ["Support", "Help & FAQ", "help.html"],
   ];
   if (isAdmin) {

@@ -114,6 +114,17 @@ rather than read as 0. To save a CPS and get a confirmed verdict, analyze that
 holding and enter dividends received. See [Scoring](SCORING.md#portfolio-review)
 for the exact rules.
 
+## How do I see my saved portfolio and run one module at a time?
+
+Open **Menu → Portfolio intelligence → PIP module runner** and sign in. It lists the
+holdings saved by your CSV import or Flex sync, then lets you pick a holding and
+press a button for any one module: lifecycle, return hurdle, dead money, dividends,
+growth, forward-looking, opportunity cost, CPS, sell score, replacements or sell
+advisor. It is read-only: it saves nothing, fetches no prices and places no order.
+Its API address can be changed, but the page sends your sign-in token to that
+address, so connect only to a service you run or trust. See
+[Module runner](MODULE_RUNNER.md).
+
 ## Why do Sell Score weights total 115?
 
 That total is in the supplied specification. PIP preserves the specified

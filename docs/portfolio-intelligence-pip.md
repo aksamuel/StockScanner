@@ -214,6 +214,8 @@ API routes:
 | POST | `/api/pip/portfolios/{id}/research` | Load available research for an imported holding |
 | POST | `/api/pip/analysis` | Run modules, persist scores and propose a recommendation |
 | POST | `/api/pip/portfolios/{id}/review` | Rank open holdings against the return hurdle; read-only, saves nothing |
+| GET | `/api/pip/portfolios/{id}/positions` | Per-symbol overview of saved positions; read-only |
+| POST | `/api/pip/portfolios/{id}/modules/{module}` | Run one module for one holding; read-only, answers `"saved": false` |
 | GET | `/api/pip/portfolios/{id}/recommendations` | List portfolio recommendations |
 | GET | `/api/pip/recommendations/{id}/events` | Read the append-only audit history |
 | POST | `/api/pip/recommendations/{id}/transitions` | Record a human workflow transition |
@@ -234,6 +236,17 @@ dead-money and replacement advice for the first `top_n`. It runs only when
 requested, never after an import or sync, and saves nothing. The workbench requires the API's
 `portfolio_review` health marker; see
 [Scoring](pip/SCORING.md#portfolio-review) for the rules and limits.
+
+The module runner page (`pip-modules.html`) lists the saved holdings per symbol
+(`GET /api/pip/portfolios/{id}/positions`) and runs one of eleven modules for one
+holding per button press (`POST /api/pip/portfolios/{id}/modules/{module}`, where
+`module` is `lifecycle`, `hurdle`, `dead_money`, `dividends`, `growth`,
+`forward_looking`, `opportunity_cost`, `cps`, `sell_score`, `replacements` or
+`sell_advisor`). The body is the `/api/pip/analysis` input without `portfolio_id`
+and the module result is computed exactly as in that route, but nothing is saved:
+no score, snapshot, recommendation or audit event is written. The page requires the
+`positions_list` and `module_runner` health markers. See the
+[module runner guide](pip/MODULE_RUNNER.md).
 
 CSV import and Flex sync are both read-only with respect to the broker; no route
 submits an order. Each account is stored with a masked display identifier and a

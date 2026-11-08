@@ -50,6 +50,7 @@
       <nav class="page-nav" aria-label="Application">
         <a href="/StockScanner/index.html">Dashboard</a>
         <a href="/StockScanner/portfolio-analysis.html">Portfolio analysis</a>
+        <a href="/StockScanner/pip-modules.html">Module runner</a>
         <a href="/StockScanner/help.html#portfolio">Help &amp; FAQ</a>
       </nav>
     </header>
@@ -58,6 +59,7 @@
       <h2 id="aboutPip">Portfolio analysis and human review</h2>
       <p>Connect this page to a deployed PIP API to import portfolio files, optionally sync a server-configured IBKR Flex Query, load available Yahoo research and shared market prices, persist portfolio analysis, rank holdings against your required return, and review auditable recommendations. Market facts are displayed with their sources; PIP does not invent score conversions for raw returns.</p>
       <p class="notice"><strong>IBKR sync is read-only; order transmission is disabled.</strong> Live Flex sync works only after the API, Supabase Vault migration, Edge Function, and server-only shared secret are configured. Approval records a human decision; it does not submit an order.</p>
+      <p>To see your saved holdings and run each analysis module one at a time, open the <a href="/StockScanner/pip-modules.html">PIP module runner</a>. It only reads from the API; use this workbench to import, sync, and approve.</p>
       <p><a class="source-link" href="https://github.com/aksamuel/StockScanner/blob/main/docs/pip/FAQ.md">PIP FAQ</a> · <a class="source-link" href="https://github.com/aksamuel/StockScanner/blob/main/docs/pip/ARCHITECTURE.md">Architecture</a> · <a class="source-link" href="https://github.com/aksamuel/StockScanner/blob/main/tests/test_pip_integration.py">PIP tests</a></p>
     </section>
 
@@ -240,6 +242,6 @@
     </section>
   </main>
   <script type="module" src="/StockScanner/auth.js" data-stockscanner-auth></script>
-  <script type="module" src="/StockScanner/pip-dashboard.js?v=review-1" data-stockscanner-pip-api></script>
+  <script type="module" src="/StockScanner/pip-dashboard.js?v=modules-1" data-stockscanner-pip-api></script>
 </body>
 </html>

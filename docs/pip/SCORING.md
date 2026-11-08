@@ -37,6 +37,15 @@ the configurable weights are expressed as percentages or fractions.
 > the weights should be revised in a later release. Change the one
 > `SELL_SCORE_WEIGHTS` mapping if the approved weights change.
 
+> **Open question for maintainer:** Six of the seven Sell Score inputs are defined
+> so that a higher value means a healthier holding (total return, relative
+> performance, revisions, dividend quality, technical health and earnings growth);
+> only opportunity cost points toward selling. Yet `SellAdvisor` reads a score of 65
+> or more as `sell`. The behavior is unchanged and is pinned by
+> `tests/pip/test_decision_pipeline.py`. Decide whether the healthy inputs should be
+> inverted or the advisor thresholds changed before the advisor's `sell` is relied
+> on. The module runner shows this caveat with sell-score and sell-advisor results.
+
 ## Missing data and determinism
 
 Use `calculate_cps_result` or `calculate_sell_score_result` when confidence and
@@ -114,3 +123,16 @@ refuses to review against an API that does not.
 A review result is a prompt for human review, not advice to sell. Approval of a
 recommendation remains a separate, explicit human step that records a decision
 only.
+
+## Module runner
+
+The module runner (`POST /api/pip/portfolios/{id}/modules/{module}`) evaluates one
+holding with the same function as `/api/pip/analysis` and returns one module's
+result, so the scoring rules above apply unchanged. It differs in three ways: it is
+read-only (the response says `"saved": false` and nothing is written), the body
+carries no `portfolio_id` because the route names the portfolio, and a module that
+lacks its inputs answers with what is missing instead of a guess. The API reports
+`"positions_list": 1` and `"module_runner": 1` on `/healthz`, and the page refuses an
+API that does not. Input confidence, the `watch`/`sell`/`partial-sell`/`hold` rules
+and the reasons a verdict is withheld are described in the
+[module runner guide](MODULE_RUNNER.md#reading-a-result).
