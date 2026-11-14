@@ -82,6 +82,15 @@ activity was available for the report period. If history is expected, check
 the section selections and period in IBKR and confirm the PIP connection uses
 the edited query. Enter credentials only in the PIP workbench, never in chat.
 
+If a held position arrives with neither a market value nor a market price, a Flex
+sync or CSV import keeps the update and shows a warning that counts the affected
+positions (for example, "2 of 3") without naming any of them. Returns, the hurdle
+analysis and the portfolio review skip those positions. Add **Mark Price** and
+**Position Value** to the Open Positions section of the Flex Query, or a Market
+Price or Market Value column to the CSV, then sync or import again. Closed
+(zero-quantity) positions are not counted, and a price alone is enough because the
+value is derived from it.
+
 If sync fails, check that the user is approved, the portfolio and connection
 belong to that user, the matching internal keys are configured, and the Flex
 Query returns a complete, current XML statement. Known validation failures

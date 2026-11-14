@@ -16,6 +16,11 @@ escalated -> under_review | approved | rejected | cancelled | expired
 approved -> submitted | escalated | cancelled
 ```
 
+Running an analysis proposes the new recommendation in one audited step, so it
+starts as `proposed`. Nothing in PIP moves it further on its own: `under_review`
+is set only when a person chooses **Begin review** in the workbench (the
+transitions route), and there is no scheduler or expiry job.
+
 Rejected, expired, submitted, and cancelled are terminal states. The legacy
 `submit()` convenience method creates a recommendation and puts it under review;
 it does not submit an order. `mark_submitted()` records an externally completed

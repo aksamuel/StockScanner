@@ -111,6 +111,11 @@ above that holding's score and is not already held in the portfolio.
 - **Opportunity cost** shows a score-based estimate (half the score gap, in score
   points). It is not a return forecast or an amount of money.
 - **Dividend income** covers the trailing 365 days only.
+- **Earnings growth input.** When no earnings growth score is supplied or saved,
+  the capital productivity and sell scores use the growth analysis score. If that
+  score came from revenue growth (alone or blended with earnings growth), the
+  result carries a note saying so. The growth result itself lists which growth
+  data it used.
 - **Forward-looking analysis** is an indicator built from the inputs you supplied,
   not a forecast.
 - **Sell advisor** returns `watch`, `sell`, `partial-sell` or `hold`, checked in
@@ -126,7 +131,9 @@ above that holding's score and is not already held in the portfolio.
   result stays `unavailable` unless the price return already meets the path, and
   dead money cannot be called "not dead money".
 - **No market value.** The import did not provide a market value for at least one
-  lot, so the value and return are withheld and the holding is flagged.
+  lot, so the value and return are withheld and the holding is flagged. The sync or
+  import that saved the positions shows a count-only warning for this, so the cause
+  is visible before you open a module (see the Flex runbook for the fields to add).
 - **No capital productivity inputs.** Replacements, opportunity cost and the sell
   advisor compare against the holding's capital productivity score, which needs at
   least one score input. Type one in, or analyze the holding in the workbench to

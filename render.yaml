@@ -17,3 +17,5 @@ services:
         value: https://aksamuel.github.io,http://127.0.0.1:8001,http://localhost:8001
       - key: PIP_IBKR_ORDER_TRANSMISSION_ENABLED
         value: "false"
+      - key: PIP_API_DOCS_ENABLED
+        value: "false"

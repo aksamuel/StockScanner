@@ -583,6 +583,24 @@ class FlexXMLPortfolioDataSource:
         )
 
 
+def _missing_market_value_warnings(positions: list[PositionRecord]) -> list[str]:
+    """Count held positions with neither a market value nor a market price.
+
+    The warning never names a symbol, account or amount, so it is safe to return to the page.
+    """
+    held = [position for position in positions if position.quantity]
+    missing = sum(1 for position in held if position.market_value is None)
+    if not missing:
+        return []
+    noun = "position" if len(held) == 1 else "positions"
+    return [
+        f"Market value is missing for {missing} of {len(held)} {noun}; returns and the "
+        "portfolio review skip positions without one. Add Mark Price and Position Value to "
+        "the Flex Query's Open Positions section, or a Market Price or Market Value column "
+        "to a CSV, then sync or import again."
+    ]
+
+
 class IBKRPortfolioSyncService:
     """Normalize read-only portfolio sources for the PIP repository."""
 
@@ -740,7 +758,7 @@ class IBKRPortfolioSyncService:
             "positions": positions,
             "transactions": transactions,
             "dividends": dividends,
-            "warnings": data.warnings,
+            "warnings": [*data.warnings, *_missing_market_value_warnings(positions)],
         }
 
     def persist_positions(self, portfolio_id: str, positions: list[PositionRecord]) -> list[PositionRecord]:

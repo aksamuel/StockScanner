@@ -9,6 +9,8 @@ class GrowthAssessment:
     score: float | None
     confidence: float
     reasons: tuple[str, ...]
+    # Which growth rates the score was built from: earnings_and_revenue, earnings_only, revenue_only or none.
+    basis: str = "none"
 
 
 class GrowthAnalysisEngine:
@@ -24,21 +26,26 @@ class GrowthAnalysisEngine:
         earnings_growth_percent: float | None = None,
         revenue_growth_percent: float | None = None,
     ) -> GrowthAssessment:
-        values: list[float] = []
-        for value in (earnings_growth_percent, revenue_growth_percent):
+        rates: dict[str, float] = {}
+        for name, value in (("earnings", earnings_growth_percent), ("revenue", revenue_growth_percent)):
             try:
                 numeric_value = float(value) if value is not None else None
             except (TypeError, ValueError):
                 numeric_value = None
             if numeric_value is not None and isfinite(numeric_value):
-                values.append(numeric_value)
-        if not values:
-            return GrowthAssessment(None, 0.0, ("Earnings and revenue growth data are missing.",))
+                rates[name] = numeric_value
+        if not rates:
+            return GrowthAssessment(None, 0.0, ("Earnings and revenue growth data are missing.",), "none")
 
         scores = [
-            max(0.0, min(100.0, 50.0 + 50.0 * float(value) / self.saturation_percent))
-            for value in values
+            max(0.0, min(100.0, 50.0 + 50.0 * value / self.saturation_percent))
+            for value in rates.values()
         ]
-        missing = len(values) < 2
-        reasons = ("Revenue or earnings growth data is missing; confidence is reduced.",) if missing else ()
-        return GrowthAssessment(sum(scores) / len(scores), len(values) / 2, reasons)
+        score = sum(scores) / len(scores)
+        if len(rates) == 2:
+            return GrowthAssessment(score, 1.0, (), "earnings_and_revenue")
+        if "earnings" in rates:
+            reason = "Revenue growth data is missing; the score uses earnings growth only and confidence is reduced."
+            return GrowthAssessment(score, 0.5, (reason,), "earnings_only")
+        reason = "Earnings growth data is missing; the score uses revenue growth only and confidence is reduced."
+        return GrowthAssessment(score, 0.5, (reason,), "revenue_only")

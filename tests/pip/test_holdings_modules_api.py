@@ -1093,6 +1093,87 @@ def test_the_growth_module_scores_supplied_growth_rates(monkeypatch):
     assert none["reasons"] == ["Earnings and revenue growth data are missing."]
 
 
+def test_the_growth_module_names_the_inputs_its_score_used(monkeypatch):
+    fake = Client()
+    _standard_portfolio(fake)
+    app = _app(monkeypatch, fake)
+
+    both = _result(app, "growth", {"symbol": "AAA", "growth": {"earnings_growth_percent": 20, "revenue_growth_percent": 10}})
+    earnings = _result(app, "growth", {"symbol": "AAA", "growth": {"earnings_growth_percent": 20}})
+    revenue = _result(app, "growth", {"symbol": "AAA", "growth": {"revenue_growth_percent": 20}})
+    none = _result(app, "growth")
+
+    assert [item["basis"] for item in (both, earnings, revenue, none)] == [
+        "earnings_and_revenue", "earnings_only", "revenue_only", "none",
+    ]
+    assert earnings["reasons"] == [
+        "Revenue growth data is missing; the score uses earnings growth only and confidence is reduced."
+    ]
+    assert revenue["reasons"] == [
+        "Earnings growth data is missing; the score uses revenue growth only and confidence is reduced."
+    ]
+
+
+@pytest.mark.parametrize("module", ["cps", "sell_score"])
+def test_a_score_that_borrows_revenue_growth_says_so(monkeypatch, module):
+    fake = Client()
+    _standard_portfolio(fake)
+
+    result = _result(
+        _app(monkeypatch, fake),
+        module,
+        {"symbol": "AAA", "growth": {"revenue_growth_percent": 10}},
+    )
+
+    assert result["component_scores"] == {"earnings_growth": 75.0}
+    assert result["earnings_growth_input"] == {"source": "growth_analysis", "basis": "revenue_only"}
+
+
+@pytest.mark.parametrize(
+    ("saved", "body", "expected_score", "expected_input"),
+    [
+        (
+            None,
+            {"scores": {"earnings_growth": 40}, "growth": {"revenue_growth_percent": 10}},
+            40,
+            {"source": "request", "basis": None},
+        ),
+        (
+            30,
+            {"growth": {"revenue_growth_percent": 10}},
+            30,
+            {"source": "saved_score", "basis": None},
+        ),
+        (
+            None,
+            {"growth": {"earnings_growth_percent": 20, "revenue_growth_percent": 10}},
+            87.5,
+            {"source": "growth_analysis", "basis": "earnings_and_revenue"},
+        ),
+        (
+            None,
+            {"growth": {"earnings_growth_percent": 20}},
+            100.0,
+            {"source": "growth_analysis", "basis": "earnings_only"},
+        ),
+        (None, {}, None, {"source": "unavailable", "basis": None}),
+    ],
+    ids=["request", "saved-score", "earnings-and-revenue", "earnings-only", "unavailable"],
+)
+def test_the_earnings_growth_input_reports_where_it_came_from(
+    monkeypatch, saved, body, expected_score, expected_input
+):
+    fake = Client()
+    _standard_portfolio(fake)
+    if saved is not None:
+        fake.data["stock_scores"].append(_stored_score("AAA", earnings_growth=saved))
+
+    result = _result(_app(monkeypatch, fake), "cps", {"symbol": "AAA", **body})
+
+    assert result["component_scores"].get("earnings_growth") == expected_score
+    assert result["earnings_growth_input"] == expected_input
+
+
 def test_the_forward_looking_module_uses_supplied_outlook_inputs(monkeypatch):
     fake = Client()
     _standard_portfolio(fake)

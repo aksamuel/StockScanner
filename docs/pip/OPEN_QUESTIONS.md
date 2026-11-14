@@ -8,6 +8,21 @@
   yet the Sell Advisor reads a score of 65 or more as `sell`. This is unchanged and
   pinned by tests; confirm the intended direction before relying on the advisor's
   `sell`. See `SCORING.md`.
+- **Revenue growth as earnings growth:** when no earnings growth score is supplied
+  or saved, the capital productivity and sell scores use the growth analysis score,
+  which averages earnings and revenue growth and falls back to revenue growth
+  alone. Results now say which data they used (`earnings_growth_input`), but the
+  substitution itself is unchanged. Decide whether revenue-only growth should fill
+  the earnings growth component at all or leave it missing. See `SCORING.md`.
+- **Dividends in the hurdle and portfolio review:** both use only the **Dividends
+  received** input, never stored dividend history, because stored history can be
+  incomplete (a positions-only sync imports none, and a Flex statement covers a
+  limited period that PIP does not record). A dividends-aware version would add
+  stored dividends only where the imported statement period is known to cover the
+  whole holding period (entry date to today), and would otherwise stay price-only
+  and say why. It also needs the Flex Query's Cash Transactions section. Not
+  implemented; confirm that rule, and how partial history should be shown, before
+  building it.
 - **Portfolio policy:** confirm default review thresholds, replacement minimum
   score gap, and concentration cap before making recommendations user-facing.
 - **Data cadence:** confirm how often CSV/Flex imports and historical snapshots

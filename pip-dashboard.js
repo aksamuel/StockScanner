@@ -965,7 +965,8 @@ if (typeof document !== "undefined") {
         `/api/pip/portfolios/${encodeURIComponent(portfolioId)}/sync/csv${query}`,
         { method: "POST", body: csvText, contentType: "text/csv" },
       );
-      output.textContent = `Saved ${imported.counts.positions} positions, ${imported.counts.transactions} transactions, ${imported.counts.dividends} dividends, and ${imported.counts.accounts} masked accounts to Supabase.`;
+      const warning = imported.warnings?.length ? ` ${imported.warnings.join(" ")}` : "";
+      output.textContent = `Saved ${imported.counts.positions} positions, ${imported.counts.transactions} transactions, ${imported.counts.dividends} dividends, and ${imported.counts.accounts} masked accounts to Supabase.${warning}`;
     } catch (error) {
       output.textContent = error.message || "CSV import failed.";
     } finally {

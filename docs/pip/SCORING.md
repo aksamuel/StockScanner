@@ -66,6 +66,21 @@ events in the trailing 365-day window. If the events have no usable dates, incom
 and yield are unavailable rather than treating an arbitrary multi-period sum as
 annualized.
 
+Earnings growth is filled from the first of these that exists: the
+`scores.earnings_growth` value in the request, the latest saved
+`stock_scores.earnings_growth`, then the growth analysis score. The growth
+analysis averages whichever of earnings growth and revenue growth was supplied
+(each mapped from −20% … +20% onto 0–100) and halves its confidence when one of
+the two is missing. With only revenue growth, the "earnings growth" component is
+therefore a revenue growth score. Analysis and module-runner responses say which
+happened in `earnings_growth_input`: `source` is `request`, `saved_score`,
+`growth_analysis` or `unavailable`, and `basis` (set only for `growth_analysis`)
+is `earnings_and_revenue`, `earnings_only` or `revenue_only`. The growth module
+reports the same fields plus its own `basis`, and the record is saved in
+`stock_scores.metadata.modules.growth`. A saved score may itself have come from an
+earlier analysis; that analysis's metadata says which data it used. The
+substitution itself is unchanged; see [Open questions](OPEN_QUESTIONS.md).
+
 ## Return hurdle and dead money
 
 The return hurdle compares what a holding has earned since entry with an annual

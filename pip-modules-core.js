@@ -21,6 +21,10 @@ const UNEXPECTED_RESPONSE = "The API returned an unexpected response, so no resu
 const SELL_DIRECTION_CAVEAT = "Most of these inputs rise as a holding gets healthier, yet scores of 65 or more are read as 'sell'. That direction is an open question, so treat this result as unverified.";
 const OPPORTUNITY_CAVEAT = "Estimated benefit is a score-based estimate (half of the score gap, in score points). It is not a return forecast or an amount of money.";
 const FORWARD_CAVEAT = "An indicator built from the inputs you supplied, not a forecast.";
+const GROWTH_ANALYSIS_BASES = new Map([
+  ["revenue_only", "revenue growth only"],
+  ["earnings_and_revenue", "a blend of earnings and revenue growth"],
+]);
 const REPLACEMENT_RULE = "Candidates are listed only when they score above this holding's capital productivity score and are not already held in this portfolio.";
 
 // Keep these ids in the same order as ModuleName in stockscanner/pip/api.py; a Python test compares them.
@@ -392,11 +396,22 @@ function describeWeightedScore(result, label) {
 }
 
 function describeCps(result) {
-  return describeWeightedScore(result, "Capital productivity score");
+  return { ...describeWeightedScore(result, "Capital productivity score"), caveats: earningsGrowthCaveats(result) };
 }
 
 function describeSellScore(result) {
-  return { ...describeWeightedScore(result, "Sell confidence score"), caveats: [SELL_DIRECTION_CAVEAT] };
+  return {
+    ...describeWeightedScore(result, "Sell confidence score"),
+    caveats: [SELL_DIRECTION_CAVEAT, ...earningsGrowthCaveats(result)],
+  };
+}
+
+// The API fills a missing earnings growth input from the growth analysis. Say so unless that was earnings growth alone.
+function earningsGrowthCaveats(result) {
+  const input = isObject(result.earnings_growth_input) ? result.earnings_growth_input : {};
+  const basis = input.source === "growth_analysis" ? GROWTH_ANALYSIS_BASES.get(input.basis) : undefined;
+  if (!basis) return [];
+  return [`The earnings growth input was not supplied, so it was taken from the growth analysis, which used ${basis}.`];
 }
 
 function describeReplacements(result) {

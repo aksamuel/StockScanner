@@ -6,6 +6,7 @@ import pytest
 from stockscanner.pip.ibkr_sync import (
     account_fingerprint,
     CSVPortfolioDataSource,
+    FixturePortfolioDataSource,
     FlexXMLPortfolioDataSource,
     IBKRPortfolioSyncService,
     MAX_FLEX_XML_BYTES,
@@ -467,3 +468,89 @@ def test_csv_positions_from_accounts_with_the_same_mask_remain_distinct():
     assert first.accounts[0]["masked_account_id"] == second.accounts[0]["masked_account_id"]
     assert first.positions[0]["source_key"] != second.positions[0]["source_key"]
     assert first.positions[0]["account_fingerprint"] != second.positions[0]["account_fingerprint"]
+
+
+def _sync_warnings(source) -> list[str]:
+    return IBKRPortfolioSyncService().sync(source, PORTFOLIO_ID)["warnings"]
+
+
+def test_a_sync_counts_positions_without_a_market_value_and_names_none_of_them():
+    csv_text = (
+        "Symbol,Quantity,AverageCost,MarketValue,Currency\n"
+        "AAA,10,5,60,USD\n"
+        "BBB,2,7,,USD\n"
+        "CCC,3,9,,USD\n"
+    )
+
+    warnings = _sync_warnings(CSVPortfolioDataSource(io.StringIO(csv_text)))
+
+    assert len(warnings) == 1
+    assert warnings[0].startswith("Market value is missing for 2 of 3 positions;")
+    assert "Mark Price and Position Value" in warnings[0]
+    assert "Market Price or Market Value" in warnings[0]
+    assert all(symbol not in warnings[0] for symbol in ("AAA", "BBB", "CCC"))
+
+
+@pytest.mark.parametrize(
+    "csv_text",
+    [
+        "Symbol,Quantity,AverageCost,MarketPrice,Currency\nAAA,10,5,6,USD\n",
+        "Symbol,Quantity,AverageCost,MarketValue,Currency\nAAA,10,5,60,USD\n",
+        "Symbol,Quantity,AverageCost,MarketValue,Currency\nAAA,10,5,0,USD\n",
+    ],
+)
+def test_a_market_price_or_a_market_value_is_enough_to_raise_no_warning(csv_text):
+    assert _sync_warnings(CSVPortfolioDataSource(io.StringIO(csv_text))) == []
+
+
+def test_the_missing_market_value_warning_is_singular_for_one_position():
+    csv_text = "Symbol,Quantity,AverageCost,Currency\nAAA,10,5,USD\n"
+
+    [warning] = _sync_warnings(CSVPortfolioDataSource(io.StringIO(csv_text)))
+
+    assert warning.startswith("Market value is missing for 1 of 1 position;")
+
+
+def test_closed_positions_are_not_counted_as_missing_a_market_value():
+    source = FixturePortfolioDataSource({"positions": [
+        {"symbol": "AAA", "quantity": 10, "market_value": 60},
+        {"symbol": "BBB", "quantity": 0},
+    ]})
+
+    assert _sync_warnings(source) == []
+
+
+def test_a_short_position_without_a_market_value_counts_as_held_and_missing():
+    csv_text = "Symbol,Quantity,AverageCost,Currency\nAAA,-5,10,USD\n"
+
+    [warning] = _sync_warnings(CSVPortfolioDataSource(io.StringIO(csv_text)))
+
+    assert warning.startswith("Market value is missing for 1 of 1 position;")
+
+
+def test_a_flex_sync_adds_the_missing_market_value_warning_after_the_history_warnings():
+    priced = _position("BBB", 1).replace(" />", ' markPrice="12" />')
+    xml = (
+        f'<FlexQueryResponse><FlexStatement accountId="{ACCOUNT_ONE}" currency="USD" '
+        'toDate="20250131"><OpenPositions>'
+        + _position("AAA", 5)
+        + priced
+        + "</OpenPositions><CashTransactions /></FlexStatement></FlexQueryResponse>"
+    )
+
+    warnings = _sync_warnings(FlexXMLPortfolioDataSource(xml))
+
+    assert len(warnings) == 2
+    assert "No Trades section" in warnings[0]
+    assert warnings[1].startswith("Market value is missing for 1 of 2 positions;")
+    assert ACCOUNT_ONE not in " ".join(warnings)
+
+
+def test_a_positions_only_flex_sync_also_reports_missing_market_values():
+    xml = _position_statement(ACCOUNT_ONE, "20250131", _position("AAA", 5))
+
+    warnings = _sync_warnings(FlexXMLPortfolioDataSource(xml, positions_only=True))
+
+    assert len(warnings) == 2
+    assert "Positions-only" in warnings[0]
+    assert warnings[1].startswith("Market value is missing for 1 of 1 position;")

@@ -193,7 +193,9 @@ server-side key for restricted Vault RPCs. After installing `requirements.txt`, 
 HTTPS. Then open the Portfolio Intelligence page; its API URL defaults to
 `https://stockscanner-pip-api.onrender.com` and can be changed for another
 deployment. Sign in, select **Connect and load portfolios**, and verify the
-authenticated connection. Details and routes are in
+authenticated connection. The interactive API docs (`/docs`, `/redoc`) and
+`/openapi.json` are disabled by default; set `PIP_API_DOCS_ENABLED=true` only for
+local inspection. Details and routes are in
 [docs/portfolio-intelligence-pip.md](docs/portfolio-intelligence-pip.md).
 To look at saved holdings and run the analysis modules one at a time, open the
 read-only [module runner](docs/pip/MODULE_RUNNER.md) instead.

@@ -478,6 +478,52 @@ test("the sell confidence score notes its weights, hints at missing inputs, and 
   assert.match(description.caveats[0], /scores of 65 or more are read as 'sell'.*open question/);
 });
 
+const GROWTH_ANALYSIS_NOTE = "The earnings growth input was not supplied, so it was taken from the growth analysis, which used";
+
+test("a score that took its earnings growth from the growth analysis says which growth data that used", () => {
+  const cps = {
+    score: 66,
+    confidence: 0.6,
+    weights: { tsr: 40, relative_performance: 20, dividend_growth: 15, earnings_growth: 15, analyst_revisions: 10 },
+    component_scores: { tsr: 72, earnings_growth: 75 },
+    missing_components: ["relative_performance", "dividend_growth", "analyst_revisions"],
+    reasons: [],
+  };
+  const from = (basis) => ({ earnings_growth_input: { source: "growth_analysis", basis } });
+  const revenueOnly = `${GROWTH_ANALYSIS_NOTE} revenue growth only.`;
+  const blend = `${GROWTH_ANALYSIS_NOTE} a blend of earnings and revenue growth.`;
+
+  assert.deepEqual(describe("cps", { ...cps, ...from("revenue_only") }).caveats, [revenueOnly]);
+  assert.deepEqual(describe("cps", { ...cps, ...from("earnings_and_revenue") }).caveats, [blend]);
+
+  const sell = describe("sell_score", { ...cps, ...from("revenue_only") }).caveats;
+  assert.equal(sell.length, 2);
+  assert.match(sell[0], /scores of 65 or more are read as 'sell'.*open question/);
+  assert.equal(sell[1], revenueOnly);
+});
+
+test("no growth note is shown when the earnings growth input was supplied, saved, earnings-only or unknown", () => {
+  const cps = { score: 66, confidence: 0.6, weights: { tsr: 40 }, component_scores: { tsr: 72 }, missing_components: [], reasons: [] };
+  const inputs = [
+    { source: "request", basis: null },
+    { source: "saved_score", basis: null },
+    { source: "unavailable", basis: null },
+    { source: "growth_analysis", basis: "earnings_only" },
+    { source: "growth_analysis", basis: "none" },
+    { source: "growth_analysis", basis: null },
+    { source: "growth_analysis", basis: "something_new" },
+    { source: "request", basis: "revenue_only" },
+    "growth_analysis",
+    null,
+    [],
+  ];
+  for (const earnings_growth_input of inputs) {
+    assert.deepEqual(describe("cps", { ...cps, earnings_growth_input }).caveats, [], JSON.stringify(earnings_growth_input));
+  }
+  assert.deepEqual(describe("cps", cps).caveats, []);
+  assert.equal(describe("sell_score", { ...cps, earnings_growth_input: inputs[0] }).caveats.length, 1);
+});
+
 test("unknown score components and malformed score parts are handled", () => {
   const description = describe("cps", {
     score: 10, confidence: 1, weights: { new_thing: 100, bad: "x" }, component_scores: { new_thing: "nope" }, missing_components: ["new_thing", 5, ""], reasons: [],

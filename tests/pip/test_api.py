@@ -288,6 +288,50 @@ def test_pip_api_cors_is_restricted_to_configured_browser_origin():
     assert response.headers["access-control-allow-origin"] == "https://app.example.test"
 
 
+DOC_PATHS = ("/docs", "/redoc", "/openapi.json")
+
+
+def _docs_client(**extra_settings):
+    def no_database(url, key):
+        raise AssertionError("The API documentation must not reach the database.")
+
+    app = create_app(
+        client_factory=no_database,
+        environ={
+            "SUPABASE_URL": "https://project.example.test",
+            "SUPABASE_PUBLISHABLE_KEY": "public-test-key",
+            **extra_settings,
+        },
+    )
+    return TestClient(app)
+
+
+@pytest.mark.parametrize("path", DOC_PATHS)
+def test_the_public_api_docs_are_off_by_default(path):
+    assert _docs_client().get(path).status_code == 404
+
+
+@pytest.mark.parametrize("value", ["", "0", "false", "off", "no", "enabled", "2"])
+def test_only_an_explicit_on_value_enables_the_api_docs(value):
+    client = _docs_client(PIP_API_DOCS_ENABLED=value)
+    for path in DOC_PATHS:
+        assert client.get(path).status_code == 404, path
+
+
+@pytest.mark.parametrize("value", ["1", "true", "TRUE", "Yes", " on "])
+def test_the_api_docs_can_be_switched_on_for_local_inspection(value):
+    client = _docs_client(PIP_API_DOCS_ENABLED=value)
+    for path in DOC_PATHS:
+        assert client.get(path).status_code == 200, path
+    assert client.get("/openapi.json").json()["info"]["title"] == "StockScanner Portfolio Intelligence API"
+
+
+def test_turning_the_api_docs_off_leaves_health_and_the_auth_gate_alone():
+    client = _docs_client()
+    assert client.get("/healthz").json()["service"] == "pip"
+    assert client.get("/api/pip/portfolios").status_code == 401
+
+
 def test_csv_sync_keeps_same_masked_accounts_distinct_and_hides_internal_keys():
     fake = PipelineClient()
     app = create_app(
@@ -328,6 +372,47 @@ def test_csv_sync_keeps_same_masked_accounts_distinct_and_hides_internal_keys():
     assert len({row["source_key"] for row in dividend_rows}) == 2
     assert "U12340000" not in repr(transaction_rows + dividend_rows)
     assert "U99990000" not in repr(transaction_rows + dividend_rows)
+
+
+def _csv_sync(csv_content: str):
+    fake = PipelineClient()
+    app = create_app(
+        client_factory=lambda url, key: fake,
+        environ={
+            "SUPABASE_URL": "https://project.example.test",
+            "SUPABASE_PUBLISHABLE_KEY": "public-test-key",
+        },
+    )
+    return TestClient(app).post(
+        f"/api/pip/portfolios/{fake.portfolio_id}/sync/csv",
+        headers={"Authorization": "Bearer " + "user-access-token", "Content-Type": "text/csv"},
+        content=csv_content,
+    )
+
+
+def test_csv_sync_warns_how_many_positions_have_no_market_value_without_naming_them():
+    response = _csv_sync(
+        "Symbol,Quantity,AverageCost,MarketValue,Currency\n"
+        "AAPL,1,100,120,USD\n"
+        "MSFT,1,100,,USD\n"
+    )
+
+    assert response.status_code == 200, response.text
+    warnings = response.json()["warnings"]
+    assert len(warnings) == 1
+    assert warnings[0].startswith("Market value is missing for 1 of 2 positions;")
+    assert "AAPL" not in warnings[0]
+    assert "MSFT" not in warnings[0]
+
+
+def test_csv_sync_returns_no_warnings_when_every_position_has_a_market_value():
+    response = _csv_sync(
+        "Symbol,Quantity,AverageCost,MarketPrice,Currency\n"
+        "AAPL,1,100,120,USD\n"
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["warnings"] == []
 
 
 def test_research_api_requires_an_imported_holding_and_uses_shared_price_snapshot():
@@ -461,6 +546,63 @@ def test_analysis_api_runs_modules_and_persists_score_and_proposed_recommendatio
     )
     assert fake.rpc_calls[0][0] == "pip_transition_sell_recommendation"
     assert fake.rpc_calls[0][1]["p_expected_status"] is None
+
+
+def test_analysis_records_which_growth_inputs_fed_the_earnings_growth_score():
+    fake = PipelineClient()
+    app = create_app(
+        client_factory=lambda url, key: fake,
+        environ={
+            "SUPABASE_URL": "https://project.example.test",
+            "SUPABASE_PUBLISHABLE_KEY": "public-test-key",
+        },
+    )
+
+    response = TestClient(app).post(
+        "/api/pip/analysis",
+        headers={"Authorization": "Bearer " + "user-access-token"},
+        json={
+            "portfolio_id": fake.portfolio_id,
+            "symbol": "AAPL",
+            "growth": {"revenue_growth_percent": 10},
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    provenance = {"source": "growth_analysis", "basis": "revenue_only"}
+    growth = response.json()["modules"]["growth"]
+    assert growth["basis"] == "revenue_only"
+    assert growth["earnings_growth_input"] == provenance
+    stored = next(rows for table, rows in fake.writes if table == "stock_scores")[0]
+    assert stored["earnings_growth"] == 75
+    assert stored["metadata"]["modules"]["growth"]["earnings_growth_input"] == provenance
+
+
+def test_analysis_proposes_the_recommendation_once_and_never_starts_a_review():
+    fake = PipelineClient()
+    app = create_app(
+        client_factory=lambda url, key: fake,
+        environ={
+            "SUPABASE_URL": "https://project.example.test",
+            "SUPABASE_PUBLISHABLE_KEY": "public-test-key",
+        },
+    )
+
+    response = TestClient(app).post(
+        "/api/pip/analysis",
+        headers={"Authorization": "Bearer " + "user-access-token"},
+        json={"portfolio_id": fake.portfolio_id, "symbol": "AAPL"},
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["recommendation"]["status"] == "proposed"
+    inserted = next(rows for table, rows in fake.writes if table == "sell_recommendations")
+    assert [row["status"] for row in inserted] == ["draft"]
+    # Only a person's "Begin review" request may take a recommendation to under_review.
+    assert [
+        (name, params["p_expected_status"], params["p_next_status"])
+        for name, params in fake.rpc_calls
+    ] == [("pip_transition_sell_recommendation", None, "proposed")]
 
 
 def test_analysis_keeps_opportunity_cost_unavailable_when_current_cps_is_missing():
@@ -1249,6 +1391,39 @@ def test_flex_sync_preserves_history_and_timestamp_warnings():
     assert "Trades section" in payload["warnings"][0]
     assert "Cash Transactions section" in payload["warnings"][1]
     assert "last-sync timestamp" in payload["warnings"][2]
+    assert "U1234567" not in response.text
+
+
+def test_flex_sync_warns_when_open_positions_carry_no_market_value():
+    fake = PipelineClient()
+    app = create_app(
+        client_factory=lambda url, key: fake,
+        environ={
+            "SUPABASE_URL": "https://project.example.test",
+            "SUPABASE_PUBLISHABLE_KEY": "public-test-key",
+        },
+        flex_edge_invoker=lambda user, payload: {
+            "statement_xml": (
+                '<FlexQueryResponse><FlexStatement accountId="U1234567" '
+                'currency="USD" toDate="20250131"><OpenPositions>'
+                '<OpenPosition assetCategory="STK" accountId="U1234567" currency="USD" '
+                'symbol="AAPL" position="2" costBasisPrice="100" />'
+                "</OpenPositions><Trades /><CashTransactions /></FlexStatement></FlexQueryResponse>"
+            )
+        },
+    )
+
+    response = TestClient(app).post(
+        f"/api/pip/portfolios/{fake.portfolio_id}/ibkr-flex-connections/{fake.connection_id}/sync",
+        headers={"Authorization": "Bearer " + "test-access-token"},
+        json={"confirm_unfiltered": True},
+    )
+
+    assert response.status_code == 200, response.text
+    warnings = response.json()["warnings"]
+    assert len(warnings) == 1
+    assert warnings[0].startswith("Market value is missing for 1 of 1 position;")
+    assert "AAPL" not in warnings[0]
     assert "U1234567" not in response.text
 
 

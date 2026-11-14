@@ -380,6 +380,8 @@ class HoldingEvaluation:
     forward_target_upside: float | None
     forward_revision_score: float | None
     held_symbols: set[str]
+    # Where the earnings-growth score input came from: {"source": ..., "basis": ...}.
+    earnings_growth_input: dict[str, str | None]
 
 
 def _response_data(response: Any, message: str) -> Any:
@@ -434,7 +436,11 @@ def _public_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _scoring_module_result(result: ScoringResult, weights: dict[str, float]) -> dict[str, Any]:
+def _scoring_module_result(
+    result: ScoringResult,
+    weights: dict[str, float],
+    earnings_growth_input: dict[str, str | None],
+) -> dict[str, Any]:
     return {
         "score": result.score,
         "confidence": result.confidence,
@@ -442,6 +448,7 @@ def _scoring_module_result(result: ScoringResult, weights: dict[str, float]) -> 
         "component_scores": dict(result.component_scores),
         "weights": dict(weights),
         "missing_components": [name for name in weights if name not in result.component_scores],
+        "earnings_growth_input": dict(earnings_growth_input),
     }
 
 
@@ -501,11 +508,16 @@ def _module_result(
     if module in evaluation.module_assessments:
         return evaluation.module_assessments[module]
     if module == "cps":
-        return _scoring_module_result(evaluation.cps_result, CPS_WEIGHTS)
+        return _scoring_module_result(
+            evaluation.cps_result,
+            CPS_WEIGHTS,
+            evaluation.earnings_growth_input,
+        )
     if module == "sell_score":
         return _scoring_module_result(
             calculate_sell_score_result(evaluation.components),
             SELL_SCORE_WEIGHTS,
+            evaluation.earnings_growth_input,
         )
     return _advice_module_result(module, portfolio_id, body, evaluation)
 
@@ -519,10 +531,15 @@ def create_app(
 ) -> FastAPI:
     settings = os.environ if environ is None else environ
     fetch_research = research_fetcher or collect_research_data
+    docs_enabled = settings.get("PIP_API_DOCS_ENABLED", "").strip().lower() in {"1", "true", "yes", "on"}
     app = FastAPI(
         title="StockScanner Portfolio Intelligence API",
         version="1.0.0",
         description="Authenticated portfolio analytics and human approval workflow. No order transmitter is available.",
+        # The interactive docs publish every route and field, so they stay off unless opted in.
+        docs_url="/docs" if docs_enabled else None,
+        redoc_url="/redoc" if docs_enabled else None,
+        openapi_url="/openapi.json" if docs_enabled else None,
     )
     origins = [
         origin.strip()
@@ -775,6 +792,7 @@ def create_app(
                     "transactions": len(result["transactions"]),
                     "dividends": len(result["dividends"]),
                 },
+                "warnings": list(result["warnings"]),
             }
 
         try:
@@ -1122,8 +1140,20 @@ def create_app(
         for component, stored_value in stored_scores.items():
             if components.get(component) is None:
                 components[component] = stored_value
-        if components["earnings_growth"] is None:
+        if body.scores.earnings_growth is not None:
+            earnings_growth_source = "request"
+        elif components["earnings_growth"] is not None:
+            # A saved score may itself have been derived by an earlier run; that run's metadata says how.
+            earnings_growth_source = "saved_score"
+        elif growth.score is not None:
             components["earnings_growth"] = growth.score
+            earnings_growth_source = "growth_analysis"
+        else:
+            earnings_growth_source = "unavailable"
+        earnings_growth_input = {
+            "source": earnings_growth_source,
+            "basis": growth.basis if earnings_growth_source == "growth_analysis" else None,
+        }
         if components["dividend_growth"] is None:
             components["dividend_growth"] = DividendAnalysisEngine().growth_score(
                 body.dividends.dividend_growth_rate
@@ -1197,7 +1227,7 @@ def create_app(
             "hurdle": asdict(hurdle),
             "dead_money": asdict(dead_money),
             "dividends": dividend,
-            "growth": asdict(growth),
+            "growth": {**asdict(growth), "earnings_growth_input": dict(earnings_growth_input)},
             "forward_looking": asdict(forward),
             "opportunity_cost": {
                 "available": cps_result.score is not None,
@@ -1238,6 +1268,7 @@ def create_app(
             forward_target_upside=forward_target_upside,
             forward_revision_score=forward_revision_score,
             held_symbols=held_symbols,
+            earnings_growth_input=earnings_growth_input,
         )
 
     @app.post("/api/pip/analysis")

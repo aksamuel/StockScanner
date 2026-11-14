@@ -120,6 +120,9 @@ before the Flex Vault migration. Configure the API host with:
 - `PIP_CORS_ORIGINS`, a comma-separated exact allowlist of browser origins
 - `PIP_FLEX_INTERNAL_KEY`, a random server-only value of at least 32 characters
 - Optional `PIP_API_HOST` and `PIP_API_PORT` (defaults `127.0.0.1:8000`)
+- Optional `PIP_API_DOCS_ENABLED`; the interactive docs (`/docs`, `/redoc`) and
+  `/openapi.json` are off unless this is `1`, `true`, `yes` or `on`. They list
+  every route and field, so leave them off on a public host.
 
 Start the service with `stockscanner-pip-api` (or
 `python -m uvicorn stockscanner.pip.api:app`). Put it behind HTTPS before
