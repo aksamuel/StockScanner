@@ -316,6 +316,7 @@ class SupabasePortfolioRepository(PortfolioRepository):
                     }
                     for candidate in recommendation.replacement_candidates
                 ],
+                "sell_score_direction": recommendation.sell_score_direction,
             },
         }
         if recommendation.created_at is not None:

@@ -82,8 +82,11 @@ the caller's RLS-scoped client, writes nothing, and needs no migration. A read-o
 module runner (`holdings.py`, `GET /api/pip/portfolios/{id}/positions` and
 `POST /api/pip/portfolios/{id}/modules/{module}`) shows the saved holdings per
 symbol and runs one module for one holding through the same evaluation as
-`/api/pip/analysis`; it persists nothing and needs no migration. See the
-[module runner guide](MODULE_RUNNER.md). The browser page
+`/api/pip/analysis`; it persists nothing and needs no migration. One more
+read-only route, `POST /api/pip/portfolios/{id}/research` (`research.py`,
+`research_scores.py`), sends only a holding's ticker to Yahoo and returns the
+market numbers and 0-100 research scores the page can fill in; it stores
+nothing. See the [module runner guide](MODULE_RUNNER.md). The browser page
 uses the signed-in Supabase access token only for API requests; its configured API
 URL is stored locally and never contains credentials. Flex tokens and Query IDs
 are submitted only to the API and saved through restricted Vault RPCs; the API

@@ -1,5 +1,6 @@
 // DOM wiring for pip-modules.html: connect to a PIP API, list the saved holdings and run one analysis module per click.
 // The page only reads. It never calls the import, sync, saving-analysis or approval routes and never places orders.
+// Its one lookup beyond saved data is the research request, which sends a ticker symbol to public data providers and stores nothing.
 import { PIP_DEFAULT_API_URL, normalizePipApiUrl, pipApiErrorMessage, pluralize } from "./pip-shared.js";
 import {
   CONFIDENCE_NOTE,
@@ -13,6 +14,8 @@ import {
   describeHoldingsTotals,
   describeModuleResult,
   describePortfolio,
+  describeResearchLoad,
+  describeResearchProvenance,
   fieldInputId,
   fieldKey,
   filterHoldings,
@@ -20,6 +23,8 @@ import {
   holdingInputHints,
   parseHoldingsResponse,
   parsePortfolioList,
+  parseResearchResponse,
+  unchangedResearchInputs,
 } from "./pip-modules-core.js";
 
 const API_URL_KEY = "stockscanner-pip-api-url";
@@ -58,6 +63,9 @@ function startModulePage() {
   const selectedHeading = document.querySelector("#moduleSelected");
   const selectedFacts = document.querySelector("#moduleSelectedFacts");
   const hintList = document.querySelector("#moduleHints");
+  const researchButton = document.querySelector("#moduleResearch");
+  const researchStatus = document.querySelector("#moduleResearchStatus");
+  const researchNotes = document.querySelector("#moduleResearchNotes");
   const inputsDetails = document.querySelector("#moduleInputs");
   const inputGroups = document.querySelector("#moduleInputGroups");
   const confidenceNote = document.querySelector("#moduleConfidenceNote");
@@ -78,11 +86,16 @@ function startModulePage() {
 
   const session = { base: "", portfolios: [], portfolio: null, overview: null, selected: null };
   const inputByKey = new Map();
+  const defaultByKey = new Map(PIP_MODULE_FIELDS.map((field) => [fieldKey(field), field.value ?? ""]));
   const moduleButtons = [];
   let connectToken = 0;
   let loadToken = 0;
   let runToken = 0;
   let running = false;
+  let researchToken = 0;
+  let researching = false;
+  // The last research answer read for the selected holding, or null.
+  let research = null;
   let pendingOrigin = "";
   let authHandled = false;
 
@@ -269,6 +282,7 @@ function startModulePage() {
   function clearHoldings() {
     runToken += 1;
     running = false;
+    resetResearch();
     session.portfolio = null;
     session.overview = null;
     session.selected = null;
@@ -426,6 +440,7 @@ function startModulePage() {
     if (changed) {
       runToken += 1;
       running = false;
+      resetResearch();
       session.selected = holding;
       for (const field of PIP_MODULE_FIELDS) {
         if (field.scope === "holding") inputByKey.get(fieldKey(field)).value = field.value ?? "";
@@ -450,7 +465,7 @@ function startModulePage() {
     return Object.fromEntries([...inputByKey].map(([key, input]) => [key, input.value]));
   }
 
-  function showResult(module, holding, response) {
+  function showResult(module, holding, response, provenance) {
     const view = describeModuleResult(module.id, response);
     const parts = [make("h3", `${view.title} · ${holding.symbol}`), make("p", view.headline, "headline")];
     if (view.rows.length) {
@@ -465,6 +480,11 @@ function startModulePage() {
       parts.push(hints);
     }
     if (view.caveats.length) parts.push(makeList(view.caveats, "caveats"));
+    if (provenance && !view.unexpected) {
+      const block = make("div", "", "provenance");
+      block.append(make("strong", provenance.heading), makeList(provenance.lines), make("p", provenance.note, "subtle"));
+      parts.push(block);
+    }
     if (view.footer) parts.push(make("p", view.footer, "result-footer"));
     resultBox.className = view.unexpected ? "result unexpected" : "result";
     resultBox.replaceChildren(...parts);
@@ -480,9 +500,10 @@ function startModulePage() {
   async function runModule(module) {
     const holding = session.selected;
     if (running || !holding) return;
+    const values = readInputs();
     let body;
     try {
-      body = buildModuleRequest(holding.symbol, readInputs());
+      body = buildModuleRequest(holding.symbol, values);
     } catch (error) {
       inputsDetails.open = true;
       setStatus(runStatus, messageOf(error), { error: true, base: "" });
@@ -491,19 +512,73 @@ function startModulePage() {
     const token = ++runToken;
     const base = session.base;
     const path = `/api/pip/portfolios/${encodeURIComponent(session.portfolio.id)}/modules/${module.id}`;
+    // Which boxes still hold research is decided now, with the body, not when the answer arrives.
+    const provenance = research ? describeResearchProvenance(research, unchangedResearchInputs(research.inputs, values)) : null;
     running = true;
     updateButtons();
     resultBox.hidden = true;
     setStatus(runStatus, `Running ${module.label} for ${holding.symbol}…`, { base: "" });
     try {
       const response = await apiRequest(base, path, { method: "POST", body });
-      if (token === runToken) showResult(module, holding, response);
+      if (token === runToken) showResult(module, holding, response, provenance);
     } catch (error) {
       if (token === runToken) setStatus(runStatus, messageOf(error), { error: true, base: "" });
     } finally {
       if (token === runToken) {
         running = false;
         updateButtons();
+      }
+    }
+  }
+
+  // ---- Loading research -----------------------------------------------------------------------
+
+  function resetResearch() {
+    researchToken += 1;
+    researching = false;
+    research = null;
+    researchButton.disabled = false;
+    setStatus(researchStatus, "");
+    fillList(researchNotes, []);
+  }
+
+  // Boxes that still hold text an earlier load put there are emptied first, so a value Yahoo no longer gives does not linger.
+  // Then every box research can fill is replaced; a box it cannot fill keeps whatever was typed in it.
+  function fillFromResearch(parsed) {
+    if (research) {
+      for (const input of unchangedResearchInputs(research.inputs, readInputs())) {
+        inputByKey.get(input.key).value = defaultByKey.get(input.key);
+      }
+    }
+    for (const input of parsed.inputs) inputByKey.get(input.key).value = input.text;
+    research = parsed;
+  }
+
+  async function loadResearch() {
+    const holding = session.selected;
+    if (researching || !holding) return;
+    const token = ++researchToken;
+    const base = session.base;
+    const path = `/api/pip/portfolios/${encodeURIComponent(session.portfolio.id)}/research`;
+    researching = true;
+    researchButton.disabled = true;
+    fillList(researchNotes, []);
+    setStatus(researchStatus, `Loading Yahoo research for ${holding.symbol}…`);
+    try {
+      const response = await apiRequest(base, path, { method: "POST", body: { symbol: holding.symbol } });
+      const parsed = parseResearchResponse(response, holding.symbol);
+      if (token !== researchToken) return;
+      fillFromResearch(parsed);
+      const view = describeResearchLoad(parsed, holding.symbol);
+      setStatus(researchStatus, view.headline, { error: view.filled === 0 });
+      fillList(researchNotes, view.notes);
+      if (view.filled > 0) inputsDetails.open = true;
+    } catch (error) {
+      if (token === researchToken) setStatus(researchStatus, messageOf(error), { error: true });
+    } finally {
+      if (token === researchToken) {
+        researching = false;
+        researchButton.disabled = false;
       }
     }
   }
@@ -528,6 +603,7 @@ function startModulePage() {
   buildInputs();
   buildModuleButtons();
   connectButton.addEventListener("click", () => connect());
+  researchButton.addEventListener("click", () => loadResearch());
   apiUrlInput.addEventListener("keydown", (event) => {
     if (event.key !== "Enter" || connectButton.disabled) return;
     event.preventDefault();

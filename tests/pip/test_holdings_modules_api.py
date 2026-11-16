@@ -13,7 +13,7 @@ import stockscanner.pip.api as pip_api
 from stockscanner.pip.api import REVIEW_MAX_PAGES, REVIEW_PAGE_SIZE, create_app
 from stockscanner.pip.holdings import FLAG_MESSAGES, HOLDINGS_NOTES, TRUNCATED_NOTE
 from stockscanner.pip.position_lifecycle import PositionLifecycleAnalyzer
-from stockscanner.pip.scoring import CPS_WEIGHTS, SELL_SCORE_WEIGHTS
+from stockscanner.pip.scoring import CPS_WEIGHTS, SELL_SCORE_INVERTED_INPUTS, SELL_SCORE_WEIGHTS
 
 
 USER_ID = "33333333-3333-4333-8333-333333333333"
@@ -1114,8 +1114,12 @@ def test_the_growth_module_names_the_inputs_its_score_used(monkeypatch):
     ]
 
 
-@pytest.mark.parametrize("module", ["cps", "sell_score"])
-def test_a_score_that_borrows_revenue_growth_says_so(monkeypatch, module):
+@pytest.mark.parametrize(
+    ("module", "expected_score"),
+    # The sell score counts earnings growth as 100 minus its score; the capital productivity score does not.
+    [("cps", 75.0), ("sell_score", 25.0)],
+)
+def test_a_score_that_borrows_revenue_growth_says_so(monkeypatch, module, expected_score):
     fake = Client()
     _standard_portfolio(fake)
 
@@ -1125,7 +1129,7 @@ def test_a_score_that_borrows_revenue_growth_says_so(monkeypatch, module):
         {"symbol": "AAA", "growth": {"revenue_growth_percent": 10}},
     )
 
-    assert result["component_scores"] == {"earnings_growth": 75.0}
+    assert result["component_scores"] == {"earnings_growth": expected_score}
     assert result["earnings_growth_input"] == {"source": "growth_analysis", "basis": "revenue_only"}
 
 
@@ -1285,7 +1289,8 @@ def test_the_sell_score_module_reports_the_documented_weights(monkeypatch):
         {"symbol": "AAA", "scores": {"tsr": 100}},
     )
 
-    assert result["score"] == pytest.approx(100.0)
+    # A total return score of 100 is as healthy as it gets, so it adds no pressure to sell.
+    assert result["score"] == pytest.approx(0.0)
     assert result["confidence"] == pytest.approx(20 / 115)
     assert result["weights"] == SELL_SCORE_WEIGHTS
     assert result["missing_components"] == [
@@ -1301,6 +1306,48 @@ def test_the_sell_score_module_reports_the_documented_weights(monkeypatch):
     assert complete["score"] == pytest.approx(50.0)
     assert complete["confidence"] == 1.0
     assert complete["missing_components"] == []
+
+
+def test_the_sell_score_module_says_which_way_it_runs_and_flips_the_health_inputs(monkeypatch):
+    fake = Client()
+    _standard_portfolio(fake)
+    app = _app(monkeypatch, fake)
+
+    result = _result(
+        app,
+        "sell_score",
+        {"symbol": "AAA", "scores": {"tsr": 80, "technical_health": 30, "opportunity_cost": 70}},
+    )
+    cps = _result(app, "cps", {"symbol": "AAA", "scores": {"tsr": 80}})
+
+    assert result["sell_score_direction"] == "higher_means_sell"
+    assert result["inverted_components"] == list(SELL_SCORE_INVERTED_INPUTS)
+    assert result["component_scores"] == {"tsr": 20, "technical_health": 70, "opportunity_cost": 70}
+    assert result["score"] == pytest.approx((20 * 20 + 15 * 70 + 15 * 70) / 50)
+    assert "sell_score_direction" not in cps
+    assert "inverted_components" not in cps
+    assert cps["component_scores"] == {"tsr": 80}
+
+
+def test_a_healthy_holding_is_held_and_its_mirror_image_is_flagged_for_sale(monkeypatch):
+    fake = Client()
+    _standard_portfolio(fake)
+    app = _app(monkeypatch, fake)
+    healthy = {
+        "tsr": 80, "relative_performance": 75, "revisions": 70, "technical_health": 80, "earnings_growth": 65,
+    }
+    weak = {name: 100 - value for name, value in healthy.items()}
+
+    healthy_sell = _result(app, "sell_score", {"symbol": "AAA", "scores": healthy})
+    healthy_advice = _result(app, "sell_advisor", {"symbol": "AAA", "scores": healthy})
+    weak_sell = _result(app, "sell_score", {"symbol": "AAA", "scores": weak})
+    weak_advice = _result(app, "sell_advisor", {"symbol": "AAA", "scores": weak})
+
+    assert healthy_sell["score"] == pytest.approx(2150 / 85)
+    assert healthy_advice["recommendation"] == "hold"
+    assert weak_sell["score"] == pytest.approx(6350 / 85)
+    assert weak_advice["recommendation"] == "sell"
+    assert weak_advice["confidence"] == pytest.approx(85 / 115)
 
 
 def test_the_opportunity_cost_module_needs_a_cps_and_candidates(monkeypatch):
@@ -1428,9 +1475,9 @@ def test_replacements_are_ranked_against_the_cps_not_the_sell_score(monkeypatch)
     _standard_portfolio(fake)
     scores = {
         **_cps_scores(60),
-        "revisions": 10,
-        "dividend_quality": 10,
-        "technical_health": 10,
+        "revisions": 60,
+        "dividend_quality": 60,
+        "technical_health": 60,
         "opportunity_cost": 10,
     }
     below = {
@@ -1445,6 +1492,7 @@ def test_replacements_are_ranked_against_the_cps_not_the_sell_score(monkeypatch)
     weaker = _result(_app(monkeypatch, fake), "replacements", below)
     stronger = _result(_app(monkeypatch, fake), "replacements", above)
 
+    # The candidate (55) beats the sell score (about 36) but not the CPS (60).
     assert sell_score < 40
     assert weaker["compared"] is True
     assert weaker["candidates"] == []
@@ -1456,7 +1504,7 @@ def test_the_sell_advisor_module_returns_a_recommendation_with_its_reasons(monke
     fake = Client()
     _standard_portfolio(fake)
 
-    strong = _result(
+    healthy = _result(
         _app(monkeypatch, fake),
         "sell_advisor",
         {
@@ -1465,30 +1513,50 @@ def test_the_sell_advisor_module_returns_a_recommendation_with_its_reasons(monke
             "peer_scores": [{"symbol": "NEW1", "score": 99}],
         },
     )
-    weak = _result(
+    unhealthy = _result(
         _app(monkeypatch, fake),
         "sell_advisor",
         {"symbol": "AAA", "scores": _all_scores(10)},
     )
 
-    assert strong["recommendation"] == "sell"
-    assert strong["sell_score"] == pytest.approx(95.0)
-    assert strong["cps"] == pytest.approx(95.0)
-    assert "Sell score is strong enough to justify exit or replacement review." in strong["rationale"]
-    assert weak["recommendation"] == "watch"
-    assert "Capital productivity score is weak enough to warrant a close review." in weak["rationale"]
+    assert healthy["recommendation"] == "hold"
+    assert healthy["sell_score"] == pytest.approx(1925 / 115)
+    assert healthy["cps"] == pytest.approx(95.0)
+    assert "Score profile does not justify a forced exit based on current evidence." in healthy["rationale"]
+    assert unhealthy["recommendation"] == "sell"
+    assert unhealthy["sell_score"] == pytest.approx(9150 / 115)
+    assert "Sell score is strong enough to justify exit or replacement review." in unhealthy["rationale"]
+    assert healthy["sell_score_direction"] == unhealthy["sell_score_direction"] == "higher_means_sell"
+
+
+def test_a_weak_capital_productivity_score_alone_is_a_watch(monkeypatch):
+    fake = Client()
+    _standard_portfolio(fake)
+    scores = {
+        **_cps_scores(20),
+        "revisions": 90,
+        "dividend_quality": 90,
+        "technical_health": 90,
+        "opportunity_cost": 10,
+    }
+
+    result = _result(_app(monkeypatch, fake), "sell_advisor", {"symbol": "AAA", "scores": scores})
+
+    assert result["sell_score"] == pytest.approx(4650 / 115)
+    assert result["recommendation"] == "watch"
+    assert "Capital productivity score is weak enough to warrant a close review." in result["rationale"]
 
 
 def test_advice_confidence_reflects_input_coverage_not_the_strength_of_the_signal(monkeypatch):
     fake = Client()
     _standard_portfolio(fake)
 
-    weak = _result(
+    unhealthy = _result(
         _app(monkeypatch, fake),
         "sell_advisor",
         {"symbol": "AAA", "scores": _all_scores(10)},
     )
-    strong = _result(
+    healthy = _result(
         _app(monkeypatch, fake),
         "sell_advisor",
         {"symbol": "AAA", "scores": _all_scores(95)},
@@ -1496,12 +1564,13 @@ def test_advice_confidence_reflects_input_coverage_not_the_strength_of_the_signa
     partial = _result(
         _app(monkeypatch, fake),
         "sell_advisor",
-        {"symbol": "AAA", "scores": {"tsr": 95}},
+        {"symbol": "AAA", "scores": {"tsr": 5}},
     )
 
-    assert weak["sell_score"] < 20
-    assert weak["confidence"] == 1.0
-    assert strong["confidence"] == 1.0
+    assert unhealthy["sell_score"] > 70
+    assert unhealthy["confidence"] == 1.0
+    assert healthy["sell_score"] < 20
+    assert healthy["confidence"] == 1.0
     assert partial["sell_score"] == pytest.approx(95.0)
     assert partial["confidence"] == pytest.approx(20 / 115)
     assert partial["recommendation"] == "watch"

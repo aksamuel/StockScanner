@@ -578,6 +578,43 @@ def test_analysis_records_which_growth_inputs_fed_the_earnings_growth_score():
     assert stored["metadata"]["modules"]["growth"]["earnings_growth_input"] == provenance
 
 
+def test_analysis_marks_every_saved_sell_score_with_its_direction():
+    fake = PipelineClient()
+    app = create_app(
+        client_factory=lambda url, key: fake,
+        environ={
+            "SUPABASE_URL": "https://project.example.test",
+            "SUPABASE_PUBLISHABLE_KEY": "public-test-key",
+        },
+    )
+
+    response = TestClient(app).post(
+        "/api/pip/analysis",
+        headers={"Authorization": "Bearer " + "user-access-token"},
+        json={
+            "portfolio_id": fake.portfolio_id,
+            "symbol": "AAPL",
+            "position": {"market_price": 130},
+            "scores": {"tsr": 80, "technical_health": 30, "opportunity_cost": 70},
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    direction = "higher_means_sell"
+    payload = response.json()
+    assert payload["analysis"]["metadata"]["sell_score_direction"] == direction
+    assert payload["recommendation"]["sell_score_direction"] == direction
+    # tsr 80 counts as 20, technical health 30 as 70, opportunity cost 70 as entered.
+    assert payload["analysis"]["sell_score"] == pytest.approx((20 * 20 + 15 * 70 + 15 * 70) / 50)
+    stored_score = next(rows for table, rows in fake.writes if table == "stock_scores")[0]
+    stored_recommendation = next(rows for table, rows in fake.writes if table == "sell_recommendations")[0]
+    snapshot = next(rows for table, rows in fake.writes if table == "daily_snapshots")[0]
+    assert stored_score["metadata"]["sell_score_direction"] == direction
+    assert stored_recommendation["metadata"]["sell_score_direction"] == direction
+    assert snapshot["metadata"]["sell_score_direction"] == direction
+    assert stored_score["sell_score"] == snapshot["metadata"]["sell_score"] == stored_recommendation["score"]
+
+
 def test_analysis_proposes_the_recommendation_once_and_never_starts_a_review():
     fake = PipelineClient()
     app = create_app(

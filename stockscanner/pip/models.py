@@ -68,6 +68,8 @@ class SellRecommendation:
     status: str = "draft"
     replacement_candidates: List[ReplacementCandidate] = field(default_factory=list)
     id: Optional[str] = None
+    # Which way `score` runs; None for rows saved before the sell score was flipped (higher meant healthier).
+    sell_score_direction: Optional[str] = None
 
 
 @dataclass

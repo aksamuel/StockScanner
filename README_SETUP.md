@@ -201,8 +201,11 @@ To look at saved holdings and run the analysis modules one at a time, open the
 read-only [module runner](docs/pip/MODULE_RUNNER.md) instead.
 The page's **Load available research** action uses Yahoo history, company growth
 fields, raw EPS revision counts, analyst consensus/targets, and the shared price
-snapshot. It sends only the imported holding's symbol to Yahoo. Raw revision
-counts are not converted into a score because no mapping has been approved.
+snapshot. It sends only the imported holding's symbol to Yahoo. The API also turns
+four of the facts into 0–100 scores by fixed rules (see
+[docs/pip/SCORING.md](docs/pip/SCORING.md#research-scores-from-yahoo-data)). The
+module runner's **Load research** button fills its inputs from them; the workbench
+does not use the scores yet.
 
 ## Activate invite-only Supabase authentication
 
@@ -314,7 +317,9 @@ The signed-in user pages serve different purposes:
 - `pip-modules.html`: a read-only module runner. It connects to the same PIP API
   (default `https://stockscanner-pip-api.onrender.com`, editable), lists the
   signed-in user's saved holdings, and runs one analysis module per button
-  click. Nothing is saved and no order is placed. `pip-modules-core.js` holds its
+  click. Nothing is saved and no order is placed. Its **Load research** button asks
+  the API to look up one ticker at Yahoo and fills inputs you can edit.
+  `pip-modules-core.js` holds its
   request and result logic and `pip-shared.js` the helpers it shares with the
   workbench. See [docs/pip/MODULE_RUNNER.md](docs/pip/MODULE_RUNNER.md).
 - `help.html`: the current user guide and FAQ, available from the shared Menu,

@@ -3,11 +3,6 @@
 - **Sell Score weights:** supplied components total 115%. Current code preserves
   each weight and normalizes by the total. See `SCORING.md` for the maintainer
   decision.
-- **Sell Score direction:** six of the seven Sell Score inputs are defined so that
-  higher means a healthier holding (only opportunity cost points toward selling),
-  yet the Sell Advisor reads a score of 65 or more as `sell`. This is unchanged and
-  pinned by tests; confirm the intended direction before relying on the advisor's
-  `sell`. See `SCORING.md`.
 - **Revenue growth as earnings growth:** when no earnings growth score is supplied
   or saved, the capital productivity and sell scores use the growth analysis score,
   which averages earnings and revenue growth and falls back to revenue growth
@@ -23,6 +18,13 @@
   and say why. It also needs the Flex Query's Cash Transactions section. Not
   implemented; confirm that rule, and how partial history should be shown, before
   building it.
+- **Research scores:** the `research-1` rules (limits and minimum history in
+  `SCORING.md`) are fixed and were approved as a starting point; revisit them after
+  real use. Not built: dividend growth and opportunity cost scores (they need
+  five-year dividends and peers) and filling the workbench from the `scores` block.
+  The lookup sends the ticker symbol only, so a symbol listed on several exchanges can
+  return another market's currency and the pages do not convert it; decide whether
+  to pass the exchange or currency.
 - **Portfolio policy:** confirm default review thresholds, replacement minimum
   score gap, and concentration cap before making recommendations user-facing.
 - **Data cadence:** confirm how often CSV/Flex imports and historical snapshots
@@ -36,3 +38,11 @@
 - **Financial-data quality:** choose trusted sources and freshness requirements
   for dividend sustainability, earnings growth, analyst revisions, and target
   prices before relying on the scores.
+
+## Resolved
+
+- **Sell Score direction:** the sell score now counts its six healthier-is-higher
+  inputs as 100 minus their score, so a higher sell score is a stronger case to sell
+  and the advisor's `sell` at 65 or more follows from it. Rows saved before the
+  change carry no `sell_score_direction` tag and used the earlier direction; review
+  or reject any recommendation that is still open from before it. See `SCORING.md`.

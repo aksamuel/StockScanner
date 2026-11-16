@@ -24,9 +24,11 @@ from stockscanner.pip.ibkr_sync import (
 from stockscanner.pip.position_lifecycle import PositionLifecycleAnalyzer
 from stockscanner.pip.replacement_engine import ReplacementCandidateEngine
 from stockscanner.pip.repository import SupabaseAuditLogSink, SupabasePortfolioRepository
+from stockscanner.pip.models import SellRecommendation
 from stockscanner.pip.sell_advisor import SellAdvisor
 from stockscanner.pip.scoring import (
     CPS_WEIGHTS,
+    SELL_SCORE_DIRECTION,
     SELL_SCORE_WEIGHTS,
     calculate_cps_result,
     calculate_sell_score_result,
@@ -36,14 +38,19 @@ from stockscanner.pip.scoring import (
 def test_scoring_preserves_weights_and_normalizes_sell_score():
     assert sum(CPS_WEIGHTS.values()) == 100
     assert sum(SELL_SCORE_WEIGHTS.values()) == 115
-    result = calculate_sell_score_result({name: 100 for name in SELL_SCORE_WEIGHTS})
+    result = calculate_sell_score_result(
+        {name: (100 if name == "opportunity_cost" else 0) for name in SELL_SCORE_WEIGHTS}
+    )
     assert result.score == 100
     assert result.confidence == 1
 
-    one_factor = calculate_sell_score_result(
-        {name: (100 if name == "opportunity_cost" else 0) for name in SELL_SCORE_WEIGHTS}
-    )
-    assert one_factor.score == pytest.approx(15 / 115 * 100)
+    # Six inputs rise as a holding gets healthier, so 100 counts as no pressure to sell.
+    healthy = calculate_sell_score_result({name: 100 for name in SELL_SCORE_WEIGHTS})
+    assert healthy.score == pytest.approx(15 / 115 * 100)
+
+    one_factor = calculate_sell_score_result({"opportunity_cost": 100})
+    assert one_factor.score == 100
+    assert one_factor.confidence == pytest.approx(15 / 115)
 
 
 def test_scoring_reports_missing_data_and_reduces_confidence():
@@ -440,6 +447,12 @@ def test_sell_advisor_can_recommend_partial_review():
         relative_performance=50,
     )
     assert recommendation.recommendation == "partial-sell"
+    assert recommendation.sell_score_direction == SELL_SCORE_DIRECTION
+
+
+def test_a_recommendation_built_without_a_direction_makes_no_claim_about_it():
+    bare = SellRecommendation(portfolio_id="portfolio-1", symbol="AAPL", score=55, recommendation="hold")
+    assert bare.sell_score_direction is None
 
 
 def test_approval_workflow_validates_transitions_and_audits_every_transition():

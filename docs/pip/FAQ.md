@@ -24,14 +24,17 @@ provide an optional owner-scoped persistence layer.
 
 For an imported holding, PIP can show the latest shared price snapshot, Yahoo
 historical price return, relative performance to SPY, analyst consensus/target
-data when Yahoo provides it, and dividend events per share. It does not treat
-raw returns as 0–100 component scores or per-share dividend events as portfolio
+data when Yahoo provides it, and dividend events per share. It also scores four
+of them from 0 to 100 (total return, relative performance, EPS revisions and
+technical health) by the fixed rules in [Scoring](SCORING.md), and says why when
+a score cannot be given. It does not treat per-share dividend events as portfolio
 cash income. The shared snapshot can report Yahoo, Alpaca, or Twelve Data as the
 latest-quote source; Alpaca may also supply a previous close. PIP reads this
 shared snapshot instead of calling Alpaca or Twelve Data directly. Those current
 adapters provide price data only. Yahoo Finance can also provide earnings and
 revenue growth percentages and raw EPS revision counts for some symbols; PIP
-displays the revision counts without converting them into a score. Missing
+displays the revision counts and, with at least three in the last 30 days, a
+0–100 score built from them. Missing
 provider fields remain unavailable and reduce score confidence. The research
 request sends only the ticker symbol to Yahoo; portfolio details and Supabase
 tokens stay out of provider requests.
@@ -120,10 +123,21 @@ Open **Menu → Portfolio intelligence → PIP module runner** and sign in. It l
 holdings saved by your CSV import or Flex sync, then lets you pick a holding and
 press a button for any one module: lifecycle, return hurdle, dead money, dividends,
 growth, forward-looking, opportunity cost, CPS, sell score, replacements or sell
-advisor. It is read-only: it saves nothing, fetches no prices and places no order.
+advisor. It saves nothing and places no order. It looks up market data only when you
+press **Load research**, which fills the inputs Yahoo data can supply (the share
+price, four 0–100 scores, growth and target upside) for you to check and edit.
 Its API address can be changed, but the page sends your sign-in token to that
 address, so connect only to a service you run or trust. See
 [Module runner](MODULE_RUNNER.md).
+
+## Why did Load research leave a box empty?
+
+A box is filled only when Yahoo gave a usable number. The four scores also need
+enough data for their fixed rules: at least 330 days of history for the two return
+scores, 3 EPS estimate revisions in the last 30 days, and 200 daily closes for
+technical health. The notes under the button say which inputs were skipped and why.
+Type a value yourself if you have one; nothing is guessed. See
+[Scoring](SCORING.md#research-scores-from-yahoo-data).
 
 ## Why do Sell Score weights total 115?
 

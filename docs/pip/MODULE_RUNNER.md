@@ -12,7 +12,10 @@ data.
 - **Save anything.** A module run answers with `"saved": false`, so no score,
   recommendation, snapshot or audit event is written. To save a score and propose a
   recommendation, analyze the holding in the workbench.
-- **Fetch live prices.** Values are as of the last import or sync.
+- **Fetch prices or market data on its own.** The holdings table shows values as of
+  the last import or sync. The one market lookup is the **Load research** button,
+  which runs only when you press it and asks about one ticker (see
+  [Loading research](#loading-research)).
 - **Convert currencies.** Totals are per currency and are never added together.
 - **Fall back to demo data.** If the API cannot be reached or is out of date, the
   page says so and shows nothing.
@@ -29,7 +32,8 @@ data.
    another portfolio from the list; the choice is remembered in this browser.
 4. Read the holdings table (one row per symbol, with a per-currency total and any
    flags) and filter it by symbol if the list is long.
-5. Press **Run modules** on a holding, fill in any inputs you have, then press a
+5. Press **Run modules** on a holding. Optionally press **Load research** to fill
+   the inputs that Yahoo data can supply, fill in any others you have, then press a
    module button. Each press runs that module once for that holding and shows the
    result below the buttons.
 
@@ -60,10 +64,12 @@ out of date instead of failing part-way.
 | GET | `/api/pip/portfolios` | The caller's portfolios, newest first |
 | GET | `/api/pip/portfolios/{id}/positions` | Per-symbol overview of saved positions; read-only |
 | POST | `/api/pip/portfolios/{id}/modules/{module}` | Run one module for one holding; read-only |
+| POST | `/api/pip/portfolios/{id}/research` | Look up Yahoo research for one saved holding's ticker; stores nothing |
 
-These are the only requests the page makes. Both new routes require the caller's
-sign-in token and approved access, read through the caller's row-level security
-and the same owner check as every other PIP route, and write nothing.
+These are the only requests the page makes. The routes under `/api/pip` require the
+caller's sign-in token and approved access, use the same owner check as every other
+PIP route, read saved data through the caller's row-level security, and write
+nothing.
 
 The positions response holds `as_of`, `lots`, `holdings`, `totals`, `flags`,
 `truncated` and `notes`. A holding carries its symbol, currency, quantity, lot
@@ -102,6 +108,54 @@ Replacement candidates are written `AAA:82, BBB:90` and use the same 0–100 sca
 the holding's capital productivity score. A candidate is listed only when it scores
 above that holding's score and is not already held in the portfolio.
 
+## Loading research
+
+**Load research**, under the module buttons, fills the inputs that Yahoo data can
+supply so you do not have to look them up. It does not run a module and saves
+nothing.
+
+The page asks the API to look up the holding's ticker symbol at Yahoo. Only the
+symbol goes to data providers; quantities, cost, account details and your sign-in
+token do not. The API returns raw facts and four 0–100 scores calculated by the fixed
+rules in [Scoring](SCORING.md#research-scores-from-yahoo-data), and the page puts the
+usable values in the boxes. It can fill up to eight:
+
+| Input | Comes from |
+| --- | --- |
+| Current share price | The latest shared price snapshot |
+| Total shareholder return score | The one-year adjusted-close return |
+| Relative performance score | That return minus SPY's, over the dates both have |
+| Technical health score | The last close against its 200-close and 50-close averages and its 365-day high |
+| Forward revisions score | The 30-day EPS estimate revisions |
+| Earnings growth, Revenue growth | Yahoo's growth percentages |
+| Target upside | The analyst target price |
+
+Opportunity cost, the dividend inputs and replacement candidates are never filled;
+they depend on your portfolio and your peers.
+
+- **Nothing is guessed.** A box is filled only when Yahoo gave a usable number that
+  fits the field. When it did not, for example with under 330 days of history, the
+  box stays empty and the notes under the button say why. If the API predates the
+  scores, the notes say so and the four score boxes stay empty.
+- **Every value is explained.** The status line says how many of the eight inputs
+  were filled and the date of the data. The notes give the figures behind each value,
+  such as the return and the days it covers, or the revision counts.
+- **It overwrites.** A box research can fill is replaced, whatever it held; a box it
+  cannot fill keeps what you typed. Loading again first empties the boxes that still
+  hold the previous load's text, so a value Yahoo no longer gives does not linger.
+  Every loaded value can be edited, and choosing another holding clears them.
+- **Results say where inputs came from.** After a module runs, the result shows
+  **Inputs from Yahoo research** with the data date, the score rules version and the
+  loaded values still in the boxes. Values you edited are your own and are not
+  listed, and a module uses only the inputs it needs.
+- **Errors are shown, not hidden.** If Yahoo has nothing usable for the symbol, or the
+  API cannot be reached, the page shows the error and fills nothing. The API also
+  checks that the symbol is saved in the selected portfolio.
+- **Check the listing.** The lookup uses the ticker symbol only. When one ticker
+  trades on several exchanges, Yahoo's listing may be a different market or currency
+  from your holding, and the page does not convert currencies. Check the price and
+  the notes before relying on a result.
+
 ## Reading a result
 
 - **Input confidence** is how much of the needed data was available, from 0 to 1.
@@ -118,6 +172,11 @@ above that holding's score and is not already held in the portfolio.
   data it used.
 - **Forward-looking analysis** is an indicator built from the inputs you supplied,
   not a forecast.
+- **Sell confidence score** runs from 0 to 100, and a higher score is a stronger
+  case to sell. Six of its inputs rise as a holding gets healthier, so each counts as
+  100 minus its score: the values listed under the result are those flipped values,
+  not the ones you typed. Opportunity cost counts as entered. The result names the
+  inputs that were flipped.
 - **Sell advisor** returns `watch`, `sell`, `partial-sell` or `hold`, checked in
   this order: input confidence below 0.5 or no sell score gives `watch`; a sell
   score of 65 or more gives `sell`; a score of 50 or more with an opportunity-cost
@@ -139,24 +198,29 @@ above that holding's score and is not already held in the portfolio.
   least one score input. Type one in, or analyze the holding in the workbench to
   save scores.
 
-## Open question: sell-score direction
+## Sell-score direction
 
-Most sell-score inputs rise as a holding gets healthier (total return, relative
-performance, revisions, dividend quality, technical health, earnings growth); only
-opportunity cost rises with a stronger case to sell. The Sell advisor nevertheless
-reads a sell score of 65 or more as `sell`. That behaviour predates the module
-runner and is unchanged, and it is pinned by existing tests, so the page shows a
-caveat under the sell-score and sell-advisor results. See
-[Open questions](OPEN_QUESTIONS.md) and [Scoring](SCORING.md).
+The sell score counts total return, relative performance, revisions, dividend
+quality, technical health and earnings growth as 100 minus their score, so a higher
+sell score always means a stronger case to sell, and the advisor's `sell` (65 or
+more) follows from it. See [Scoring](SCORING.md#direction-a-higher-sell-score-is-a-stronger-case-to-sell).
+
+The API tags sell-score and sell-advisor results with `sell_score_direction`. When a
+result lacks the tag, for example because the API has not been updated since the
+change, the page says it may use the earlier direction and should be treated as
+unverified. Recommendations saved before the change carry no tag either; review or
+reject any that are still open.
 
 ## Tests
 
 ```sh
-python -m pytest -q tests/pip/test_holdings.py tests/pip/test_holdings_modules_api.py tests/pip/test_module_page_contract.py
+python -m pytest -q tests/pip/test_holdings.py tests/pip/test_holdings_modules_api.py tests/pip/test_module_page_contract.py tests/pip/test_research.py tests/pip/test_research_scores.py
 node --test tests/pip-shared.test.mjs tests/pip-modules-core.test.mjs tests/pip-modules.test.mjs
 ```
 
 The contract test reads the page's module and field tables and checks them against
 the API models, so changing a module name, a field or a limit on one side without the
-other fails the build. The page tests run against a fake DOM and fake `fetch`, and
+other fails the build. It also resolves every path in the page's research table
+against a real research answer built by the API code, so the page cannot read a value
+the API no longer returns. The page tests run against a fake DOM and fake `fetch`, and
 use placeholder symbols only.

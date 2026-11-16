@@ -9,15 +9,19 @@ from __future__ import annotations
 
 import inspect
 import re
+from datetime import date
 from pathlib import Path
 from typing import Any, get_args
 
+import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
 import stockscanner.pip.api as pip_api
-from stockscanner.pip.api import HoldingInputs, create_app
+from stockscanner.pip.api import HoldingInputs, ResearchRequest, create_app
 from stockscanner.pip.decision_engine import DecisionEngine
+from stockscanner.pip.research import collect_research_data
+from stockscanner.pip.scoring import SELL_SCORE_DIRECTION
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -32,12 +36,14 @@ PAGE = read("pip-modules.js")
 SHARED = read("pip-shared.js")
 SCHEMA = HoldingInputs.model_json_schema()
 
-# The only requests the page may make: all reads, and one module run that saves nothing.
+# The only requests the page may make: reads, one module run that saves nothing, and one research lookup
+# that sends only a ticker symbol to public data providers and stores nothing.
 PAGE_ROUTES = {
     ("GET", "/healthz"),
     ("GET", "/api/pip/portfolios"),
     ("GET", "/api/pip/portfolios/{}/positions"),
     ("POST", "/api/pip/portfolios/{}/modules/{}"),
+    ("POST", "/api/pip/portfolios/{}/research"),
 }
 
 
@@ -75,6 +81,26 @@ def parse_fields() -> list[dict[str, Any]]:
             field[name] = float(match[1]) if match else None
         fields.append(field)
     return fields
+
+
+RESEARCH_LINE = re.compile(
+    r'\{ key: "(?P<key>[a-z_.]+)", name: "(?P<name>[^"]+)", from: "(?P<from>[a-z_.]+)"'
+    r'(?:, why: "(?P<why>[a-z_.]+)")?, evidence: \[(?P<evidence>[^\]]*)\] \},?'
+)
+
+
+def parse_research_inputs() -> list[dict[str, Any]]:
+    inputs = []
+    for line in frozen_table(CORE, "PIP_RESEARCH_INPUTS"):
+        found = RESEARCH_LINE.fullmatch(line.strip())
+        assert found, f"cannot read this research input line: {line!r}"
+        inputs.append({
+            "key": found["key"],
+            "from": found["from"],
+            "why": found["why"],
+            "evidence": re.findall(r'"([a-z_.]+)"', found["evidence"]),
+        })
+    return inputs
 
 
 def js_constant(name: str) -> int:
@@ -177,6 +203,9 @@ def build_app():
 
 FIELDS = parse_fields()
 FIELD_IDS = [field["key"] for field in FIELDS]
+RESEARCH_INPUTS = parse_research_inputs()
+RESEARCH_KEYS = [entry["key"] for entry in RESEARCH_INPUTS]
+RESEARCH_WITH_REASON = [entry for entry in RESEARCH_INPUTS if entry["why"]]
 
 
 def test_the_page_tables_were_read():
@@ -231,6 +260,12 @@ def test_the_candidate_and_replacement_limits_match_the_api():
     assert js_constant("REPLACEMENT_LIMIT") == default
 
 
+def test_the_sell_score_direction_tag_the_page_checks_is_the_apis_tag():
+    found = re.search(r'export const SELL_SCORE_DIRECTION = "([^"]+)";', CORE)
+    assert found, "SELL_SCORE_DIRECTION is not defined in pip-modules-core.js"
+    assert found[1] == SELL_SCORE_DIRECTION
+
+
 def test_the_symbol_pattern_is_the_apis_symbol_pattern():
     found = re.search(r"export const PIP_SYMBOL_PATTERN = /(.+)/;", SHARED)
     assert found and found[1] == pip_api.SYMBOL_PATTERN.pattern
@@ -270,3 +305,88 @@ def test_the_page_is_gated_linked_and_published():
     }
     for name in sorted({"pip-modules.html", "pip-modules.js", *imported}):
         assert f'- "{name}"' in workflow, f"{name} is missing from the scan.yml push paths"
+
+
+YEAR = pd.bdate_range("2025-01-01", "2025-12-31")
+
+
+def year_of_closes(last: float) -> pd.DataFrame:
+    return pd.DataFrame({"Close": [100.0] * (len(YEAR) - 1) + [last]}, index=YEAR)
+
+
+def research_answer(*, full: bool) -> dict[str, Any]:
+    """A real `collect_research_data` answer: every value present, or only a month of closes and nothing else."""
+    if full:
+        stock, benchmark = year_of_closes(112.0), year_of_closes(118.0)
+        analyst = {"Analyst Rating": "Buy", "Target Price": 130.0, "Target Upside": 16.0}
+        fundamentals = {
+            "earnings_growth_percent": 12.5,
+            "revenue_growth_percent": 8.1,
+            "revision_periods": {"0q": {"up_last_30_days": 3, "down_last_30_days": 1}},
+            "warnings": [],
+        }
+    else:
+        stock = benchmark = pd.DataFrame({"Close": [20.0, 22.0]}, index=pd.to_datetime(["2025-12-01", "2025-12-31"]))
+        analyst = {}
+        fundamentals = {"earnings_growth_percent": None, "revenue_growth_percent": None, "revision_periods": {}, "warnings": []}
+    return collect_research_data(
+        "ABC",
+        history_loader=lambda symbol: stock if symbol == "ABC" else benchmark,
+        analyst_loader=lambda *_args, **_kwargs: analyst,
+        fundamental_loader=lambda _symbol: fundamentals,
+        today=date(2025, 12, 31),
+    )
+
+
+def research_value(answer: dict[str, Any], path: str) -> Any:
+    node: Any = answer
+    for step in path.split("."):
+        assert isinstance(node, dict) and step in node, f"{path} is not in the research answer (no {step!r})"
+        node = node[step]
+    return node
+
+
+def test_the_research_inputs_are_page_fields_listed_once_and_never_opportunity_cost():
+    assert len(RESEARCH_KEYS) == len(set(RESEARCH_KEYS))
+    assert set(RESEARCH_KEYS) <= set(FIELD_IDS)
+    # Opportunity cost compares a holding with its peers, which a lookup of one ticker cannot give.
+    assert "scores.opportunity_cost" not in RESEARCH_KEYS
+
+
+@pytest.mark.parametrize("entry", RESEARCH_INPUTS, ids=RESEARCH_KEYS)
+def test_a_full_research_answer_has_the_value_and_every_evidence_path_the_page_reads(entry):
+    answer = research_answer(full=True)
+    value = research_value(answer, entry["from"])
+    assert isinstance(value, (int, float)) and not isinstance(value, bool), f"{entry['from']} is {value!r}"
+    for path in entry["evidence"]:
+        research_value(answer, path)
+    names = [path.rsplit(".", 1)[-1] for path in entry["evidence"]]
+    assert len(names) == len(set(names)), "evidence is read by the last name in each path, so the names must differ"
+
+
+@pytest.mark.parametrize("entry", RESEARCH_WITH_REASON, ids=[entry["key"] for entry in RESEARCH_WITH_REASON])
+def test_a_thin_research_answer_says_why_in_the_place_the_page_reads_it(entry):
+    answer = research_answer(full=False)
+    assert research_value(answer, entry["from"]) is None
+    reason = research_value(answer, entry["why"])
+    assert isinstance(reason, str) and reason.strip(), f"{entry['why']} is {reason!r}"
+
+
+def test_every_value_research_fills_in_passes_the_real_request_model():
+    answer = research_answer(full=True)
+    body: dict[str, Any] = {"symbol": "ABC"}
+    for entry in RESEARCH_INPUTS:
+        *parents, last = entry["key"].split(".")
+        node = body
+        for step in parents:
+            node = node.setdefault(step, {})
+        node[last] = research_value(answer, entry["from"])
+    inputs = HoldingInputs.model_validate(body)
+    assert inputs.position.market_price == 112.0
+    assert inputs.scores.tsr == 65.0
+    assert inputs.forward.target_upside_percent == 16.0
+
+
+def test_the_research_request_the_page_sends_is_the_one_the_api_takes():
+    assert {name for name, field in ResearchRequest.model_fields.items() if field.is_required()} == {"symbol"}
+    assert ResearchRequest.model_validate({"symbol": "AAA"}).symbol == "AAA"

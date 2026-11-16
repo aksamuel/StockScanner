@@ -45,6 +45,8 @@ from .repository import SupabaseAuditLogSink, SupabasePortfolioRepository
 from .research import ResearchDataUnavailable, collect_research_data
 from .scoring import (
     CPS_WEIGHTS,
+    SELL_SCORE_DIRECTION,
+    SELL_SCORE_INVERTED_INPUTS,
     SELL_SCORE_WEIGHTS,
     ScoringResult,
     calculate_cps_result,
@@ -488,6 +490,7 @@ def _advice_module_result(
         "recommendation": recommendation.recommendation,
         "confidence": recommendation.confidence,
         "sell_score": analysis.sell_score,
+        "sell_score_direction": SELL_SCORE_DIRECTION,
         "cps": analysis.cps,
         "rationale": list(recommendation.rationale),
         "replacement_candidates": candidates,
@@ -514,11 +517,15 @@ def _module_result(
             evaluation.earnings_growth_input,
         )
     if module == "sell_score":
-        return _scoring_module_result(
-            calculate_sell_score_result(evaluation.components),
-            SELL_SCORE_WEIGHTS,
-            evaluation.earnings_growth_input,
-        )
+        return {
+            **_scoring_module_result(
+                calculate_sell_score_result(evaluation.components),
+                SELL_SCORE_WEIGHTS,
+                evaluation.earnings_growth_input,
+            ),
+            "sell_score_direction": SELL_SCORE_DIRECTION,
+            "inverted_components": list(SELL_SCORE_INVERTED_INPUTS),
+        }
     return _advice_module_result(module, portfolio_id, body, evaluation)
 
 
@@ -1330,6 +1337,7 @@ def create_app(
                 "metadata": {
                     "score_type": "cps",
                     "sell_score": result.sell_score,
+                    "sell_score_direction": SELL_SCORE_DIRECTION,
                     "currency": evaluation.currency,
                     "source": "pip_analysis",
                 },

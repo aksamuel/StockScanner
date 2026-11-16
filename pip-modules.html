@@ -43,6 +43,9 @@
     .facts dd { margin: 0; color: #e0e0e0; }
     .hints { margin: 12px 0; padding: 10px 14px; border-left: 4px solid #4fc3f7; background: #10212d; }
     .hints ul { margin: 6px 0 0; }
+    .provenance { margin: 12px 0; padding: 10px 14px; border-left: 4px solid #81c784; background: #10212d; }
+    .provenance ul { margin: 6px 0 0; }
+    .provenance .subtle { margin: 8px 0 0; font-size: .86rem; }
     .caveats { color: #ffcc80; }
     .result-footer { margin: 12px 0 0; color: #90a4ae; font-size: .86rem; }
     @media (max-width: 720px) { .facts { grid-template-columns: 1fr; } }
@@ -86,6 +89,12 @@
       <p id="moduleSelectedFacts" class="subtle"></p>
       <p><a href="#modulePortfolioSection">Choose another holding</a></p>
       <ul id="moduleHints" hidden></ul>
+      <div class="button-row">
+        <button id="moduleResearch" type="button" class="secondary" aria-describedby="moduleResearchHelp">Load research</button>
+      </div>
+      <p id="moduleResearchHelp" class="subtle">Fills the inputs below from public Yahoo Finance data. Only the ticker symbol is sent, so check that Yahoo's listing matches your holding's market and currency. It replaces what is in the boxes it can fill, every value stays editable, and nothing is saved.</p>
+      <p id="moduleResearchStatus" class="subtle" role="status" aria-live="polite"></p>
+      <ul id="moduleResearchNotes" class="subtle" hidden></ul>
       <details id="moduleInputs">
         <summary>Optional inputs for this holding</summary>
         <p class="subtle">Leave a box empty to use what is saved. Values you enter are used for this run only and are never saved.</p>
@@ -125,6 +134,6 @@
     </section>
   </main>
   <script type="module" src="/StockScanner/auth.js" data-stockscanner-auth></script>
-  <script type="module" src="/StockScanner/pip-modules.js?v=modules-2" data-stockscanner-pip-api></script>
+  <script type="module" src="/StockScanner/pip-modules.js?v=modules-3" data-stockscanner-pip-api></script>
 </body>
 </html>

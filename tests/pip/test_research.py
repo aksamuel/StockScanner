@@ -1,4 +1,6 @@
+import json
 from datetime import date
+from types import MappingProxyType
 
 import pandas as pd
 import pytest
@@ -74,11 +76,13 @@ def test_research_uses_shared_quote_yahoo_history_and_analyst_data(provider):
     assert result["analyst"]["target_price"] == 15.0
     assert result["unavailable_metrics"]["earnings_growth_percent"]
     assert result["unavailable_metrics"]["revenue_growth_percent"]
-    assert result["unavailable_metrics"]["analyst_revisions_score"]
+    assert result["unavailable_metrics"]["analyst_revisions_score"] == (
+        "Yahoo did not provide 30-day EPS revision counts for this symbol."
+    )
     assert "not portfolio cash income" in result["dividends"]["note"]
 
 
-def test_research_includes_growth_and_raw_revision_counts_without_scoring_them():
+def test_research_includes_growth_and_raw_revision_counts_and_scores_the_revisions():
     history = pd.DataFrame(
         {"Close": [10.0, 12.0], "Dividends": [0.0, 0.0]},
         index=pd.to_datetime(["2025-01-01", "2025-12-31"]),
@@ -112,8 +116,13 @@ def test_research_includes_growth_and_raw_revision_counts_without_scoring_them()
         "source": "Yahoo Finance",
     }
     assert result["analyst_revisions"]["periods"] == fundamentals["revision_periods"]
-    assert "no approved 0–100 score mapping" in result["unavailable_metrics"]["analyst_revisions_score"]
-    assert result["warnings"]
+    assert result["scores"]["revisions"] == {
+        "score": 75.0,
+        "raw": {"up": 3, "down": 1, "breadth": 0.5, "periods_counted": ["0q"]},
+        "reason": None,
+    }
+    assert result["unavailable_metrics"]["analyst_revisions_score"] is None
+    assert result["warnings"] == []
 
 
 def test_research_falls_back_to_yahoo_history_when_shared_quote_is_missing():
@@ -165,6 +174,7 @@ def test_relative_performance_uses_common_trading_dates():
     assert result["returns"]["price_return_percent"] == 10.0
     assert result["returns"]["spy_return_percent"] == 120.0
     assert result["returns"]["relative_performance_percentage_points"] == 0.0
+    assert result["returns"]["aligned_history_days"] == 183
 
 
 def test_dividend_history_requires_dividend_data_column():
@@ -201,6 +211,137 @@ def test_relative_performance_is_unavailable_without_shared_trading_dates():
     )
 
     assert result["returns"]["relative_performance_percentage_points"] is None
+    assert result["returns"]["aligned_history_days"] is None
+    assert result["scores"]["relative_performance"]["score"] is None
+
+
+YEAR = pd.bdate_range("2025-01-01", "2025-12-31")
+REVISIONS = {
+    "0q": {"up_last_30_days": 3, "down_last_30_days": 1},
+    "+1q": {"up_last_30_days": 1, "down_last_30_days": 0},
+}
+
+
+def year_of_closes(last, *, adjusted_last=None, adjusted_first=None):
+    """A flat 100 for a year of business days, ending at `last`."""
+    frame = pd.DataFrame({"Close": [100.0] * (len(YEAR) - 1) + [last]}, index=YEAR)
+    if adjusted_last is not None:
+        frame["Adj Close"] = [adjusted_first] * (len(YEAR) - 1) + [adjusted_last]
+    return frame
+
+
+def research_for(stock, benchmark, revision_periods=None):
+    fundamentals = {**no_fundamentals("ABC"), "revision_periods": revision_periods or {}}
+    return collect_research_data(
+        "ABC",
+        history_loader=lambda symbol: stock if symbol == "ABC" else benchmark,
+        analyst_loader=lambda *_args, **_kwargs: {},
+        fundamental_loader=lambda _symbol: fundamentals,
+        today=date(2025, 12, 31),
+    )
+
+
+def test_research_scores_a_full_year_from_the_same_numbers_it_returns():
+    result = research_for(year_of_closes(112.0), year_of_closes(118.0), REVISIONS)
+
+    returns = result["returns"]
+    assert returns["price_return_percent"] == 12.0
+    assert returns["spy_return_percent"] == 18.0
+    assert returns["relative_performance_percentage_points"] == -6.0
+    assert returns["history_days"] == 364
+    assert returns["aligned_history_days"] == 364
+    assert returns["basis"] == "adjusted_close"
+
+    scores = result["scores"]
+    assert scores["version"] == "research-1"
+    assert scores["tsr"]["score"] == 65.0
+    assert scores["tsr"]["raw"] == {"return_percent": 12.0, "history_days": 364}
+    assert scores["relative_performance"]["score"] == 35.0
+    assert scores["relative_performance"]["raw"] == {"gap_points": -6.0, "history_days": 364}
+    assert scores["revisions"]["score"] == 80.0
+    assert scores["technical_health"]["score"] == 96.6
+    assert scores["technical_health"]["raw"]["closes"] == len(YEAR)
+    assert all(scores[name]["reason"] is None for name in ("tsr", "relative_performance", "revisions", "technical_health"))
+
+    assert result["unavailable_metrics"]["tsr_score"] is None
+    assert result["unavailable_metrics"]["relative_performance_score"] is None
+    assert result["unavailable_metrics"]["analyst_revisions_score"] is None
+    assert result["unavailable_metrics"]["technical_health_score"] is None
+    assert "normalized_return_scores" not in result["unavailable_metrics"]
+    assert not any("score conversion" in warning for warning in result["warnings"])
+    assert "0–100 score built from them" in result["analyst_revisions"]["note"]
+    json.dumps(result["scores"], allow_nan=False)
+
+
+def test_research_says_why_a_score_cannot_be_given_instead_of_guessing():
+    stock = pd.DataFrame({"Close": [20.0, 22.0]}, index=pd.to_datetime(["2025-12-01", "2025-12-31"]))
+    result = research_for(stock, stock)
+
+    scores = result["scores"]
+    assert [scores[name]["score"] for name in ("tsr", "relative_performance", "revisions", "technical_health")] == [None] * 4
+    assert scores["tsr"]["reason"] == (
+        "Yahoo history covers 30 days; at least 330 are needed to score a 1-year total return."
+    )
+    assert scores["relative_performance"]["reason"] == (
+        "This symbol and SPY share 30 days of price history; at least 330 are needed to score performance against SPY."
+    )
+    assert scores["revisions"]["reason"] == "Yahoo did not provide 30-day EPS revision counts for this symbol."
+    assert scores["technical_health"]["reason"] == (
+        "Yahoo returned 2 daily closes; at least 200 are needed to score technical health."
+    )
+    unavailable = result["unavailable_metrics"]
+    assert unavailable["tsr_score"] == scores["tsr"]["reason"]
+    assert unavailable["relative_performance_score"] == scores["relative_performance"]["reason"]
+    assert unavailable["analyst_revisions_score"] == scores["revisions"]["reason"]
+    assert unavailable["technical_health_score"] == scores["technical_health"]["reason"]
+
+
+def test_a_single_shared_trading_date_is_not_a_window_to_compare():
+    stock = pd.DataFrame({"Close": [10.0, 11.0]}, index=pd.to_datetime(["2025-01-01", "2025-12-31"]))
+    benchmark = pd.DataFrame({"Close": [100.0, 110.0]}, index=pd.to_datetime(["2025-06-02", "2025-12-31"]))
+
+    result = research_for(stock, benchmark)
+
+    assert result["returns"]["aligned_history_days"] is None
+    assert result["returns"]["relative_performance_percentage_points"] is None
+    assert result["scores"]["relative_performance"]["score"] is None
+    assert result["scores"]["relative_performance"]["raw"] == {"gap_points": None, "history_days": None}
+
+
+@pytest.mark.parametrize(
+    "revision_periods",
+    [
+        pytest.param(MappingProxyType(REVISIONS), id="container-is-not-a-dict"),
+        pytest.param({name: MappingProxyType(counts) for name, counts in REVISIONS.items()}, id="periods-are-not-dicts"),
+    ],
+)
+def test_the_revision_score_reads_only_the_periods_the_answer_returns(revision_periods):
+    result = research_for(year_of_closes(112.0), year_of_closes(118.0), revision_periods)
+
+    assert result["analyst_revisions"]["periods"] == {}
+    assert result["scores"]["revisions"]["score"] is None
+    assert result["scores"]["revisions"]["raw"]["periods_counted"] == []
+
+
+def test_a_short_spy_history_blocks_only_the_relative_score():
+    result = research_for(year_of_closes(112.0), year_of_closes(118.0).iloc[-100:])
+
+    assert result["scores"]["tsr"]["score"] == 65.0
+    assert result["scores"]["relative_performance"]["score"] is None
+    assert result["returns"]["relative_performance_percentage_points"] == -6.0
+    assert result["returns"]["aligned_history_days"] == (YEAR[-1] - YEAR[-100]).days
+    assert result["unavailable_metrics"]["tsr_score"] is None
+    assert result["unavailable_metrics"]["relative_performance_score"]
+
+
+def test_the_total_return_uses_the_dividend_adjusted_close_when_yahoo_returns_both():
+    stock = year_of_closes(100.0, adjusted_first=90.0, adjusted_last=99.0)
+    result = research_for(stock, year_of_closes(100.0))
+
+    assert result["returns"]["price_return_percent"] == 10.0
+    assert result["returns"]["basis"] == "adjusted_close"
+    assert result["scores"]["tsr"]["score"] == 62.5
+    assert result["scores"]["tsr"]["raw"]["return_percent"] == 10.0
 
 
 def test_research_reports_provider_failure_instead_of_fabricating_scores():

@@ -7,7 +7,9 @@ import {
   PIP_COMPONENT_FIELDS,
   PIP_MODULES,
   PIP_MODULE_FIELDS,
+  PIP_RESEARCH_INPUTS,
   REPLACEMENT_LIMIT,
+  SELL_SCORE_DIRECTION,
   buildModuleRequest,
   describeHolding,
   describeHoldingsFlags,
@@ -15,6 +17,8 @@ import {
   describeHoldingsTotals,
   describeModuleResult,
   describePortfolio,
+  describeResearchLoad,
+  describeResearchProvenance,
   fieldInputId,
   fieldKey,
   filterHoldings,
@@ -27,11 +31,21 @@ import {
   labelOf,
   parseHoldingsResponse,
   parsePortfolioList,
+  parseResearchResponse,
+  unchangedResearchInputs,
 } from "../pip-modules-core.js";
+import { FULL_RESEARCH_LINES as FULL_LINES, emptyResearchFixture, researchFixture } from "./pip-research-fixture.mjs";
 
 const UNEXPECTED = "The API returned an unexpected response, so no result is shown.";
 const READ_ONLY = "Read-only result: nothing was saved and no orders were placed.";
 const REPLACEMENT_RULE = "Candidates are listed only when they score above this holding's capital productivity score and are not already held in this portfolio.";
+const LEGACY_DIRECTION = "This result does not say which way the sell score runs, so it may use the earlier direction, where healthier holdings scored higher. Treat it as unverified.";
+const SELL_WEIGHTS = { tsr: 20, relative_performance: 20, revisions: 20, dividend_quality: 15, technical_health: 15, earnings_growth: 10, opportunity_cost: 15 };
+const SELL_DIRECTION_FIELDS = {
+  sell_score_direction: SELL_SCORE_DIRECTION,
+  inverted_components: ["tsr", "relative_performance", "revisions", "dividend_quality", "technical_health", "earnings_growth"],
+};
+const FLIPPED_NOTE = "Each value shows how strongly that input argues for selling.";
 
 const response = (module, result, extra = {}) => ({ module, symbol: "AAA", currency: "USD", saved: false, result, ...extra });
 const describe = (module, result, extra) => describeModuleResult(module, response(module, result, extra));
@@ -456,17 +470,21 @@ test("a score with no inputs says so and keeps invalid-data reasons", () => {
   assert.deepEqual(invalid.rows, [["Input confidence", "50%"]]);
 });
 
-test("the sell confidence score notes its weights, hints at missing inputs, and carries the direction caveat", () => {
+test("the sell confidence score notes its weights, hints at missing inputs and explains the flipped inputs", () => {
   const description = describe("sell_score", {
     score: 41.5,
     confidence: 0.55,
-    weights: { tsr: 20, relative_performance: 20, revisions: 20, dividend_quality: 15, technical_health: 15, earnings_growth: 10, opportunity_cost: 15 },
-    component_scores: { tsr: 50, relative_performance: 40, technical_health: 30 },
+    weights: SELL_WEIGHTS,
+    component_scores: { tsr: 50, relative_performance: 40, technical_health: 70 },
     missing_components: ["revisions", "dividend_quality", "earnings_growth", "opportunity_cost"],
     reasons: ["Revisions data is missing."],
+    ...SELL_DIRECTION_FIELDS,
   });
   assert.equal(description.headline, "Sell confidence score: 41.5 out of 100.");
-  assert.deepEqual(description.details, ["Weights total 115; the score is normalized by the weights of the available inputs."]);
+  assert.deepEqual(description.details, [
+    "Weights total 115; the score is normalized by the weights of the available inputs.",
+    `${FLIPPED_NOTE} Total shareholder return, Relative performance and Technical health rise as a holding gets healthier, so they count as 100 minus their score. A higher score is a stronger case to sell.`,
+  ]);
   assert.equal(description.rows[2][0], "Revisions");
   assert.deepEqual(description.hints, [
     "Add Forward revisions score (0–100) to include revisions.",
@@ -474,8 +492,57 @@ test("the sell confidence score notes its weights, hints at missing inputs, and 
     "Add Earnings growth (%) or Revenue growth (%) to include earnings growth.",
     "Add Opportunity cost score (0–100) to include opportunity cost.",
   ]);
-  assert.equal(description.caveats.length, 1);
-  assert.match(description.caveats[0], /scores of 65 or more are read as 'sell'.*open question/);
+  assert.deepEqual(description.caveats, []);
+});
+
+test("the flipped-inputs note names only the scored inputs the API lists", () => {
+  const base = { score: 30, confidence: 1, weights: { tsr: 100 }, missing_components: [], reasons: [], sell_score_direction: SELL_SCORE_DIRECTION };
+  const details = (extra) => describe("sell_score", { ...base, ...extra }).details;
+
+  assert.deepEqual(details({ component_scores: { tsr: 30 }, inverted_components: ["tsr"] }), [
+    `${FLIPPED_NOTE} Total shareholder return rises as a holding gets healthier, so it counts as 100 minus its score. A higher score is a stronger case to sell.`,
+  ]);
+  // Order follows the API's list; duplicates, unscored and unlisted components are ignored.
+  const ordered = details({
+    component_scores: { tsr: 30, technical_health: 40, opportunity_cost: 70 },
+    inverted_components: ["technical_health", "tsr", "tsr", "earnings_growth"],
+  });
+  assert.deepEqual(ordered, [
+    `${FLIPPED_NOTE} Technical health and Total shareholder return rise as a holding gets healthier, so they count as 100 minus their score. A higher score is a stronger case to sell.`,
+  ]);
+  // A perfectly healthy input counts as 0 after the flip, and it is still listed.
+  assert.deepEqual(details({ component_scores: { tsr: 0 }, inverted_components: ["tsr"] }), [
+    `${FLIPPED_NOTE} Total shareholder return rises as a holding gets healthier, so it counts as 100 minus its score. A higher score is a stronger case to sell.`,
+  ]);
+  // Nothing was flipped, or the list is missing or malformed, so there is nothing to explain.
+  for (const extra of [
+    { component_scores: { opportunity_cost: 70 }, inverted_components: ["tsr"] },
+    { component_scores: { tsr: 30 }, inverted_components: [] },
+    { component_scores: { tsr: 30 } },
+    { component_scores: { tsr: 30 }, inverted_components: "tsr" },
+    { component_scores: { tsr: "30" }, inverted_components: ["tsr"] },
+    { component_scores: { tsr: Number.NaN }, inverted_components: ["tsr"] },
+    { component_scores: null, inverted_components: ["tsr"] },
+    { component_scores: [30], inverted_components: ["0"] },
+    { component_scores: { tsr: 30 }, inverted_components: [5, "", null, {}] },
+  ]) {
+    assert.deepEqual(details(extra), [], String(Object.keys(extra)));
+  }
+  // The note is only written for the direction this page understands.
+  for (const sell_score_direction of [undefined, null, "", "higher_means_hold", "HIGHER_MEANS_SELL"]) {
+    assert.deepEqual(details({ component_scores: { tsr: 30 }, inverted_components: ["tsr"], sell_score_direction }), [], String(sell_score_direction));
+  }
+});
+
+test("a sell score that does not carry the direction tag is flagged as possibly using the earlier direction", () => {
+  const base = { score: 70, confidence: 1, weights: { tsr: 100 }, component_scores: { tsr: 70 }, missing_components: [], reasons: [] };
+  assert.deepEqual(describe("sell_score", base).caveats, [LEGACY_DIRECTION]);
+  for (const sell_score_direction of [null, "", "higher_means_hold", "HIGHER_MEANS_SELL", 1, true, [SELL_SCORE_DIRECTION]]) {
+    const description = describe("sell_score", { ...base, sell_score_direction, inverted_components: ["tsr"] });
+    assert.deepEqual(description.caveats, [LEGACY_DIRECTION], String(sell_score_direction));
+    assert.deepEqual(description.details, [], String(sell_score_direction));
+  }
+  assert.deepEqual(describe("sell_score", { ...base, sell_score_direction: SELL_SCORE_DIRECTION }).caveats, []);
 });
 
 const GROWTH_ANALYSIS_NOTE = "The earnings growth input was not supplied, so it was taken from the growth analysis, which used";
@@ -496,10 +563,9 @@ test("a score that took its earnings growth from the growth analysis says which 
   assert.deepEqual(describe("cps", { ...cps, ...from("revenue_only") }).caveats, [revenueOnly]);
   assert.deepEqual(describe("cps", { ...cps, ...from("earnings_and_revenue") }).caveats, [blend]);
 
-  const sell = describe("sell_score", { ...cps, ...from("revenue_only") }).caveats;
-  assert.equal(sell.length, 2);
-  assert.match(sell[0], /scores of 65 or more are read as 'sell'.*open question/);
-  assert.equal(sell[1], revenueOnly);
+  const sell = (extra) => describe("sell_score", { ...cps, ...from("revenue_only"), ...extra }).caveats;
+  assert.deepEqual(sell(SELL_DIRECTION_FIELDS), [revenueOnly]);
+  assert.deepEqual(sell({}), [LEGACY_DIRECTION, revenueOnly]);
 });
 
 test("no growth note is shown when the earnings growth input was supplied, saved, earnings-only or unknown", () => {
@@ -521,7 +587,8 @@ test("no growth note is shown when the earnings growth input was supplied, saved
     assert.deepEqual(describe("cps", { ...cps, earnings_growth_input }).caveats, [], JSON.stringify(earnings_growth_input));
   }
   assert.deepEqual(describe("cps", cps).caveats, []);
-  assert.equal(describe("sell_score", { ...cps, earnings_growth_input: inputs[0] }).caveats.length, 1);
+  assert.deepEqual(describe("sell_score", { ...cps, earnings_growth_input: inputs[0] }).caveats, [LEGACY_DIRECTION]);
+  assert.deepEqual(describe("sell_score", { ...cps, ...SELL_DIRECTION_FIELDS, earnings_growth_input: inputs[0] }).caveats, []);
 });
 
 test("unknown score components and malformed score parts are handled", () => {
@@ -590,7 +657,7 @@ test("the sell advisor shows its recommendation, scores, candidates and reasons"
   const labels = { hold: "Hold", watch: "Watch", sell: "Sell", "partial-sell": "Partial sell" };
   for (const [recommendation, label] of Object.entries(labels)) {
     const description = describe("sell_advisor", {
-      recommendation, confidence: 0.8, sell_score: 70.04, cps: 55.5,
+      recommendation, confidence: 0.8, sell_score: 70.04, cps: 55.5, sell_score_direction: SELL_SCORE_DIRECTION,
       rationale: ["sell score is strong enough."], replacement_candidates: [{ symbol: "BBB", expected_benefit: 4.56, score: 80 }],
     });
     assert.equal(description.headline, `Recommendation: ${label}.`, recommendation);
@@ -602,9 +669,17 @@ test("the sell advisor shows its recommendation, scores, candidates and reasons"
     ]);
     assert.deepEqual(description.details, ["Sell score is strong enough."]);
     assert.deepEqual(description.hints, []);
-    assert.equal(description.caveats.length, 1);
-    assert.match(description.caveats[0], /open question/);
+    assert.deepEqual(description.caveats, []);
   }
+});
+
+test("a sell advisor result that does not carry the direction tag is flagged as possibly using the earlier direction", () => {
+  const result = { recommendation: "hold", confidence: 0.8, sell_score: 70, cps: 55, rationale: [], replacement_candidates: [] };
+  assert.deepEqual(describe("sell_advisor", result).caveats, [LEGACY_DIRECTION]);
+  for (const sell_score_direction of [null, "", "higher_means_hold", "HIGHER_MEANS_SELL", 1, true]) {
+    assert.deepEqual(describe("sell_advisor", { ...result, sell_score_direction }).caveats, [LEGACY_DIRECTION], String(sell_score_direction));
+  }
+  assert.deepEqual(describe("sell_advisor", { ...result, sell_score_direction: SELL_SCORE_DIRECTION }).caveats, []);
 });
 
 test("the sell advisor says why it can only suggest Watch", () => {
@@ -782,6 +857,358 @@ test("input hints follow a holding's data flags and use real field names", () =>
   assert.match(hints[2], /Enter the Current share price/);
   assert.match(hints[3], /Enter the Cost basis/);
   assert.match(hints[4], /Enter the Entry date/);
+});
+
+// ---- Loading research ----------------------------------------------------------------------------
+
+const parseResearch = (patch) => parseResearchResponse(researchFixture(patch), "AAA");
+const lineFor = (research, key) => research.inputs.find((input) => input.key === key)?.line;
+const textFor = (research, key) => research.inputs.find((input) => input.key === key)?.text;
+
+test("research inputs are number fields of one holding, listed once each in field order", () => {
+  const keys = PIP_RESEARCH_INPUTS.map((input) => input.key);
+  assert.deepEqual(keys, [
+    "position.market_price",
+    "scores.tsr",
+    "scores.relative_performance",
+    "scores.technical_health",
+    "growth.earnings_growth_percent",
+    "growth.revenue_growth_percent",
+    "forward.target_upside_percent",
+    "forward.analyst_revisions_score",
+  ]);
+  const order = PIP_MODULE_FIELDS.map(fieldKey);
+  assert.deepEqual(keys, [...keys].sort((a, b) => order.indexOf(a) - order.indexOf(b)), "the same order as the field list");
+  for (const input of PIP_RESEARCH_INPUTS) {
+    const field = PIP_MODULE_FIELDS.find((item) => fieldKey(item) === input.key);
+    assert.ok(field && field.type === "number" && field.scope === "holding", input.key);
+    assert.ok(input.name && input.from && Array.isArray(input.evidence), input.key);
+    const names = input.evidence.map((path) => path.split(".").at(-1));
+    assert.equal(new Set(names).size, names.length, `${input.key} evidence ends in distinct names`);
+  }
+  assert.equal(new Set(PIP_RESEARCH_INPUTS.map((input) => input.name)).size, keys.length, "names are distinct");
+  assert.equal(Object.isFrozen(PIP_RESEARCH_INPUTS), true);
+});
+
+test("a full research answer fills eight inputs and explains each with the numbers behind it", () => {
+  const research = parseResearch();
+  assert.deepEqual(research.inputs.map(({ key, name, text }) => [key, name, text]), [
+    ["position.market_price", "Share price", "112"],
+    ["scores.tsr", "Total shareholder return score", "65"],
+    ["scores.relative_performance", "Relative performance score", "35"],
+    ["scores.technical_health", "Technical health score", "58.9"],
+    ["growth.earnings_growth_percent", "Earnings growth", "12.5"],
+    ["growth.revenue_growth_percent", "Revenue growth", "8.1"],
+    ["forward.target_upside_percent", "Target upside", "16.07"],
+    ["forward.analyst_revisions_score", "Forward revisions score", "80"],
+  ]);
+  assert.deepEqual(research.inputs.map((input) => input.line), FULL_LINES);
+  assert.deepEqual(research.skipped, []);
+  assert.deepEqual(research.warnings, []);
+  assert.equal(research.asOf, "2025-12-31");
+  assert.equal(research.version, "research-1");
+  assert.equal(research.hasScores, true);
+});
+
+test("box text is the value to four decimals without trailing zeros", () => {
+  const research = parseResearch({
+    price: { price: 112.123456 },
+    growth: { earnings_growth_percent: -6.5, revenue_growth_percent: -0.00001 },
+    analyst: { target_upside_percent: 0 },
+  });
+  assert.equal(textFor(research, "position.market_price"), "112.1235");
+  assert.equal(textFor(research, "growth.earnings_growth_percent"), "-6.5");
+  assert.equal(textFor(research, "growth.revenue_growth_percent"), "0");
+  assert.equal(textFor(research, "forward.target_upside_percent"), "0");
+  assert.equal(lineFor(research, "growth.earnings_growth_percent"), "Earnings growth -6.5% — reported by Yahoo Finance.");
+  assert.equal(lineFor(research, "position.market_price"), "Share price 112.1235 — Yahoo Finance historical close, as of 2025-12-31.");
+});
+
+test("a value Yahoo could not give is left blank with the API's reason, or a general one", () => {
+  const research = parseResearch({
+    growth: { earnings_growth_percent: null },
+    unavailable_metrics: { earnings_growth_percent: "Yahoo Finance did not expose earnings growth for this symbol." },
+    analyst: { target_upside_percent: null },
+    scores: { revisions: { score: null, reason: "Yahoo did not provide 30-day EPS revision counts for this symbol." } },
+  });
+  assert.deepEqual(research.inputs.map((input) => input.key), [
+    "position.market_price",
+    "scores.tsr",
+    "scores.relative_performance",
+    "scores.technical_health",
+    "growth.revenue_growth_percent",
+  ]);
+  assert.deepEqual(research.skipped, [
+    { key: "growth.earnings_growth_percent", name: "Earnings growth", reason: "Yahoo Finance did not expose earnings growth for this symbol." },
+    { key: "forward.target_upside_percent", name: "Target upside", reason: "Yahoo did not provide this value." },
+    { key: "forward.analyst_revisions_score", name: "Forward revisions score", reason: "Yahoo did not provide 30-day EPS revision counts for this symbol." },
+  ]);
+});
+
+test("research with nothing usable fills nothing and keeps every reason", () => {
+  const research = parseResearchResponse(emptyResearchFixture(), "AAA");
+  assert.deepEqual(research.inputs, []);
+  assert.deepEqual(research.skipped.map((item) => item.key), PIP_RESEARCH_INPUTS.map((input) => input.key));
+  const reasonOf = (key) => research.skipped.find((item) => item.key === key).reason;
+  assert.equal(reasonOf("scores.tsr"), "Yahoo history covers 30 days; at least 330 are needed to score a 1-year total return.");
+  assert.equal(reasonOf("scores.technical_health"), "Yahoo returned 2 daily closes; at least 200 are needed to score technical health.");
+  assert.equal(reasonOf("growth.revenue_growth_percent"), "Yahoo Finance did not expose revenue growth for this symbol.");
+  assert.equal(reasonOf("position.market_price"), "Yahoo did not provide this value.");
+  assert.equal(research.hasScores, true);
+});
+
+test("a reason that already ends in ! or ? is not given a full stop as well", () => {
+  const research = parseResearch({
+    growth: { earnings_growth_percent: null, revenue_growth_percent: null },
+    unavailable_metrics: { earnings_growth_percent: "Was it reported?", revenue_growth_percent: "It was not reported!" },
+  });
+  const notes = describeResearchLoad(research, "AAA").notes;
+  assert.ok(notes.includes("Earnings growth was not filled: Was it reported?"), notes.join(" | "));
+  assert.ok(notes.includes("Revenue growth was not filled: It was not reported!"), notes.join(" | "));
+});
+
+test("an answer from an API without research scores still fills what it has", () => {
+  const payload = researchFixture();
+  delete payload.scores;
+  const research = parseResearchResponse(payload, "AAA");
+  assert.equal(research.hasScores, false);
+  assert.equal(research.version, null);
+  assert.deepEqual(research.inputs.map((input) => input.key), [
+    "position.market_price",
+    "growth.earnings_growth_percent",
+    "growth.revenue_growth_percent",
+    "forward.target_upside_percent",
+  ]);
+  assert.deepEqual(research.skipped.map((item) => item.key), [
+    "scores.tsr",
+    "scores.relative_performance",
+    "scores.technical_health",
+    "forward.analyst_revisions_score",
+  ]);
+  for (const item of research.skipped) assert.equal(item.reason, "This PIP API version does not return research scores.");
+});
+
+test("a scores block that is not an object counts as no scores at all", () => {
+  for (const scores of ["n/a", 5, ["research-1"], null]) {
+    const payload = researchFixture();
+    payload.scores = scores;
+    const research = parseResearchResponse(payload, "AAA");
+    assert.equal(research.hasScores, false, JSON.stringify(scores));
+    assert.equal(research.version, null, JSON.stringify(scores));
+    assert.equal(research.inputs.length, 4, JSON.stringify(scores));
+    assert.deepEqual(research.skipped.map((item) => item.reason), Array(4).fill("This PIP API version does not return research scores."), JSON.stringify(scores));
+  }
+});
+
+test("without research scores, only the score inputs are blamed on the API version", () => {
+  const payload = researchFixture({ growth: { earnings_growth_percent: null }, analyst: { target_upside_percent: null } });
+  delete payload.scores;
+  const research = parseResearchResponse(payload, "AAA");
+  const reasonOf = (key) => research.skipped.find((item) => item.key === key).reason;
+  assert.equal(reasonOf("growth.earnings_growth_percent"), "Yahoo did not provide this value.");
+  assert.equal(reasonOf("forward.target_upside_percent"), "Yahoo did not provide this value.");
+  assert.equal(reasonOf("scores.tsr"), "This PIP API version does not return research scores.");
+});
+
+test("an answer that is not an object with a symbol is rejected", () => {
+  for (const payload of [null, undefined, [], "AAA", 5, {}, { symbol: 5 }, { symbol: null }]) {
+    assert.throws(() => parseResearchResponse(payload, "AAA"), /^Error: The API returned an unexpected research response, so nothing was filled\.$/, String(payload));
+  }
+});
+
+test("research for another symbol is never used, whatever the case or spacing", () => {
+  assert.throws(() => parseResearch({ symbol: "BBB" }), /different symbol than AAA, so nothing was filled\./);
+  assert.throws(() => parseResearchResponse(researchFixture({ symbol: "" }), "AAA"), /different symbol/);
+  assert.doesNotThrow(() => parseResearchResponse(researchFixture({ symbol: " aaa " }), " Aaa "));
+  assert.throws(() => parseResearchResponse(researchFixture(), ""), /different symbol/);
+  assert.throws(() => parseResearchResponse(researchFixture({ symbol: " " }), " "), /different symbol/, "a blank symbol matches nothing, not even a blank answer");
+});
+
+test("values outside a field's range are left blank instead of filled", () => {
+  const research = parseResearch({
+    price: { price: 0 },
+    scores: { tsr: { score: 120 }, revisions: { score: -1 } },
+    analyst: { target_upside_percent: -120 },
+  });
+  assert.deepEqual(research.inputs.map((input) => input.key), [
+    "scores.relative_performance",
+    "scores.technical_health",
+    "growth.earnings_growth_percent",
+    "growth.revenue_growth_percent",
+  ]);
+  assert.deepEqual(research.skipped.map(({ key, reason }) => [key, reason]), [
+    ["position.market_price", "Current share price must be greater than 0 (Yahoo returned 0)."],
+    ["scores.tsr", "Total shareholder return score (0–100) must be no more than 100 (Yahoo returned 120)."],
+    ["forward.target_upside_percent", "Target upside (%) must be at least -100 (Yahoo returned -120)."],
+    ["forward.analyst_revisions_score", "Forward revisions score (0–100) must be at least 0 (Yahoo returned -1)."],
+  ]);
+});
+
+test("values that are not finite numbers are left blank", () => {
+  const research = parseResearch({
+    price: { price: "112" },
+    growth: { earnings_growth_percent: Number.NaN, revenue_growth_percent: Number.POSITIVE_INFINITY },
+    scores: { tsr: { score: true } },
+  });
+  assert.deepEqual(research.inputs.map((input) => input.key), [
+    "scores.relative_performance",
+    "scores.technical_health",
+    "forward.target_upside_percent",
+    "forward.analyst_revisions_score",
+  ]);
+  assert.deepEqual(research.skipped.map((item) => item.key), [
+    "position.market_price",
+    "scores.tsr",
+    "growth.earnings_growth_percent",
+    "growth.revenue_growth_percent",
+  ]);
+  for (const item of research.skipped) assert.equal(item.reason, "Yahoo returned a value that is not a usable number.");
+});
+
+test("the lines say 'at' for a level that is matched, and above or below otherwise", () => {
+  const research = parseResearch({
+    scores: {
+      tsr: { raw: { return_percent: -3.26, history_days: 1 } },
+      relative_performance: { raw: { gap_points: 0.04, history_days: 330 } },
+      technical_health: { raw: { close_vs_long_average_percent: 0.04, close_vs_short_average_percent: -0.04, below_high_percent: 0 } },
+      revisions: { raw: { up: 0, down: 2, breadth: -1, periods_counted: ["0q"] } },
+    },
+  });
+  assert.equal(lineFor(research, "scores.tsr"), "Total shareholder return score 65 — -3.3% return on adjusted closes over 1 day.");
+  assert.equal(lineFor(research, "scores.relative_performance"), "Relative performance score 35 — 0.0 points against SPY over 330 shared days.");
+  assert.equal(lineFor(research, "scores.technical_health"), "Technical health score 58.9 — last close is at its 200-day average, at its 50-day average and at its 365-day high.");
+  assert.equal(lineFor(research, "forward.analyst_revisions_score"), "Forward revisions score 80 — 0 upward and 2 downward EPS estimate revisions in the last 30 days across 1 period (breadth -1.00).");
+  const ahead = parseResearch({ scores: { relative_performance: { raw: { gap_points: 6 } }, technical_health: { raw: { close_vs_long_average_percent: -5, close_vs_short_average_percent: 2.04 } } } });
+  assert.equal(lineFor(ahead, "scores.relative_performance"), "Relative performance score 35 — +6.0 points against SPY over 364 shared days.");
+  assert.equal(lineFor(ahead, "scores.technical_health"), "Technical health score 58.9 — last close is 5.0% below its 200-day average, 2.0% above its 50-day average and 12.0% below its 365-day high.");
+});
+
+test("the return line names its price basis and says plain daily closes when it is not stated", () => {
+  assert.equal(lineFor(parseResearch({ returns: { basis: "close" } }), "scores.tsr"), "Total shareholder return score 65 — +12.0% return on daily closes over 364 days.");
+  assert.equal(lineFor(parseResearch({ returns: { basis: null } }), "scores.tsr"), "Total shareholder return score 65 — +12.0% return on daily closes over 364 days.");
+});
+
+test("the share price line states its source, date and staleness", () => {
+  const line = (price) => lineFor(parseResearch({ price }), "position.market_price");
+  assert.equal(line({ source: "Alpaca", as_of: "2026-01-01T14:59:00Z", stale: true }), "Share price 112 — Alpaca, as of 2026-01-01 14:59 UTC, marked stale.");
+  assert.equal(line({ source: "Twelve Data", as_of: "2026-01-02", stale: true }), "Share price 112 — Twelve Data, as of 2026-01-02, marked stale.");
+  assert.equal(line({ source: null, as_of: null }), "Share price 112 — source unavailable.");
+  assert.equal(line({ source: "  ", as_of: "not a date" }), "Share price 112 — source unavailable.");
+  assert.equal(line({ as_of: "not a date" }), "Share price 112 — Yahoo Finance historical close.");
+  assert.equal(line({ stale: "yes" }), "Share price 112 — Yahoo Finance historical close, as of 2025-12-31.", "only a true stale flag is shown");
+});
+
+test("the target upside line names the rating and target price it has", () => {
+  const line = (analyst) => lineFor(parseResearch({ analyst }), "forward.target_upside_percent");
+  assert.equal(line({ rating: null }), "Target upside 16.07% — analyst target price 130.");
+  assert.equal(line({ target_price: null }), "Target upside 16.07% — analyst rating Buy.");
+  assert.equal(line({ target_price: 130.5 }), "Target upside 16.07% — analyst rating Buy, target price 130.5.");
+  assert.equal(line({ target_price: 0 }), "Target upside 16.07% — analyst rating Buy, target price 0.");
+  assert.equal(line({ rating: " ", target_price: null }), "Target upside 16.07% — analyst data.");
+});
+
+test("a growth line without a stated source says so, and an explanation without evidence stays general", () => {
+  assert.equal(lineFor(parseResearch({ growth: { source: null } }), "growth.earnings_growth_percent"), "Earnings growth 12.5% — source not stated.");
+  assert.equal(lineFor(parseResearch({ growth: { source: "  Yahoo Finance " } }), "growth.revenue_growth_percent"), "Revenue growth 8.1% — reported by Yahoo Finance.");
+  const thin = parseResearch({ scores: { technical_health: { raw: { long_average_days: null } }, revisions: { raw: { periods_counted: null } }, tsr: { raw: { history_days: null } } } });
+  assert.equal(lineFor(thin, "scores.technical_health"), "Technical health score 58.9 — from Yahoo research.");
+  assert.equal(lineFor(thin, "forward.analyst_revisions_score"), "Forward revisions score 80 — from Yahoo research.");
+  assert.equal(lineFor(thin, "scores.tsr"), "Total shareholder return score 65 — from Yahoo research.");
+});
+
+test("the as-of date comes from the end of the history, then from the fetch time, else nothing", () => {
+  assert.equal(parseResearch().asOf, "2025-12-31");
+  assert.equal(parseResearch({ returns: { end_date: null }, fetched_at: "2026-01-02T09:30:00.123456+00:00" }).asOf, "2026-01-02");
+  assert.equal(parseResearch({ returns: { end_date: "2025-12-30T23:00:00Z" }, fetched_at: "2026-01-02T09:30:00+00:00" }).asOf, "2025-12-30");
+  assert.equal(parseResearch({ returns: { end_date: "soon" }, fetched_at: "later" }).asOf, null);
+  assert.equal(parseResearch({ returns: { end_date: 20251231 }, fetched_at: null }).asOf, null);
+  assert.equal(parseResearch({ returns: { end_date: ["2025-12-30"] }, fetched_at: ["2026-01-02"] }).asOf, null, "only text is read as a date");
+});
+
+test("a date that does not exist on the calendar is not shown", () => {
+  const fetched = "2026-01-02T09:30:00+00:00";
+  assert.equal(parseResearch({ returns: { end_date: "2025-02-30" }, fetched_at: fetched }).asOf, "2026-01-02", "30 February rolls over to March, so it is rejected");
+  assert.equal(parseResearch({ returns: { end_date: "2025-13-45" }, fetched_at: fetched }).asOf, "2026-01-02");
+  assert.equal(parseResearch({ returns: { end_date: "2025-04-31T10:00:00Z" }, fetched_at: null }).asOf, null);
+  assert.equal(parseResearch({ returns: { end_date: "2024-02-29" }, fetched_at: fetched }).asOf, "2024-02-29", "a leap day is a real date");
+  assert.equal(lineFor(parseResearch({ price: { as_of: "2025-02-30" } }), "position.market_price"), "Share price 112 — Yahoo Finance historical close.");
+  assert.equal(lineFor(parseResearch({ price: { as_of: "2024-02-29" } }), "position.market_price"), "Share price 112 — Yahoo Finance historical close, as of 2024-02-29.");
+});
+
+test("the score rule version is passed on only when it is text", () => {
+  assert.equal(parseResearch({ scores: { version: "research-2" } }).version, "research-2");
+  assert.equal(parseResearch({ scores: { version: "" } }).version, null);
+  assert.equal(parseResearch({ scores: { version: 1 } }).version, null);
+});
+
+test("API warnings are passed on as text, with blank and non-text ones dropped", () => {
+  const research = parseResearch({ warnings: ["Alpaca quote was unavailable.", "  ", 5, null, " The shared snapshot is old. "] });
+  assert.deepEqual(research.warnings, ["Alpaca quote was unavailable.", "The shared snapshot is old."]);
+  assert.deepEqual(parseResearch({ warnings: "not a list" }).warnings, []);
+});
+
+test("research inputs count as unchanged only while their box still holds the loaded text", () => {
+  const { inputs } = parseResearch();
+  const values = Object.fromEntries(inputs.map((input) => [input.key, input.text]));
+  assert.equal(unchangedResearchInputs(inputs, values).length, 8);
+  assert.deepEqual(
+    unchangedResearchInputs(inputs, { ...values, "scores.tsr": "66", "growth.revenue_growth_percent": "" }).map((input) => input.key),
+    inputs.map((input) => input.key).filter((key) => key !== "scores.tsr" && key !== "growth.revenue_growth_percent"),
+  );
+  assert.equal(unchangedResearchInputs(inputs, { ...values, "scores.tsr": " 65 " }).length, 8, "spaces around the same text are not an edit");
+  assert.equal(unchangedResearchInputs(inputs, { ...values, "scores.tsr": "65.0" }).length, 7, "retyped text is the user's own");
+  assert.deepEqual(unchangedResearchInputs(inputs, {}), []);
+  assert.deepEqual(unchangedResearchInputs([], values), []);
+});
+
+test("the load summary counts what was filled, then lists the numbers, the blanks and the warnings", () => {
+  const full = parseResearch();
+  const summary = describeResearchLoad(full, " aaa ");
+  assert.equal(summary.headline, "Filled 8 of 8 inputs for AAA from Yahoo research (data as of 2025-12-31). Every value stays editable; nothing was saved.");
+  assert.equal(summary.filled, 8);
+  assert.deepEqual(summary.notes, FULL_LINES);
+
+  const partial = parseResearch({
+    growth: { earnings_growth_percent: null },
+    unavailable_metrics: { earnings_growth_percent: "Yahoo Finance did not expose earnings growth for this symbol" },
+    analyst: { target_upside_percent: null },
+    warnings: ["Careful."],
+  });
+  const some = describeResearchLoad(partial, "AAA");
+  assert.equal(some.headline, "Filled 6 of 8 inputs for AAA from Yahoo research (data as of 2025-12-31). Every value stays editable; nothing was saved.");
+  assert.equal(some.filled, 6);
+  assert.deepEqual(some.notes, [
+    ...partial.inputs.map((input) => input.line),
+    "Earnings growth was not filled: Yahoo Finance did not expose earnings growth for this symbol.",
+    "Target upside was not filled: Yahoo did not provide this value.",
+    "Careful.",
+  ]);
+
+  const undated = describeResearchLoad(parseResearch({ returns: { end_date: null }, fetched_at: null }), "AAA");
+  assert.equal(undated.headline, "Filled 8 of 8 inputs for AAA from Yahoo research. Every value stays editable; nothing was saved.");
+});
+
+test("a load with nothing usable says so and still lists why", () => {
+  const none = describeResearchLoad(parseResearchResponse(emptyResearchFixture({ warnings: ["Yahoo was slow."] }), "AAA"), "AAA");
+  assert.equal(none.headline, "Yahoo research did not give any usable values for AAA.");
+  assert.equal(none.filled, 0);
+  assert.equal(none.notes.length, 9);
+  assert.ok(none.notes.slice(0, 8).every((note) => note.includes(" was not filled: ")));
+  assert.equal(none.notes[8], "Yahoo was slow.");
+});
+
+test("the result provenance lists only inputs that still hold the loaded text", () => {
+  const research = parseResearch();
+  assert.equal(describeResearchProvenance(research, []), null);
+  assert.deepEqual(describeResearchProvenance(research, research.inputs.slice(0, 2)), {
+    heading: "Inputs from Yahoo research (data as of 2025-12-31; score rules research-1)",
+    lines: [FULL_LINES[0], FULL_LINES[1]],
+    note: "A module uses only the inputs it needs. Values you edited after loading are your own and are not listed.",
+  });
+  const heading = (meta) => describeResearchProvenance(meta, research.inputs).heading;
+  assert.equal(heading({ asOf: "2025-12-31", version: null }), "Inputs from Yahoo research (data as of 2025-12-31)");
+  assert.equal(heading({ asOf: null, version: "research-1" }), "Inputs from Yahoo research (score rules research-1)");
+  assert.equal(heading({ asOf: null, version: null }), "Inputs from Yahoo research");
 });
 
 test("the core stays free of DOM, network and storage access", async () => {

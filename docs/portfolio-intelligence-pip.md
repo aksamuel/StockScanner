@@ -77,6 +77,10 @@ Formula:
 - 10% Earnings Growth
 - 15% Opportunity Cost
 
+A higher sell score is a stronger case to sell. Every input except Opportunity Cost
+is a 0–100 score that rises as a holding gets healthier, so it counts as 100 minus
+its score (see [Scoring](pip/SCORING.md)).
+
 ### 10. Replacement Candidate Engine
 Generate replacement options that may produce stronger score quality and better capital efficiency.
 
@@ -195,13 +199,18 @@ to market data providers. The browser displays raw historical price return,
 SPY-relative performance, available analyst consensus/target information,
 provider-reported growth percentages, raw revision counts, and Yahoo per-share
 dividend history. It fills available current-price, target, and growth inputs.
-Raw returns and revision counts are not converted into component scores, and
-per-share dividend events are not treated as portfolio cash income.
+The workbench shows raw returns and revision counts as evidence and does not fill
+score inputs from them, and per-share dividend events are not treated as portfolio
+cash income. The API response also carries a `scores` block with 0–100 research
+scores (rules version `research-1`, see [Scoring](pip/SCORING.md)). The
+[module runner](pip/MODULE_RUNNER.md#loading-research) fills its score inputs from
+that block when you press **Load research**; the workbench does not use it yet.
 
 Alpaca and Twelve Data continue to supply price data only. Yahoo growth and
 revision fields may be missing for individual symbols; unavailable values
 remain missing and lower score confidence. The revision counts are displayed
-as evidence, but no 0–100 score mapping is applied. Provider/API keys remain
+as evidence, and the `scores` block maps them to 0–100 when there are at least
+three. Provider/API keys remain
 server-side; the PIP browser never receives them.
 
 API routes:
@@ -282,6 +291,9 @@ The PIP layer helps by giving better evidence, not by guaranteeing a right decis
 - Keep every recommendation tied to source data and audit records.
 - Score calculations should be deterministic and versioned.
 - Confidence measures available input coverage, not whether a score is strong.
+- A higher Sell Score always means a stronger case to sell. New results carry
+  `sell_score_direction: "higher_means_sell"`; rows saved without it used the earlier
+  direction and are not comparable.
 - Replacement quality scores are compared to the current holding's CPS, not its
   distinct Sell Score.
 - Dividend yield uses dated cash events from the trailing 365-day period; an

@@ -6,7 +6,7 @@ from uuid import uuid4
 
 from .models import PositionRecord, ReplacementCandidate, SellRecommendation
 from .replacement_engine import ReplacementCandidateEngine
-from .scoring import calculate_cps_result, calculate_sell_score_result
+from .scoring import SELL_SCORE_DIRECTION, calculate_cps_result, calculate_sell_score_result
 from .sell_advisor import SellAdvisor
 
 
@@ -160,6 +160,7 @@ class DecisionEngine:
             "replacement_candidates": replacement_candidates,
             "cps_confidence": cps_result.confidence,
             "sell_score_confidence": sell_result.confidence,
+            "sell_score_direction": SELL_SCORE_DIRECTION,
             "missing_data_reasons": missing_data_reasons,
             **(additional_metadata or {}),
         }
@@ -176,6 +177,7 @@ class DecisionEngine:
             confidence=confidence,
             status="draft",
             replacement_candidates=replacement_candidates,
+            sell_score_direction=SELL_SCORE_DIRECTION,
         )
         self.last_recommendation = self.repository.create_recommendation(recommendation_record)
 

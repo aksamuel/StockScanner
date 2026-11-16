@@ -6,6 +6,7 @@ from typing import Any, Callable
 
 from ..analyst_data import get_analyst_data, get_pip_research_metrics
 from ..market_data import download_data
+from .research_scores import build_research_scores
 
 
 PRICE_SOURCES = {"Yahoo", "Alpaca", "Twelve Data"}
@@ -100,8 +101,11 @@ def collect_research_data(
     """Collect Yahoo research facts and the shared Yahoo/Alpaca/Twelve Data quote.
 
     Only public ticker symbols are passed to those data providers. This function
-    does not call Alpaca or Twelve Data directly, convert raw returns into 0..100
-    PIP scores, or treat per-share dividend events as portfolio cash income.
+    does not call Alpaca or Twelve Data directly or treat per-share dividend
+    events as portfolio cash income. Alongside the raw facts it returns a
+    ``scores`` block: 0..100 PIP scores built from them by the single set of
+    rules in ``research_scores``, each ``None`` with a reason when its inputs
+    are missing or too thin.
     """
     symbol = symbol.strip().upper()
     current_day = today or datetime.now(timezone.utc).date()
@@ -141,6 +145,9 @@ def collect_research_data(
     stock_by_date = dict(points)
     benchmark_by_date = dict(benchmark_points)
     common_dates = sorted(stock_by_date.keys() & benchmark_by_date.keys())
+    aligned_history_days = (
+        (common_dates[-1] - common_dates[0]).days if len(common_dates) >= 2 else None
+    )
     aligned_stock_return = _return_percent(
         [(day, stock_by_date[day]) for day in common_dates]
     )
@@ -205,9 +212,6 @@ def collect_research_data(
 
     if not dividend_history_complete:
         warnings.append("Yahoo history does not cover the full trailing 365 days of dividends.")
-    warnings.extend([
-        "Raw return percentages are shown as evidence; no 0–100 score conversion is assumed.",
-    ])
     fundamentals: dict[str, Any] = {}
     try:
         fundamentals = fundamental_loader(symbol)
@@ -254,6 +258,19 @@ def collect_research_data(
 
     history_start = points[0][0] if points else None
     history_end = points[-1][0] if points else None
+    history_days = (
+        (history_end - history_start).days
+        if history_start and history_end
+        else None
+    )
+    scores = build_research_scores(
+        return_percent=stock_return,
+        history_days=history_days,
+        relative_gap_points=relative_performance,
+        relative_history_days=aligned_history_days,
+        revision_periods=revision_periods,
+        points=points,
+    )
     return {
         "symbol": symbol,
         "fetched_at": datetime.now(timezone.utc).isoformat(),
@@ -261,15 +278,13 @@ def collect_research_data(
         "returns": {
             "start_date": history_start.isoformat() if history_start else None,
             "end_date": history_end.isoformat() if history_end else None,
-            "history_days": (
-                (history_end - history_start).days
-                if history_start and history_end
-                else None
-            ),
+            "history_days": history_days,
+            "aligned_history_days": aligned_history_days,
             "price_return_percent": stock_return,
             "spy_return_percent": benchmark_return,
             "relative_performance_percentage_points": relative_performance,
-            "basis": "adjusted_close" if history is not None and "Adj Close" in getattr(history, "columns", ()) else "close",
+            # Yahoo's Close is already adjusted for dividends and splits, and an Adj Close column is preferred when present.
+            "basis": "adjusted_close",
         },
         "dividends": {
             "trailing_365_days_per_share": (
@@ -286,8 +301,9 @@ def collect_research_data(
         "analyst_revisions": {
             "source": fundamentals.get("source") or "Yahoo Finance",
             "periods": revision_periods,
-            "note": "Raw EPS estimate revision counts are shown without converting them to a 0–100 score.",
+            "note": "Raw EPS estimate revision counts. The 0–100 score built from them is in scores.revisions.",
         },
+        "scores": scores,
         "unavailable_metrics": {
             "earnings_growth_percent": (
                 None if growth["earnings_growth_percent"] is not None
@@ -297,8 +313,10 @@ def collect_research_data(
                 None if growth["revenue_growth_percent"] is not None
                 else "Yahoo Finance did not expose revenue growth for this symbol."
             ),
-            "analyst_revisions_score": "Raw analyst revisions are shown, but no approved 0–100 score mapping exists.",
-            "normalized_return_scores": "No approved 0–100 score mapping exists for raw return percentages.",
+            "tsr_score": scores["tsr"]["reason"],
+            "relative_performance_score": scores["relative_performance"]["reason"],
+            "analyst_revisions_score": scores["revisions"]["reason"],
+            "technical_health_score": scores["technical_health"]["reason"],
         },
         "warnings": warnings,
     }

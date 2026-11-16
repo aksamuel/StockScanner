@@ -37,14 +37,47 @@ the configurable weights are expressed as percentages or fractions.
 > the weights should be revised in a later release. Change the one
 > `SELL_SCORE_WEIGHTS` mapping if the approved weights change.
 
-> **Open question for maintainer:** Six of the seven Sell Score inputs are defined
-> so that a higher value means a healthier holding (total return, relative
-> performance, revisions, dividend quality, technical health and earnings growth);
-> only opportunity cost points toward selling. Yet `SellAdvisor` reads a score of 65
-> or more as `sell`. The behavior is unchanged and is pinned by
-> `tests/pip/test_decision_pipeline.py`. Decide whether the healthy inputs should be
-> inverted or the advisor thresholds changed before the advisor's `sell` is relied
-> on. The module runner shows this caveat with sell-score and sell-advisor results.
+### Direction: a higher sell score is a stronger case to sell
+
+Six of the seven inputs are 0–100 scores that rise as a holding gets healthier
+(total return, relative performance, revisions, dividend quality, technical health
+and earnings growth). The sell score counts each of them as **100 minus its score**
+(`SELL_SCORE_INVERTED_INPUTS`), so a healthy holding scores low and a weak one
+scores high. Opportunity cost already rises with the case for selling and is
+counted as entered. An input is clamped to 0–100 first and then flipped, and a
+missing or invalid input is left out rather than flipped, so the weights, the
+normalization and the input confidence work as before. `SellAdvisor` is unchanged:
+65 or more gives `sell`, and 50 or more with an opportunity cost of 60 or more gives
+`partial-sell`. The capital productivity score is not flipped.
+
+Callers still pass health scores; the flip happens inside
+`calculate_sell_score_result`. `component_scores` in a sell-score result hold the
+values after flipping, so the score is always the sum of weight × component divided
+by the sum of the available weights. For example, total return 80, relative
+performance 75, revisions 70, technical health 80 and earnings growth 65 (weights
+totalling 85) gave 74.7 and `sell` before the flip and give 25.3 and `hold` now; the
+mirror-image inputs go the other way.
+
+Every new sell-score result carries `sell_score_direction: "higher_means_sell"`: the
+sell-score and sell-advisor module results, the analysis response, and the saved
+`stock_scores.metadata`, `sell_recommendations.metadata` and
+`daily_snapshots.metadata`. Rows saved before this change have no tag and used the
+earlier direction (a higher number meant a healthier holding), so their sell scores
+and their `sell` / `hold` labels cannot be compared with new ones. Review or reject
+any recommendation that is still open from before the change. This read-only query
+lists them:
+
+```sql
+select id, symbol, score, recommendation, status, created_at
+from sell_recommendations
+where metadata->>'sell_score_direction' is null
+  and status in ('proposed', 'under_review', 'escalated')
+order by created_at;
+```
+
+The module runner explains which inputs were flipped under a sell-score result, and
+shows an "unverified" caveat when a result lacks the tag (for example from an API
+that has not been updated).
 
 ## Missing data and determinism
 
@@ -80,6 +113,53 @@ reports the same fields plus its own `basis`, and the record is saved in
 `stock_scores.metadata.modules.growth`. A saved score may itself have come from an
 earlier analysis; that analysis's metadata says which data it used. The
 substitution itself is unchanged; see [Open questions](OPEN_QUESTIONS.md).
+
+## Research scores from Yahoo data
+
+`POST /api/pip/portfolios/{id}/research` returns the raw Yahoo facts and, beside
+them, a `scores` block that turns four of them into the 0–100 inputs used above.
+The rules are one table, `RESEARCH_SCORE_RULES` in
+`stockscanner/pip/research_scores.py`, and the block names its version
+(`research-1`). Each score is `{"score": number or null, "raw": {...}, "reason":
+text or null}`. When the data is missing or too thin the score is `null` and
+`reason` says why; nothing is guessed. `unavailable_metrics` repeats each reason.
+All four are higher = healthier, like every other input before the direction flip
+above.
+
+Every score is the same straight line, kept within 0–100:
+`50 + 50 × value ÷ limit`. A value of 0 scores 50, and a value at the limit scores
+0 or 100.
+
+| Score | Value | Limit | Needs |
+| --- | --- | ---: | --- |
+| `tsr` | 1-year return in percent (adjusted close) | 40 | 330 days of history |
+| `relative_performance` | that return minus SPY's, in points, over the dates both have | 20 | 330 shared days |
+| `revisions` | (up − down) ÷ (up + down), counting the 30-day EPS revisions of `0q`, `+1q`, `0y` and `+1y` | 1 | 3 revisions |
+| `technical_health` | the average of the three parts below | | 200 daily closes |
+
+The technical parts are the latest close against its 200-close average (limit
+15%), against its 50-close average (limit 10%), and `100 × (1 − distance below the
+highest close of the last 365 days ÷ 40%)`, kept within 0–100.
+
+Worked examples: a return of +12% gives `tsr` 65.0. Six points behind SPY gives
+`relative_performance` 35.0. Four revisions up and one down give a breadth of 0.6
+and `revisions` 80.0. A close 5% above its 200-close average, 2% below its
+50-close average and 12% below its high gives parts 66.7, 40.0 and 70.0, so
+`technical_health` 58.9.
+
+The history is Yahoo's close adjusted for dividends and splits (`returns.basis` is
+`adjusted_close`, and an `Adj Close` column is used when Yahoo returns one), so the
+return approximates a total return rather than a price-only change.
+
+The research scores leave these alone: earnings growth (Yahoo's growth percentage
+still goes through the growth analysis), dividend growth, dividend quality and
+opportunity cost (typed or saved), and target upside and share price (already in
+the response). With only the research scores and growth, the capital productivity
+score has 85 of 100 weight (85% confidence) and the sell score 85 of 115 (74%; 100
+of 115, or 87%, once dividend quality is supplied).
+
+The [module runner](MODULE_RUNNER.md#loading-research) fills its inputs from this
+block when you press **Load research**. The workbench does not read it yet.
 
 ## Return hurdle and dead money
 

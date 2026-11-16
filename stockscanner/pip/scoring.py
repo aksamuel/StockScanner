@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from math import isfinite
-from typing import Mapping
+from typing import Collection, Mapping
 
 
 CPS_WEIGHTS = {
@@ -22,6 +22,19 @@ SELL_SCORE_WEIGHTS = {
     "earnings_growth": 10.0,
     "opportunity_cost": 15.0,
 }
+
+# Six of the seven sell-score inputs are 0..100 scores that rise as a holding gets healthier. The sell score counts
+# each of them as 100 minus its score, so a higher sell score always means a stronger case to sell. Opportunity cost
+# already rises with that case and is counted as entered. Rows saved before this rule have no direction tag.
+SELL_SCORE_INVERTED_INPUTS = (
+    "tsr",
+    "relative_performance",
+    "revisions",
+    "dividend_quality",
+    "technical_health",
+    "earnings_growth",
+)
+SELL_SCORE_DIRECTION = "higher_means_sell"
 
 
 @dataclass(frozen=True)
@@ -44,8 +57,12 @@ def normalize_score(value: float, minimum: float = 0.0, maximum: float = 100.0) 
 def calculate_weighted_score(
     components: Mapping[str, float | None],
     weights: Mapping[str, float],
+    inverted: Collection[str] = (),
 ) -> ScoringResult:
-    """Normalize available 0..100 component scores and report missing-data confidence."""
+    """Normalize available 0..100 component scores and report missing-data confidence.
+
+    Components named in `inverted` are clamped first and then counted as 100 minus their score.
+    """
     if not weights or any(not isfinite(float(weight)) or float(weight) <= 0 for weight in weights.values()):
         raise ValueError("weights must be finite positive values")
 
@@ -68,6 +85,8 @@ def calculate_weighted_score(
             reasons.append(f"{name.replace('_', ' ').title()} data is invalid.")
             continue
         available[name] = normalize_score(numeric_value)
+        if name in inverted:
+            available[name] = 100.0 - available[name]
         available_weight += float(weight)
 
     if not available:
@@ -104,7 +123,12 @@ def calculate_sell_score_result(
     components: Mapping[str, float | None],
     weights: Mapping[str, float] | None = None,
 ) -> ScoringResult:
-    return calculate_weighted_score(components, SELL_SCORE_WEIGHTS if weights is None else weights)
+    """Score the case for selling: a higher score means a stronger case. Callers pass health scores."""
+    return calculate_weighted_score(
+        components,
+        SELL_SCORE_WEIGHTS if weights is None else weights,
+        inverted=SELL_SCORE_INVERTED_INPUTS,
+    )
 
 
 def calculate_cps(

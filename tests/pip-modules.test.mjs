@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import test from "node:test";
+import nodeTest from "node:test";
 import {
   HOLDING_COLUMNS,
   PIP_MODULES,
   PIP_MODULE_FIELDS,
+  PIP_RESEARCH_INPUTS,
   CONFIDENCE_NOTE,
   describeHolding,
   describeModuleResult,
@@ -13,6 +14,11 @@ import {
   holdingCells,
   holdingInputHints,
 } from "../pip-modules-core.js";
+import { FULL_RESEARCH_LINES, FULL_RESEARCH_TEXTS, emptyResearchFixture, researchFixture } from "./pip-research-fixture.mjs";
+
+// A test waiting on a request that is never answered must fail, not hang the whole run.
+const TEST_TIMEOUT_MS = 30000;
+const test = (name, run) => nodeTest(name, { timeout: TEST_TIMEOUT_MS }, run);
 
 const DEFAULT_URL = "https://stockscanner-pip-api.onrender.com";
 const OTHER_URL = "https://pip.example.test";
@@ -1511,6 +1517,572 @@ test("a result is laid out as heading, headline, facts, details, hints, caveats 
   assert.equal(parts[6].textContent, view.footer);
 });
 
+// ---- Loading research into the inputs ------------------------------------------------------------
+
+const RESEARCH_PATH = "POST /api/pip/portfolios/p-main/research";
+const FULL_HEADLINE = "Filled 8 of 8 inputs for AAA from Yahoo research (data as of 2025-12-31). Every value stays editable; nothing was saved.";
+const PROVENANCE_HEADING = "Inputs from Yahoo research (data as of 2025-12-31; score rules research-1)";
+const PROVENANCE_NOTE = "A module uses only the inputs it needs. Values you edited after loading are your own and are not listed.";
+const NO_REVISIONS = "Yahoo did not provide 30-day EPS revision counts for this symbol.";
+const BLANK_BOXES = Object.fromEntries(PIP_RESEARCH_INPUTS.map((entry) => [entry.key, ""]));
+const ADVISOR = moduleResponse("sell_advisor", {
+  recommendation: "watch",
+  sell_score: null,
+  cps: null,
+  confidence: 0.2,
+  replacement_candidates: [{ symbol: "BBB", expected_benefit: 4.2 }],
+  rationale: ["Only a few inputs were supplied."],
+});
+
+const researchButton = (env) => env.el("moduleResearch");
+const loadResearch = (env) => researchButton(env).fire("click");
+const researchPosts = (env) => posts(env).filter((call) => call.path.endsWith("/research"));
+const modulePosts = (env) => posts(env).filter((call) => call.path.includes("/modules/"));
+const boxes = (env) => Object.fromEntries(PIP_RESEARCH_INPUTS.map((entry) => [entry.key, inputFor(env, entry.key).value]));
+const researchNotes = (env) => env.el("moduleResearchNotes").children.map((item) => item.textContent);
+const provenanceBlocks = (env) => env.el("moduleResult").children.filter((part) => part.className === "provenance");
+const provenanceLines = (env) => (provenanceBlocks(env)[0]?.children[1]?.children ?? []).map((item) => item.textContent);
+const researchRoutes = (body = researchFixture()) => ({
+  [RESEARCH_PATH]: { json: body },
+  [MODULE_PATH("growth")]: { json: moduleResponse("growth", GROWTH) },
+});
+
+test("Load research sends only the symbol, with the sign-in token, and fills what Yahoo gave", async (t) => {
+  const env = await connectedPage(t, { routes: researchRoutes() });
+  await openRunner(env, "AAA");
+  assert.equal(researchButton(env).disabled, false);
+  assert.equal(status(env, "moduleResearchStatus"), "");
+  assert.equal(env.el("moduleResearchNotes").hidden, true);
+  const own = { "scores.opportunity_cost": "40", "position.cost_basis": "900", "position.entry_date": "2026-01-02", "position.dividends_received": "0" };
+  for (const [key, text] of Object.entries(own)) inputFor(env, key).value = text;
+  await loadResearch(env);
+
+  assert.equal(researchPosts(env).length, 1);
+  const call = researchPosts(env)[0];
+  const earlier = env.calls.find((item) => item.path === "/api/pip/portfolios");
+  assert.equal(call.path, "/api/pip/portfolios/p-main/research");
+  assert.deepEqual(call.body, { symbol: "AAA" });
+  assert.equal(typeof call.headers.Authorization, "string");
+  assert.notEqual(call.headers.Authorization, "");
+  assert.equal(call.headers.Authorization, earlier.headers.Authorization);
+  assert.equal(call.headers["Content-Type"], "application/json");
+  assert.equal(call.init.credentials, "omit");
+  assert.deepEqual(boxes(env), FULL_RESEARCH_TEXTS);
+  for (const [key, text] of Object.entries(own)) assert.equal(inputFor(env, key).value, text, `${key} is not filled by research`);
+  assert.equal(status(env, "moduleResearchStatus"), FULL_HEADLINE);
+  assert.equal(env.el("moduleResearchStatus").className, "subtle");
+  assert.deepEqual(researchNotes(env), FULL_RESEARCH_LINES);
+  assert.equal(env.el("moduleResearchNotes").hidden, false);
+  assert.equal(env.el("moduleInputs").open, true);
+  assert.equal(researchButton(env).disabled, false);
+  assert.equal(env.el("moduleResult").hidden, true, "loading research runs no module");
+  assert.deepEqual(modulePosts(env), []);
+  assert.equal(env.pendingTimers(), 0);
+});
+
+test("Load research does nothing before a holding is chosen", async (t) => {
+  const env = await connectedPage(t);
+  await loadResearch(env);
+  assert.deepEqual(posts(env), []);
+  assert.equal(status(env, "moduleResearchStatus"), "");
+});
+
+test("while research loads only its own button is disabled, and a second click sends nothing", async (t) => {
+  const release = gate();
+  const env = await connectedPage(t, {
+    routes: {
+      [RESEARCH_PATH]: async () => { await release.promise; return { json: researchFixture() }; },
+      [MODULE_PATH("growth")]: { json: moduleResponse("growth", GROWTH) },
+    },
+  });
+  await openRunner(env, "AAA");
+  inputFor(env, "scores.tsr").value = "44";
+  const first = loadResearch(env);
+  await waitFor(() => researchButton(env).disabled, "the research request to start");
+  assert.equal(status(env, "moduleResearchStatus"), "Loading Yahoo research for AAA…");
+  assert.equal(env.el("moduleResearchStatus").className, "subtle");
+  assert.ok(moduleButtons(env).every((button) => !button.disabled), "module buttons are not blocked");
+  await loadResearch(env);
+  assert.equal(researchPosts(env).length, 1);
+
+  await moduleButton(env, "Growth analysis").fire("click");
+  assert.deepEqual(modulePosts(env)[0].body, { symbol: "AAA", hurdle: { required_annual_return_percent: 7 }, scores: { tsr: 44 } });
+  assert.deepEqual(provenanceBlocks(env), [], "this run was sent before the research arrived");
+
+  release.release();
+  await first;
+  assert.equal(researchButton(env).disabled, false);
+  assert.equal(status(env, "moduleResearchStatus"), FULL_HEADLINE);
+  assert.deepEqual(boxes(env), FULL_RESEARCH_TEXTS);
+});
+
+test("Load research works while a module is running and does not change that run", async (t) => {
+  const release = gate();
+  const env = await connectedPage(t, {
+    routes: {
+      [RESEARCH_PATH]: { json: researchFixture() },
+      [MODULE_PATH("growth")]: async () => { await release.promise; return { json: moduleResponse("growth", GROWTH) }; },
+    },
+  });
+  await openRunner(env, "AAA");
+  const run = moduleButton(env, "Growth analysis").fire("click");
+  await waitFor(() => moduleButtons(env).every((button) => button.disabled), "the run to start");
+  assert.equal(researchButton(env).disabled, false);
+  await loadResearch(env);
+  assert.deepEqual(boxes(env), FULL_RESEARCH_TEXTS);
+  assert.ok(moduleButtons(env).every((button) => button.disabled), "the run is still going");
+  release.release();
+  await run;
+  assert.deepEqual(modulePosts(env)[0].body, { symbol: "AAA", hurdle: { required_annual_return_percent: 7 } });
+  assert.equal(env.el("moduleResult").hidden, false);
+  assert.deepEqual(provenanceBlocks(env), [], "the run was sent before the research arrived");
+  assert.ok(moduleButtons(env).every((button) => !button.disabled));
+});
+
+const RESEARCH_FAILURES = [
+  ["an explanation from the API", { status: 502, json: { detail: "Yahoo research is unavailable for AAA right now." } }, "Yahoo research is unavailable for AAA right now."],
+  ["a symbol that is not in the portfolio", { status: 422, json: { detail: "Import this holding into the selected portfolio before loading research." } }, "Import this holding into the selected portfolio before loading research."],
+  ["a network failure", { network: true }, /^Could not reach the PIP API\..*PIP_CORS_ORIGINS/],
+  ["a gateway error without a body", { status: 503, unreadable: true }, /^The PIP API is not ready \(HTTP 503\)/],
+  ["an answer that is not JSON", { unreadable: true }, "The PIP API answered with something that is not valid JSON."],
+  ["a body that is not a research answer", { json: {} }, "The API returned an unexpected research response, so nothing was filled."],
+  ["research for another symbol", { json: researchFixture({ symbol: "ZZZ" }) }, "The API returned research for a different symbol than AAA, so nothing was filled."],
+];
+
+for (const [name, route, expected] of RESEARCH_FAILURES) {
+  test(`Load research shows ${name} as an error and changes nothing`, async (t) => {
+    const env = await connectedPage(t, { routes: { [RESEARCH_PATH]: route } });
+    await openRunner(env, "AAA");
+    inputFor(env, "position.market_price").value = "150";
+    inputFor(env, "scores.tsr").value = "44";
+    await loadResearch(env);
+    const message = status(env, "moduleResearchStatus");
+    if (typeof expected === "string") assert.equal(message, expected);
+    else assert.match(message, expected);
+    assert.equal(env.el("moduleResearchStatus").className, "error");
+    assert.deepEqual(boxes(env), { ...BLANK_BOXES, "position.market_price": "150", "scores.tsr": "44" });
+    assert.equal(env.el("moduleResearchNotes").hidden, true);
+    assert.deepEqual(researchNotes(env), []);
+    assert.equal(env.el("moduleInputs").open, false);
+    assert.equal(researchButton(env).disabled, false);
+    assert.equal(env.pendingTimers(), 0);
+  });
+}
+
+test("a research request that never answers is stopped after 90 seconds and can be tried again", async (t) => {
+  const env = await connectedPage(t, { routes: { [RESEARCH_PATH]: () => new Promise(() => {}) } });
+  await openRunner(env, "AAA");
+  const first = loadResearch(env);
+  await waitFor(() => env.pendingTimers() === 1, "the research timer");
+  assert.equal(researchButton(env).disabled, true);
+  env.fireTimeout();
+  await first;
+  assert.match(status(env, "moduleResearchStatus"), /did not answer within 90 seconds/);
+  assert.equal(env.el("moduleResearchStatus").className, "error");
+  assert.equal(researchButton(env).disabled, false);
+  assert.equal(env.pendingTimers(), 0);
+  env.routes[RESEARCH_PATH] = { json: researchFixture() };
+  await loadResearch(env);
+  assert.equal(status(env, "moduleResearchStatus"), FULL_HEADLINE);
+  assert.deepEqual(boxes(env), FULL_RESEARCH_TEXTS);
+});
+
+test("an expired sign-in stops Load research before anything is sent", async (t) => {
+  let valid = true;
+  const getAccessToken = async () => {
+    if (!valid) throw new Error("Your Supabase session has expired. Sign in again.");
+    return "test-token";
+  };
+  const env = await connectedPage(t, { getAccessToken });
+  await openRunner(env, "AAA");
+  valid = false;
+  await loadResearch(env);
+  assert.deepEqual(posts(env), []);
+  assert.equal(status(env, "moduleResearchStatus"), "Your Supabase session has expired. Sign in again.");
+  assert.equal(env.el("moduleResearchStatus").className, "error");
+  assert.equal(researchButton(env).disabled, false);
+});
+
+test("the research request path encodes the portfolio id", async (t) => {
+  const odd = { ...PORTFOLIOS[2], id: "a/b?c#d" };
+  const env = await connectedPage(t, {
+    routes: {
+      "GET /api/pip/portfolios": { json: [odd] },
+      "GET /api/pip/portfolios/a%2Fb%3Fc%23d/positions": { json: FILLED },
+      "POST /api/pip/portfolios/a%2Fb%3Fc%23d/research": { json: researchFixture() },
+    },
+  });
+  await openRunner(env, "AAA");
+  await loadResearch(env);
+  assert.equal(researchPosts(env).length, 1);
+  assert.deepEqual(boxes(env), FULL_RESEARCH_TEXTS);
+});
+
+test("research replaces the boxes it can fill and leaves every other box as typed", async (t) => {
+  const env = await connectedPage(t, { routes: researchRoutes(researchFixture({ analyst: { target_upside_percent: null } })) });
+  await openRunner(env, "AAA");
+  const typed = {
+    "position.market_price": "150",
+    "scores.tsr": "10",
+    "scores.technical_health": "77",
+    "forward.target_upside_percent": "5",
+    "scores.opportunity_cost": "40",
+    "position.cost_basis": "900",
+    "position.entry_date": "2026-01-02",
+    "position.dividends_received": "0",
+  };
+  for (const [key, text] of Object.entries(typed)) inputFor(env, key).value = text;
+  await loadResearch(env);
+
+  assert.equal(status(env, "moduleResearchStatus"), FULL_HEADLINE.replace("Filled 8", "Filled 7"));
+  assert.deepEqual(boxes(env), { ...FULL_RESEARCH_TEXTS, "forward.target_upside_percent": "5" });
+  for (const key of ["scores.opportunity_cost", "position.cost_basis", "position.entry_date", "position.dividends_received"]) {
+    assert.equal(inputFor(env, key).value, typed[key], `${key} is not something research fills`);
+  }
+  assert.deepEqual(researchNotes(env).slice(7), ["Target upside was not filled: Yahoo did not provide this value."]);
+
+  await moduleButton(env, "Growth analysis").fire("click");
+  assert.deepEqual(modulePosts(env)[0].body, {
+    symbol: "AAA",
+    position: { market_price: 112, cost_basis: 900, entry_date: "2026-01-02", dividends_received: 0 },
+    hurdle: { required_annual_return_percent: 7 },
+    scores: { tsr: 65, relative_performance: 35, technical_health: 58.9, opportunity_cost: 40 },
+    growth: { earnings_growth_percent: 12.5, revenue_growth_percent: 8.1 },
+    forward: { target_upside_percent: 5, analyst_revisions_score: 80 },
+  });
+  assert.deepEqual(provenanceLines(env), FULL_RESEARCH_LINES.filter((line) => !line.startsWith("Target upside")), "the typed target upside is not claimed as research");
+});
+
+test("loading again refreshes its own values, keeps your edits where research has nothing, and replaces them where it has a value", async (t) => {
+  const env = await connectedPage(t, { routes: researchRoutes() });
+  await openRunner(env, "AAA");
+  await loadResearch(env);
+  assert.deepEqual(boxes(env), FULL_RESEARCH_TEXTS);
+
+  inputFor(env, "scores.tsr").value = "50";
+  inputFor(env, "forward.analyst_revisions_score").value = "70";
+  env.routes[RESEARCH_PATH] = {
+    json: researchFixture({
+      analyst: { target_upside_percent: null },
+      scores: { tsr: { score: 70 }, revisions: { score: null, reason: NO_REVISIONS } },
+    }),
+  };
+  await loadResearch(env);
+  assert.equal(researchPosts(env).length, 2);
+  assert.deepEqual(boxes(env), {
+    ...FULL_RESEARCH_TEXTS,
+    "scores.tsr": "70",
+    "forward.target_upside_percent": "",
+    "forward.analyst_revisions_score": "70",
+  });
+  assert.equal(status(env, "moduleResearchStatus"), FULL_HEADLINE.replace("Filled 8", "Filled 6"));
+  assert.deepEqual(researchNotes(env).slice(6), [
+    "Target upside was not filled: Yahoo did not provide this value.",
+    `Forward revisions score was not filled: ${NO_REVISIONS}`,
+  ]);
+
+  env.routes[RESEARCH_PATH] = { json: emptyResearchFixture() };
+  await loadResearch(env);
+  assert.deepEqual(boxes(env), { ...BLANK_BOXES, "forward.analyst_revisions_score": "70" });
+  assert.equal(status(env, "moduleResearchStatus"), "Yahoo research did not give any usable values for AAA.");
+});
+
+test("a failed reload keeps the values and the provenance of the earlier research", async (t) => {
+  const env = await connectedPage(t, { routes: researchRoutes() });
+  await openRunner(env, "AAA");
+  await loadResearch(env);
+  env.routes[RESEARCH_PATH] = { status: 502, json: { detail: "Yahoo research is unavailable for AAA right now." } };
+  await loadResearch(env);
+  assert.equal(status(env, "moduleResearchStatus"), "Yahoo research is unavailable for AAA right now.");
+  assert.equal(env.el("moduleResearchStatus").className, "error");
+  assert.deepEqual(boxes(env), FULL_RESEARCH_TEXTS);
+  assert.deepEqual(researchNotes(env), []);
+  await moduleButton(env, "Growth analysis").fire("click");
+  assert.deepEqual(provenanceLines(env), FULL_RESEARCH_LINES);
+});
+
+test("an API that returns no scores fills only what it has and says so", async (t) => {
+  const older = researchFixture();
+  delete older.scores;
+  const env = await connectedPage(t, { routes: researchRoutes(older) });
+  await openRunner(env, "AAA");
+  await loadResearch(env);
+
+  assert.deepEqual(boxes(env), {
+    ...BLANK_BOXES,
+    "position.market_price": "112",
+    "growth.earnings_growth_percent": "12.5",
+    "growth.revenue_growth_percent": "8.1",
+    "forward.target_upside_percent": "16.07",
+  });
+  assert.equal(status(env, "moduleResearchStatus"), FULL_HEADLINE.replace("Filled 8", "Filled 4"));
+  const missing = "This PIP API version does not return research scores.";
+  assert.deepEqual(researchNotes(env), [
+    FULL_RESEARCH_LINES[0],
+    FULL_RESEARCH_LINES[4],
+    FULL_RESEARCH_LINES[5],
+    FULL_RESEARCH_LINES[6],
+    `Total shareholder return score was not filled: ${missing}`,
+    `Relative performance score was not filled: ${missing}`,
+    `Technical health score was not filled: ${missing}`,
+    `Forward revisions score was not filled: ${missing}`,
+  ]);
+  await moduleButton(env, "Growth analysis").fire("click");
+  assert.equal(provenanceBlocks(env)[0].children[0].textContent, "Inputs from Yahoo research (data as of 2025-12-31)");
+});
+
+test("an answer with no usable value leaves every box alone and explains each one", async (t) => {
+  const env = await connectedPage(t, { routes: researchRoutes(emptyResearchFixture()) });
+  await openRunner(env, "AAA");
+  inputFor(env, "scores.tsr").value = "44";
+  await loadResearch(env);
+
+  assert.equal(status(env, "moduleResearchStatus"), "Yahoo research did not give any usable values for AAA.");
+  assert.equal(env.el("moduleResearchStatus").className, "error");
+  assert.deepEqual(boxes(env), { ...BLANK_BOXES, "scores.tsr": "44" });
+  assert.deepEqual(researchNotes(env), [
+    "Share price was not filled: Yahoo did not provide this value.",
+    "Total shareholder return score was not filled: Yahoo history covers 30 days; at least 330 are needed to score a 1-year total return.",
+    "Relative performance score was not filled: This symbol and SPY share 30 days of price history; at least 330 are needed to score performance against SPY.",
+    "Technical health score was not filled: Yahoo returned 2 daily closes; at least 200 are needed to score technical health.",
+    "Earnings growth was not filled: Yahoo Finance did not expose earnings growth for this symbol.",
+    "Revenue growth was not filled: Yahoo Finance did not expose revenue growth for this symbol.",
+    "Target upside was not filled: Yahoo did not provide this value.",
+    `Forward revisions score was not filled: ${NO_REVISIONS}`,
+  ]);
+  assert.equal(env.el("moduleResearchNotes").hidden, false);
+  assert.equal(env.el("moduleInputs").open, false);
+  assert.equal(researchButton(env).disabled, false);
+  await moduleButton(env, "Growth analysis").fire("click");
+  assert.deepEqual(modulePosts(env)[0].body.scores, { tsr: 44 });
+  assert.deepEqual(provenanceBlocks(env), []);
+});
+
+test("a run after Load research lists the inputs it sent from research, after the caveats and before the footer", async (t) => {
+  const env = await connectedPage(t, { routes: { ...researchRoutes(), [MODULE_PATH("sell_advisor")]: { json: ADVISOR } } });
+  const view = describeModuleResult("sell_advisor", ADVISOR);
+  assert.ok(view.rows.length > 1 && view.details.length && view.hints.length && view.caveats.length && view.footer, "the sample exercises every part");
+  await openRunner(env, "AAA");
+  await loadResearch(env);
+  await moduleButton(env, "Sell advisor").fire("click");
+
+  assert.deepEqual(modulePosts(env)[0].body, {
+    symbol: "AAA",
+    position: { market_price: 112 },
+    hurdle: { required_annual_return_percent: 7 },
+    scores: { tsr: 65, relative_performance: 35, technical_health: 58.9 },
+    growth: { earnings_growth_percent: 12.5, revenue_growth_percent: 8.1 },
+    forward: { target_upside_percent: 16.07, analyst_revisions_score: 80 },
+  });
+  const parts = env.el("moduleResult").children;
+  assert.deepEqual(
+    parts.map((part) => `${part.tagName}.${part.className}`),
+    ["H3.", "P.headline", "DL.facts", "UL.", "DIV.hints", "UL.caveats", "DIV.provenance", "P.result-footer"],
+  );
+  const block = parts[6];
+  assert.deepEqual(block.children.map((node) => `${node.tagName}.${node.className}`), ["STRONG.", "UL.", "P.subtle"]);
+  assert.equal(block.children[0].textContent, PROVENANCE_HEADING);
+  assert.deepEqual(block.children[1].children.map((item) => [item.tagName, item.textContent]), FULL_RESEARCH_LINES.map((line) => ["LI", line]));
+  assert.equal(block.children[2].textContent, PROVENANCE_NOTE);
+  assert.equal(parts[7].textContent, view.footer);
+});
+
+test("inputs you edit or clear after loading research are not listed as coming from it", async (t) => {
+  const env = await connectedPage(t, { routes: researchRoutes() });
+  await openRunner(env, "AAA");
+  await loadResearch(env);
+  inputFor(env, "position.market_price").value = "150";
+  inputFor(env, "scores.tsr").value = "";
+  await moduleButton(env, "Growth analysis").fire("click");
+  assert.deepEqual(provenanceLines(env), FULL_RESEARCH_LINES.slice(2));
+  assert.equal(provenanceBlocks(env)[0].children[0].textContent, PROVENANCE_HEADING);
+  const sent = modulePosts(env)[0].body;
+  assert.equal(sent.position.market_price, 150);
+  assert.equal(sent.scores.tsr, undefined);
+
+  for (const key of Object.keys(FULL_RESEARCH_TEXTS)) inputFor(env, key).value = "1";
+  await moduleButton(env, "Growth analysis").fire("click");
+  assert.equal(env.el("moduleResult").hidden, false);
+  assert.deepEqual(provenanceBlocks(env), [], "no block when every research value was replaced");
+});
+
+test("which inputs came from research is decided when the run is sent, not when its answer arrives", async (t) => {
+  const release = gate();
+  const env = await connectedPage(t, {
+    routes: {
+      [RESEARCH_PATH]: { json: researchFixture() },
+      [MODULE_PATH("growth")]: async () => { await release.promise; return { json: moduleResponse("growth", GROWTH) }; },
+    },
+  });
+  await openRunner(env, "AAA");
+  await loadResearch(env);
+  const run = moduleButton(env, "Growth analysis").fire("click");
+  await waitFor(() => moduleButtons(env).every((button) => button.disabled), "the run to start");
+  inputFor(env, "position.market_price").value = "150";
+  release.release();
+  await run;
+  assert.equal(modulePosts(env)[0].body.position.market_price, 112);
+  assert.deepEqual(provenanceLines(env), FULL_RESEARCH_LINES);
+});
+
+test("there is no provenance block without research, and none beside an unexpected answer", async (t) => {
+  const env = await connectedPage(t, { routes: researchRoutes() });
+  await openRunner(env, "AAA");
+  await moduleButton(env, "Growth analysis").fire("click");
+  assert.equal(env.el("moduleResult").hidden, false);
+  assert.deepEqual(provenanceBlocks(env), []);
+
+  await loadResearch(env);
+  env.routes[MODULE_PATH("growth")] = { json: moduleResponse("cps", GROWTH) };
+  await moduleButton(env, "Growth analysis").fire("click");
+  assert.equal(env.el("moduleResult").className, "result unexpected");
+  assert.deepEqual(provenanceBlocks(env), []);
+  assert.ok(!resultText(env).includes("Inputs from Yahoo research"));
+});
+
+test("research belongs to the holding: the same holding keeps it, another holding clears it", async (t) => {
+  const env = await connectedPage(t, { routes: researchRoutes() });
+  await openRunner(env, "AAA");
+  await loadResearch(env);
+  await runButton(env, "AAA").fire("click");
+  assert.deepEqual(boxes(env), FULL_RESEARCH_TEXTS);
+  assert.equal(status(env, "moduleResearchStatus"), FULL_HEADLINE);
+  assert.deepEqual(researchNotes(env), FULL_RESEARCH_LINES);
+  await moduleButton(env, "Growth analysis").fire("click");
+  assert.equal(provenanceBlocks(env).length, 1);
+
+  await openRunner(env, "BBB");
+  assert.deepEqual(boxes(env), BLANK_BOXES);
+  assert.equal(status(env, "moduleResearchStatus"), "");
+  assert.equal(env.el("moduleResearchStatus").className, "subtle");
+  assert.equal(env.el("moduleResearchNotes").hidden, true);
+  assert.deepEqual(researchNotes(env), []);
+  assert.equal(researchButton(env).disabled, false);
+  await moduleButton(env, "Growth analysis").fire("click");
+  assert.deepEqual(provenanceBlocks(env), []);
+
+  await openRunner(env, "AAA");
+  assert.deepEqual(boxes(env), BLANK_BOXES, "going back does not bring the research back");
+  assert.equal(status(env, "moduleResearchStatus"), "");
+});
+
+test("text typed into another holding that equals an earlier load is that holding's own value", async (t) => {
+  const env = await connectedPage(t, {
+    routes: {
+      [RESEARCH_PATH]: (call) => ({
+        json: call.body.symbol === "AAA"
+          ? researchFixture()
+          : researchFixture({ symbol: call.body.symbol, scores: { tsr: { score: null, reason: "Yahoo history is too short." } } }),
+      }),
+      [MODULE_PATH("growth")]: { json: moduleResponse("growth", GROWTH) },
+    },
+  });
+  await openRunner(env, "AAA");
+  await loadResearch(env);
+  assert.equal(inputFor(env, "scores.tsr").value, "65");
+
+  await openRunner(env, "BBB");
+  inputFor(env, "scores.tsr").value = "65";
+  await moduleButton(env, "Growth analysis").fire("click");
+  assert.deepEqual(provenanceBlocks(env), [], "the earlier holding's research does not vouch for what is typed here");
+
+  await loadResearch(env);
+  assert.equal(inputFor(env, "scores.tsr").value, "65", "research with nothing for a box leaves what was typed in it");
+  assert.match(researchNotes(env).join("\n"), /Total shareholder return score was not filled: Yahoo history is too short\./);
+});
+
+const LEAVING = [
+  ["another holding is chosen", (env) => openRunner(env, "BBB"), ""],
+  ["the holdings are reloaded", (env) => env.el("moduleReload").fire("click"), "44"],
+  ["another portfolio is chosen", async (env) => {
+    env.el("modulePortfolio").value = "p-empty";
+    await env.el("modulePortfolio").fire("change");
+  }, "44"],
+  ["the page connects again", (env) => env.el("moduleConnect").fire("click"), "44"],
+];
+
+for (const [outcome, answer] of [
+  ["answer", { json: researchFixture() }],
+  ["failure", { status: 502, json: { detail: "Yahoo research is unavailable for AAA right now." } }],
+]) {
+  for (const [change, leave, kept] of LEAVING) {
+    test(`a research ${outcome} that arrives after ${change} is ignored`, async (t) => {
+      const release = gate();
+      const env = await connectedPage(t, { routes: { [RESEARCH_PATH]: async () => { await release.promise; return answer; } } });
+      await openRunner(env, "AAA");
+      inputFor(env, "scores.tsr").value = "44";
+      const pending = loadResearch(env);
+      await waitFor(() => researchPosts(env).length === 1, "the research request to start");
+      assert.equal(researchButton(env).disabled, true);
+      await leave(env);
+      assert.equal(researchButton(env).disabled, false, "the button is usable again straight away");
+      assert.equal(status(env, "moduleResearchStatus"), "");
+      release.release();
+      await pending;
+      assert.equal(status(env, "moduleResearchStatus"), "");
+      assert.equal(env.el("moduleResearchNotes").hidden, true);
+      assert.deepEqual(boxes(env), { ...BLANK_BOXES, "scores.tsr": kept });
+      assert.equal(researchButton(env).disabled, false);
+    });
+  }
+}
+
+test("an old research request that finishes late cannot disturb a newer one", async (t) => {
+  const first = gate();
+  const second = gate();
+  const env = await connectedPage(t, {
+    routes: {
+      [RESEARCH_PATH]: async (call) => {
+        if (call.body.symbol === "AAA") {
+          await first.promise;
+          return { status: 502, json: { detail: "Old research failed." } };
+        }
+        await second.promise;
+        return { json: researchFixture({ symbol: "BBB" }) };
+      },
+    },
+  });
+  await openRunner(env, "AAA");
+  const oldLoad = loadResearch(env);
+  await waitFor(() => researchPosts(env).length === 1, "the old research request");
+  await openRunner(env, "BBB");
+  const newLoad = loadResearch(env);
+  await waitFor(() => researchPosts(env).length === 2, "the new research request");
+  first.release();
+  await oldLoad;
+  assert.equal(status(env, "moduleResearchStatus"), "Loading Yahoo research for BBB…");
+  assert.equal(researchButton(env).disabled, true, "the old request must not re-enable the button of the new one");
+  second.release();
+  await newLoad;
+  assert.equal(researchButton(env).disabled, false);
+  assert.equal(status(env, "moduleResearchStatus"), FULL_HEADLINE.replace("AAA", "BBB"));
+  assert.deepEqual(boxes(env), FULL_RESEARCH_TEXTS);
+});
+
+test("research text from the API is shown as text, never as markup", async (t) => {
+  const hostile = "<img src=x onerror=alert(1)>";
+  const body = researchFixture({
+    price: { source: hostile },
+    analyst: { rating: hostile },
+    growth: { source: hostile },
+    scores: { relative_performance: { score: null, reason: hostile } },
+    warnings: [hostile, "Second warning."],
+  });
+  const env = await connectedPage(t, { routes: researchRoutes(body) });
+  await openRunner(env, "AAA");
+  await loadResearch(env);
+  await moduleButton(env, "Growth analysis").fire("click");
+
+  for (const id of ["moduleResearchNotes", "moduleResearchStatus", "moduleResult"]) {
+    assert.deepEqual(findAll(env.el(id), (node) => node.tagName === "IMG"), [], id);
+  }
+  const notes = researchNotes(env);
+  assert.ok(notes.some((line) => line.includes(hostile)));
+  assert.deepEqual(notes.slice(-2), [hostile, "Second warning."]);
+  assert.ok(env.el("moduleResearchNotes").children.every((item) => item.tagName === "LI" && item.children.length === 0), "every note is plain text");
+  assert.ok(provenanceLines(env).some((line) => line.includes(hostile)));
+});
+
 // ---- The page and its source ---------------------------------------------------------------------
 
 test("every element the script looks up exists in the page, and ids are unique", () => {
@@ -1520,7 +2092,7 @@ test("every element the script looks up exists in the page, and ids are unique",
   assert.equal(new Set(ids).size, ids.length, "duplicate ids in pip-modules.html");
   for (const id of wanted) assert.ok(ids.includes(id), `pip-modules.html has no #${id}`);
   for (const id of ids.filter((item) => item.startsWith("module"))) {
-    assert.ok(PAGE_SCRIPT.includes(`"#${id}"`) || ["moduleIntro", "moduleConnectTitle", "moduleHoldingsTitle"].includes(id), `#${id} is not used by the script`);
+    assert.ok(PAGE_SCRIPT.includes(`"#${id}"`) || ["moduleIntro", "moduleConnectTitle", "moduleHoldingsTitle", "moduleResearchHelp"].includes(id), `#${id} is not used by the script`);
   }
 });
 
@@ -1532,23 +2104,37 @@ test("the page is gated, noindex, signed-in only and marked as the current nav i
   assert.match(PAGE_HTML, /<a href="\/StockScanner\/pip-modules\.html" aria-current="page">Module runner<\/a>/);
   assert.match(PAGE_HTML, /<a href="\/StockScanner\/portfolio-intelligence\.html">PIP workbench<\/a>/);
   assert.equal([...PAGE_HTML.matchAll(/<script\b/g)].length, 2, "only the auth gate and the page script");
-  for (const id of ["moduleRunSection", "modulePortfolioSection", "moduleResult", "moduleHints"]) {
+  for (const id of ["moduleRunSection", "modulePortfolioSection", "moduleResult", "moduleHints", "moduleResearchNotes"]) {
     assert.match(PAGE_HTML, new RegExp(`id="${id}"[^>]*\\shidden`), `#${id} starts hidden`);
   }
   assert.match(PAGE_HTML, /id="moduleConnect"[^>]*\sdisabled/);
   assert.match(PAGE_HTML, /\[hidden\] \{ display: none !important; \}/);
 });
 
-test("the script can only read: four request shapes, GET and POST, no unsafe DOM", () => {
+test("the research controls sit in the runner, say what they do, and start quiet", () => {
+  assert.match(PAGE_HTML, /<button id="moduleResearch" type="button" class="secondary" aria-describedby="moduleResearchHelp">Load research<\/button>/);
+  const help = /<p id="moduleResearchHelp" class="subtle">([^<]*)<\/p>/.exec(PAGE_HTML)?.[1] ?? "";
+  for (const phrase of ["public Yahoo Finance data", "Only the ticker symbol is sent", "currency", "replaces what is in the boxes it can fill", "every value stays editable", "nothing is saved"]) {
+    assert.ok(help.includes(phrase), `the help text does not say: ${phrase}`);
+  }
+  assert.match(PAGE_HTML, /<p id="moduleResearchStatus" class="subtle" role="status" aria-live="polite"><\/p>/);
+  assert.match(PAGE_HTML, /<ul id="moduleResearchNotes" class="subtle" hidden><\/ul>/);
+  const order = ["moduleHints", "moduleResearch", "moduleResearchHelp", "moduleResearchStatus", "moduleResearchNotes", "moduleInputs", "moduleButtons"].map((id) => PAGE_HTML.indexOf(`id="${id}"`));
+  assert.ok(order.every((index, position) => index > (order[position - 1] ?? -1)), "the research controls sit between the hints and the inputs");
+  assert.match(PAGE_HTML, /\.provenance \{[^}]*border-left/);
+});
+
+test("the script can only read: five request shapes, GET and POST, no unsafe DOM", () => {
   const code = PAGE_SCRIPT.replace(/^\s*\/\/.*$/gm, "");
   const paths = [...code.matchAll(/["'`](\/(?:healthz|api\/pip)[^"'`]*)["'`]/g)].map((match) => match[1].replace(/\$\{[^}]*\}/g, "{}"));
   assert.deepEqual([...new Set(paths)].sort(), [
     "/api/pip/portfolios",
     "/api/pip/portfolios/{}/modules/{}",
     "/api/pip/portfolios/{}/positions",
+    "/api/pip/portfolios/{}/research",
     "/healthz",
   ]);
-  assert.deepEqual([...code.matchAll(/\bmethod\s*[:=]\s*"([A-Z]+)"/g)].map((match) => match[1]).sort(), ["GET", "POST"]);
+  assert.deepEqual([...code.matchAll(/\bmethod\s*[:=]\s*"([A-Z]+)"/g)].map((match) => match[1]).sort(), ["GET", "POST", "POST"]);
   assert.doesNotMatch(code, /innerHTML|outerHTML|insertAdjacentHTML|document\.write|\beval\(|new Function|\bsrcdoc\b/);
   assert.doesNotMatch(code, /\/analysis|\/transitions|\/sync|\/import|\/approv|\/order|\/audit|\/flex/i);
   assert.doesNotMatch(code, /console\.|sessionStorage|document\.cookie|indexedDB/);

@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from typing import List, Optional
 
 from .models import ReplacementCandidate, SellRecommendation
+from .scoring import SELL_SCORE_DIRECTION
 
 
 @dataclass
@@ -79,4 +80,5 @@ class SellAdvisor:
             created_at=datetime.now(timezone.utc),
             status="draft",
             replacement_candidates=replacement_candidates or [],
+            sell_score_direction=SELL_SCORE_DIRECTION,
         )

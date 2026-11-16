@@ -14,11 +14,14 @@ export const MAX_MODULE_CANDIDATES = 500;
 // Mirrors replacement_limit in DecisionEngine.analyze_position; a Python test compares them.
 export const REPLACEMENT_LIMIT = 5;
 export const CONFIDENCE_NOTE = "Input confidence is how much of the needed data was available, not how strong the signal is.";
+// Mirrors SELL_SCORE_DIRECTION in stockscanner/pip/scoring.py; a Python test compares them.
+export const SELL_SCORE_DIRECTION = "higher_means_sell";
 
 const MAX_RESULT_ROWS = 10;
 const NOT_AVAILABLE = "not available";
 const UNEXPECTED_RESPONSE = "The API returned an unexpected response, so no result is shown.";
-const SELL_DIRECTION_CAVEAT = "Most of these inputs rise as a holding gets healthier, yet scores of 65 or more are read as 'sell'. That direction is an open question, so treat this result as unverified.";
+// Shown when a result lacks the direction tag, for example from an API that predates the flipped sell score.
+const LEGACY_DIRECTION_CAVEAT = "This result does not say which way the sell score runs, so it may use the earlier direction, where healthier holdings scored higher. Treat it as unverified.";
 const OPPORTUNITY_CAVEAT = "Estimated benefit is a score-based estimate (half of the score gap, in score points). It is not a return forecast or an amount of money.";
 const FORWARD_CAVEAT = "An indicator built from the inputs you supplied, not a forecast.";
 const GROWTH_ANALYSIS_BASES = new Map([
@@ -400,10 +403,34 @@ function describeCps(result) {
 }
 
 function describeSellScore(result) {
-  return {
-    ...describeWeightedScore(result, "Sell confidence score"),
-    caveats: [SELL_DIRECTION_CAVEAT, ...earningsGrowthCaveats(result)],
-  };
+  const description = describeWeightedScore(result, "Sell confidence score");
+  const note = flippedInputsNote(result);
+  if (note) description.details.push(note);
+  return { ...description, caveats: [...directionCaveats(result), ...earningsGrowthCaveats(result)] };
+}
+
+function hasKnownDirection(result) {
+  return result.sell_score_direction === SELL_SCORE_DIRECTION;
+}
+
+function directionCaveats(result) {
+  return hasKnownDirection(result) ? [] : [LEGACY_DIRECTION_CAVEAT];
+}
+
+function joinLabels(labels) {
+  return labels.length > 1 ? `${labels.slice(0, -1).join(", ")} and ${labels[labels.length - 1]}` : labels[0];
+}
+
+// The sell score counts healthier-is-higher inputs as 100 minus their score, so the values shown are not the ones entered.
+function flippedInputsNote(result) {
+  if (!hasKnownDirection(result)) return null;
+  const components = isObject(result.component_scores) ? result.component_scores : {};
+  const names = [...new Set(nonEmptyStrings(result.inverted_components))].filter((name) => finiteNumber(components[name]) !== null);
+  if (!names.length) return null;
+  const [verb, effect] = names.length === 1
+    ? ["rises", "it counts as 100 minus its score"]
+    : ["rise", "they count as 100 minus their score"];
+  return `Each value shows how strongly that input argues for selling. ${joinLabels(names.map(componentLabel))} ${verb} as a holding gets healthier, so ${effect}. A higher score is a stronger case to sell.`;
 }
 
 // The API fills a missing earnings growth input from the growth analysis. Say so unless that was earnings growth alone.
@@ -471,7 +498,7 @@ function describeSellAdvisor(result) {
     hints: sellScore === null || confidence === null || confidence < 0.5
       ? ["The advisor can only suggest Watch when input confidence is below 50% or no sell score can be calculated. Add more inputs to give it a firmer basis."]
       : [],
-    caveats: [SELL_DIRECTION_CAVEAT],
+    caveats: directionCaveats(result),
   };
 }
 
@@ -589,6 +616,223 @@ export function holdingCells(holding) {
     days === null ? "—" : String(days),
     flags.map((flag) => FLAG_LABELS.get(flag) ?? flag.replace(/_/g, " ")).join(", "),
   ];
+}
+
+// ---- Filling inputs from research -------------------------------------------------------------
+
+const RESEARCH_UNEXPECTED = "The API returned an unexpected research response, so nothing was filled.";
+const RESEARCH_NO_SCORES = "This PIP API version does not return research scores.";
+const RESEARCH_NO_VALUE = "Yahoo did not provide this value.";
+const RESEARCH_NOT_A_NUMBER = "Yahoo returned a value that is not a usable number.";
+const RESEARCH_GENERAL_TAIL = "from Yahoo research";
+const RESEARCH_PROVENANCE_NOTE = "A module uses only the inputs it needs. Values you edited after loading are your own and are not listed.";
+
+// One input per line: a Python test parses this table and resolves every path against a real research answer.
+// `from` is the path of the value, `why` the path of the reason the API gives when that value is missing, and
+// `evidence` the paths of the numbers it was built from, which are read by the last name in each path.
+export const PIP_RESEARCH_INPUTS = Object.freeze([
+  { key: "position.market_price", name: "Share price", from: "price.price", evidence: ["price.source", "price.as_of", "price.stale"] },
+  { key: "scores.tsr", name: "Total shareholder return score", from: "scores.tsr.score", why: "scores.tsr.reason", evidence: ["scores.tsr.raw.return_percent", "scores.tsr.raw.history_days", "returns.basis"] },
+  { key: "scores.relative_performance", name: "Relative performance score", from: "scores.relative_performance.score", why: "scores.relative_performance.reason", evidence: ["scores.relative_performance.raw.gap_points", "scores.relative_performance.raw.history_days"] },
+  { key: "scores.technical_health", name: "Technical health score", from: "scores.technical_health.score", why: "scores.technical_health.reason", evidence: ["scores.technical_health.raw.long_average_days", "scores.technical_health.raw.close_vs_long_average_percent", "scores.technical_health.raw.short_average_days", "scores.technical_health.raw.close_vs_short_average_percent", "scores.technical_health.raw.high_window_days", "scores.technical_health.raw.below_high_percent"] },
+  { key: "growth.earnings_growth_percent", name: "Earnings growth", from: "growth.earnings_growth_percent", why: "unavailable_metrics.earnings_growth_percent", evidence: ["growth.source"] },
+  { key: "growth.revenue_growth_percent", name: "Revenue growth", from: "growth.revenue_growth_percent", why: "unavailable_metrics.revenue_growth_percent", evidence: ["growth.source"] },
+  { key: "forward.target_upside_percent", name: "Target upside", from: "analyst.target_upside_percent", evidence: ["analyst.target_price", "analyst.rating"] },
+  { key: "forward.analyst_revisions_score", name: "Forward revisions score", from: "scores.revisions.score", why: "scores.revisions.reason", evidence: ["scores.revisions.raw.up", "scores.revisions.raw.down", "scores.revisions.raw.breadth", "scores.revisions.raw.periods_counted"] },
+]);
+
+function plainText(value) {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+// The text put in an input: four decimals at most, no trailing zeros, and never "-0".
+function plainNumber(value) {
+  return String(Number(value.toFixed(4)));
+}
+
+function signedNumber(value, digits) {
+  const text = value.toFixed(digits);
+  if (Number(text) === 0) return (0).toFixed(digits);
+  return value > 0 ? `+${text}` : text;
+}
+
+function endSentence(text) {
+  return /[.!?]$/.test(text) ? text : `${text}.`;
+}
+
+function calendarDate(text) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return null;
+  const date = new Date(`${text}T00:00:00Z`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === text ? text : null;
+}
+
+// The calendar date a research timestamp or date starts with, or null when it does not start with one.
+function leadingDate(value) {
+  if (typeof value !== "string") return null;
+  const text = value.trim();
+  return /^\d{4}-\d{2}-\d{2}(?:$|[T ])/.test(text) ? calendarDate(text.slice(0, 10)) : null;
+}
+
+function priceMoment(value) {
+  if (typeof value !== "string") return null;
+  const text = value.trim();
+  return calendarDate(text) ?? (/^\d{4}-\d{2}-\d{2}T/.test(text) ? formatAsOf(text) : null);
+}
+
+function valueAt(payload, path) {
+  let node = payload;
+  for (const name of path.split(".")) {
+    if (!isObject(node)) return undefined;
+    node = node[name];
+  }
+  return node;
+}
+
+function evidenceOf(payload, entry) {
+  return Object.fromEntries(entry.evidence.map((path) => [path.slice(path.lastIndexOf(".") + 1), valueAt(payload, path)]));
+}
+
+function numbersOf(evidence, ...names) {
+  const values = names.map((name) => finiteNumber(evidence[name]));
+  return values.includes(null) ? null : values;
+}
+
+function levelText(percent, name) {
+  const text = Math.abs(percent).toFixed(1);
+  if (Number(text) === 0) return `at its ${name}`;
+  return `${text}% ${percent > 0 ? "above" : "below"} its ${name}`;
+}
+
+function explainGrowth(evidence) {
+  const source = plainText(evidence.source);
+  return source ? `reported by ${source}` : "source not stated";
+}
+
+// Each returns the numbers behind an input in words, or null when the evidence is incomplete.
+const RESEARCH_EXPLAINERS = new Map(Object.entries({
+  "position.market_price": (evidence) => {
+    const date = priceMoment(evidence.as_of);
+    return `${plainText(evidence.source) ?? "source unavailable"}${date ? `, as of ${date}` : ""}${evidence.stale === true ? ", marked stale" : ""}`;
+  },
+  "scores.tsr": (evidence) => {
+    const numbers = numbersOf(evidence, "return_percent", "history_days");
+    if (!numbers) return null;
+    const basis = evidence.basis === "adjusted_close" ? "adjusted closes" : "daily closes";
+    return `${formatPercent(numbers[0])} return on ${basis} over ${pluralize(numbers[1], "day")}`;
+  },
+  "scores.relative_performance": (evidence) => {
+    const numbers = numbersOf(evidence, "gap_points", "history_days");
+    return numbers && `${signedNumber(numbers[0], 1)} points against SPY over ${pluralize(numbers[1], "shared day")}`;
+  },
+  "scores.technical_health": (evidence) => {
+    const numbers = numbersOf(evidence, "long_average_days", "close_vs_long_average_percent", "short_average_days", "close_vs_short_average_percent", "high_window_days", "below_high_percent");
+    if (!numbers) return null;
+    const [longDays, vsLong, shortDays, vsShort, highDays, belowHigh] = numbers;
+    return `last close is ${levelText(vsLong, `${longDays}-day average`)}, ${levelText(vsShort, `${shortDays}-day average`)} and ${levelText(-belowHigh, `${highDays}-day high`)}`;
+  },
+  "growth.earnings_growth_percent": explainGrowth,
+  "growth.revenue_growth_percent": explainGrowth,
+  "forward.target_upside_percent": (evidence) => {
+    const rating = plainText(evidence.rating);
+    const price = finiteNumber(evidence.target_price);
+    const parts = [];
+    if (rating) parts.push(`rating ${rating}`);
+    if (price !== null) parts.push(`target price ${plainNumber(price)}`);
+    return `analyst ${parts.length ? parts.join(", ") : "data"}`;
+  },
+  "forward.analyst_revisions_score": (evidence) => {
+    const numbers = numbersOf(evidence, "up", "down", "breadth");
+    if (!numbers || !Array.isArray(evidence.periods_counted)) return null;
+    const [up, down, breadth] = numbers;
+    return `${up} upward and ${down} downward EPS estimate revisions in the last 30 days across ${pluralize(evidence.periods_counted.length, "period")} (breadth ${signedNumber(breadth, 2)})`;
+  },
+}));
+
+function researchLine(entry, payload, text) {
+  const unit = labelOf(entry.key).endsWith("(%)") ? "%" : "";
+  const tail = RESEARCH_EXPLAINERS.get(entry.key)?.(evidenceOf(payload, entry)) || RESEARCH_GENERAL_TAIL;
+  return `${entry.name} ${text}${unit} — ${endSentence(tail)}`;
+}
+
+function researchSkipReason(entry, payload, raw, hasScores) {
+  if (entry.from.startsWith("scores.") && !hasScores) return RESEARCH_NO_SCORES;
+  if (raw !== null && raw !== undefined) return RESEARCH_NOT_A_NUMBER;
+  return plainText(entry.why && valueAt(payload, entry.why)) ?? RESEARCH_NO_VALUE;
+}
+
+function symbolText(symbol) {
+  return String(symbol ?? "").trim().toUpperCase();
+}
+
+// Reads the research answer for `symbol` into the inputs it can fill, as the text to put in each box.
+// Anything missing, not a number or outside a field's range is listed in `skipped` with the reason, never filled.
+export function parseResearchResponse(payload, symbol) {
+  if (!isObject(payload) || typeof payload.symbol !== "string") throw new Error(RESEARCH_UNEXPECTED);
+  const wanted = symbolText(symbol);
+  if (!wanted || symbolText(payload.symbol) !== wanted) {
+    throw new Error(`The API returned research for a different symbol than ${wanted}, so nothing was filled.`);
+  }
+  const scores = isObject(payload.scores) ? payload.scores : null;
+  const inputs = [];
+  const skipped = [];
+  for (const entry of PIP_RESEARCH_INPUTS) {
+    const raw = valueAt(payload, entry.from);
+    const value = finiteNumber(raw);
+    const skip = (reason) => skipped.push({ key: entry.key, name: entry.name, reason });
+    if (value === null) {
+      skip(researchSkipReason(entry, payload, raw, scores !== null));
+      continue;
+    }
+    const text = plainNumber(value);
+    try {
+      parseFieldValue(FIELD_BY_KEY.get(entry.key), text);
+    } catch (error) {
+      skip(`${String(error.message).replace(/\.$/, "")} (Yahoo returned ${text}).`);
+      continue;
+    }
+    inputs.push({ key: entry.key, name: entry.name, text, line: researchLine(entry, payload, text) });
+  }
+  return {
+    asOf: leadingDate(valueAt(payload, "returns.end_date")) ?? leadingDate(payload.fetched_at),
+    version: plainText(scores?.version),
+    hasScores: scores !== null,
+    inputs,
+    skipped,
+    warnings: nonEmptyStrings(payload.warnings).map((text) => text.trim()),
+  };
+}
+
+// The inputs whose boxes still hold exactly the text research put there; edited or cleared boxes are the user's own.
+export function unchangedResearchInputs(inputs, values) {
+  return inputs.filter((input) => String(values?.[input.key] ?? "").trim() === input.text);
+}
+
+export function describeResearchLoad(research, symbol) {
+  const name = symbolText(symbol);
+  const filled = research.inputs.length;
+  const notes = [
+    ...research.inputs.map((input) => input.line),
+    ...research.skipped.map((item) => `${item.name} was not filled: ${endSentence(item.reason)}`),
+    ...research.warnings,
+  ];
+  if (!filled) return { headline: `Yahoo research did not give any usable values for ${name}.`, filled, notes };
+  const date = research.asOf ? ` (data as of ${research.asOf})` : "";
+  return {
+    headline: `Filled ${filled} of ${PIP_RESEARCH_INPUTS.length} inputs for ${name} from Yahoo research${date}. Every value stays editable; nothing was saved.`,
+    filled,
+    notes,
+  };
+}
+
+// `research` needs only asOf and version. Returns null when no loaded input is still unchanged.
+export function describeResearchProvenance(research, unchanged) {
+  if (!unchanged.length) return null;
+  const parts = [research.asOf ? `data as of ${research.asOf}` : "", research.version ? `score rules ${research.version}` : ""].filter(Boolean);
+  return {
+    heading: `Inputs from Yahoo research${parts.length ? ` (${parts.join("; ")})` : ""}`,
+    lines: unchanged.map((input) => input.line),
+    note: RESEARCH_PROVENANCE_NOTE,
+  };
 }
 
 export function filterHoldings(holdings, query) {
